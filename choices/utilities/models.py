@@ -245,31 +245,29 @@ class UtilityModel(ABC):
                     "flipped_responses": data["flipped_responses"],
                     "original_parsed": data["original_parsed"],
                     "flipped_parsed": data["flipped_parsed"],
-                    "original_reasoning_summaries": data[
-                        "original_reasoning_summaries"
-                    ],
-                    "flipped_reasoning_summaries": data["flipped_reasoning_summaries"],
                     "unparseable_mode": self.unparseable_mode,
                 }
-                # Add reasoning if available
-                if "original_reasoning" in data and data["original_reasoning"]:
+
+                # Helper to check if list has any non-None values
+                def has_content(lst):
+                    return lst and any(x is not None for x in lst)
+
+                # Add reasoning traces if available (full reasoning from reasoning models)
+                if has_content(data.get("original_reasoning")):
                     aux_data["original_reasoning"] = data["original_reasoning"]
-                if "flipped_reasoning" in data and data["flipped_reasoning"]:
+                if has_content(data.get("flipped_reasoning")):
                     aux_data["flipped_reasoning"] = data["flipped_reasoning"]
-                if (
-                    "original_reasoning_summaries" in data
-                    and data["original_reasoning_summaries"]
-                ):
+
+                # Add reasoning summaries only if there are actual summaries
+                if has_content(data.get("original_reasoning_summaries")):
                     aux_data["original_reasoning_summaries"] = data[
                         "original_reasoning_summaries"
                     ]
-                if (
-                    "flipped_reasoning_summaries" in data
-                    and data["flipped_reasoning_summaries"]
-                ):
+                if has_content(data.get("flipped_reasoning_summaries")):
                     aux_data["flipped_reasoning_summaries"] = data[
                         "flipped_reasoning_summaries"
                     ]
+
                 entry = {
                     "option_A": data["option_A"],
                     "option_B": data["option_B"],

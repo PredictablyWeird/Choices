@@ -330,14 +330,17 @@ def parse_responses_forced_choice(raw_results, choices=["A", "B"], verbose=True)
             # Handle LLMResponse objects
             if isinstance(llm_response, LLMResponse):
                 response = llm_response.content
+                reasoning = llm_response.reasoning  # Full reasoning traces
                 reasoning_summary = llm_response.reasoning_summary
                 reasoning_type = llm_response.reasoning_type
             else:
                 # Fallback for backwards compatibility (raw strings or tuples)
                 if isinstance(llm_response, tuple):
                     response, reasoning_summary = llm_response
+                    reasoning = None
                 else:
                     response = llm_response
+                    reasoning = None
                     reasoning_summary = None
                 reasoning_type = "NO_REASONING"
 
@@ -393,6 +396,9 @@ def parse_responses_forced_choice(raw_results, choices=["A", "B"], verbose=True)
                 # First check if response is exactly one of the choices
                 response = response.strip()
                 reasoning_summary_list.append(reasoning_summary)
+                # Store full reasoning traces if available (from reasoning models)
+                if reasoning:
+                    reasoning_list.append(reasoning)
                 if response == choices[0]:
                     parsed_list.append(choices[0])
                 elif response == choices[1]:

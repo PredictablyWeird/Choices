@@ -25,6 +25,7 @@ deepseek-v3-2-reasoning:
   model_type: openrouter_reasoning #
   reasoning_effort:
     enabled: true
+    effort: "low"
 
 deepseek-v3-2-non-reasoning:
   model_name: "deepseek/deepseek-v3.2"

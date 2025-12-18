@@ -38,6 +38,7 @@ class LLMResponse:
 
     Attributes:
         content: The main response content from the LLM.
+        reasoning: Optional full reasoning traces (e.g., from deepseek reasoning models).
         reasoning_summary: Optional summary of the LLM's reasoning (e.g., from o1/o3 models).
         reasoning_type: The type of reasoning used. One of:
             - "NO_REASONING": No reasoning was requested
@@ -46,6 +47,7 @@ class LLMResponse:
     """
 
     content: Optional[str]
+    reasoning: Optional[str] = None
     reasoning_summary: Optional[str] = None
     reasoning_type: Literal["NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"] = (
         "NO_REASONING"
@@ -408,6 +410,7 @@ class OpenAIAgentReasoning(OpenAIAgent):
             retry_delay = 2.0
             current_timeout = self.timeout
             response = None
+            reasoning = None
             reasoning_summary = None
 
             for attempt in range(self.max_retries):
@@ -480,31 +483,32 @@ class OpenAIAgentReasoning(OpenAIAgent):
 
                     # Success: parse the response
                     response = completion_res.output_text
-                    # Access the reasoning summary if available
+                    # Access reasoning traces based on model type
                     for out in completion_res.output:
                         if out.type == "reasoning":
                             model_name = self.model.split("/")[-1]
                             if model_name in self.openai_reasoning_models:
+                                # OpenAI models provide reasoning summaries
                                 if len(out.summary) > 0:
                                     reasoning_summary = out.summary[0].text
                                 else:
                                     reasoning_summary = None
                             elif model_name in self.openrouter_reasoning_models:
+                                # Other reasoning models (e.g., deepseek) provide full traces
                                 if len(out.content):
-                                    reasoning_summary = out.content[0].text
-                            else:
-                                reasoning_summary = None
+                                    reasoning = out.content[0].text
+                            # else: no reasoning captured
                     # Success means we don't have to retry again
                     break
 
-            # Determine reasoning type based on whether reasoning was requested/returned
-            reasoning_type = (
-                "REASONING_BEFORE" if reasoning_summary is not None else "NO_REASONING"
-            )
+            # For reasoning models, the reasoning is internal (captured in reasoning/reasoning_summary),
+            # but the response text is just the answer. So reasoning_type should be NO_REASONING
+            # for parsing purposes - we don't need to look for "Answer: X" patterns.
             results[message_idx] = LLMResponse(
                 content=response,
+                reasoning=reasoning,
                 reasoning_summary=reasoning_summary,
-                reasoning_type=reasoning_type,
+                reasoning_type="NO_REASONING",
             )
 
         # Create a task for each message
