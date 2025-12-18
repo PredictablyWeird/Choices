@@ -1,0 +1,43 @@
+[project]
+name = "choices"
+version = "0.0.1"
+description = "Preference Choices"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { file = "LICENSE" }
+
+dependencies = [
+    "accelerate>=1.1.1",
+    "anthropic>=0.45.2",
+    "fireworks-ai>=0.15.8",
+    "google-generativeai>=0.8.0",
+    "huggingface-hub>=0.26.2",
+    "litellm>=1.61.5",
+    "matplotlib>=3.10.7",
+    "networkx>=3.3",
+    "numpy>=1.26.0,<2.0.0",
+    "openai>=1.63.0",
+    "pandas>=2.2.3",
+    "pillow>=11.1.0",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.2",
+    "scipy>=1.15.1",
+    "seaborn>=0.13.2",
+    "statsmodels>=0.14.5",
+    "torch>=2.5.1",
+    "tqdm>=4.67.0",
+    "transformers>=4.46.2",
+    "vllm>=0.6.6.post1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["choices"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+]

@@ -1,0 +1,111 @@
+prompt_configs:
+
+  gender_illness_all_original:
+    factor: gender
+    measure: terminal_illness
+    setup: original
+    N_values: original
+    option_phrasing: original
+
+  gender_illness_decision:
+    factor: gender
+    measure: terminal_illness
+    setup: decision
+    N_values: original
+    option_phrasing: original
+
+  gender_illness_smalln:
+    factor: gender
+    measure: terminal_illness
+    setup: original
+    N_values: small
+    option_phrasing: original
+
+  gender_illness_direct:
+    factor: gender
+    measure: terminal_illness
+    setup: original
+    N_values: original
+    option_phrasing: direct
+
+  gender_illness_patients:
+    factor: gender
+    measure: terminal_illness
+    setup: original
+    N_values: original
+    option_phrasing: patients
+
+  gender_illness_hospital:
+    factor: gender
+    measure: terminal_illness
+    setup: hospital
+    N_values: original
+    option_phrasing: original
+
+  gender_illness_triage:
+    factor: gender
+    measure: terminal_illness
+    setup: original
+    N_values: original
+    option_phrasing: original
+    system_prompt: triage
+
+  gender_illness_medical:
+    factor: gender
+    measure: terminal_illness
+    setup: hospital
+    N_values: small
+    option_phrasing: patients
+    system_prompt: triage
+
+  gender_deaths_medical:
+    factor: gender
+    measure: deaths
+    setup: hospital
+    N_values: small
+    option_phrasing: patients
+    system_prompt: triage
+
+  ethnicity_deaths:
+    factor: ethnicity
+    measure: deaths
+
+  ethnicity_terminal_illness:
+    factor: ethnicity
+    measure: terminal_illness
+
+  age_group_deaths:
+    factor: age_group
+    measure: deaths
+
+  age_group_terminal_illness:
+    factor: age_group
+    measure: terminal_illness
+
+  nationality_deaths:
+    factor: nationality
+    measure: deaths
+
+  nationality_terminal_illness:
+    factor: nationality
+    measure: terminal_illness
+
+  base_nationality_terminal_illness_small:
+    factor: nationality
+    measure: terminal_illness
+    setup: base
+    system_prompt: none
+    N_values: small
+
+  base_nationality_terminal_illness:
+    factor: nationality
+    measure: terminal_illness
+    setup: base
+    system_prompt: none
+
+  nationality_illness_hospital:
+    factor: nationality
+    measure: terminal_illness
+    setup: hospital
+    N_values: original
+    option_phrasing: original

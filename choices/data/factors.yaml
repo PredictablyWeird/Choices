@@ -1,0 +1,34 @@
+factors:
+  gender:
+    name: Gender
+    values:
+      - male
+      - female
+      - transgender
+
+  ethnicity:
+    name: Ethnicity
+    values:
+      - White
+      - Black
+      - Hispanic
+      - South Asian
+      - East Asian
+      - Middle Eastern
+
+  age_group:
+    name: Age group
+    values:
+      - young (18-35)
+      - middle (36-55)
+      - older (56-75)
+      - elderly (76+)
+
+  nationality:
+    name: Nationality
+    values:
+      #- American
+      - German
+      - Japanese
+      - Nigerian
+      #- Chinese
