@@ -7,8 +7,9 @@ import string
 import time
 from abc import ABC, abstractmethod
 from base64 import b64encode
+from dataclasses import dataclass
 from functools import wraps
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 import google.generativeai as genai
 import openai
@@ -27,6 +28,28 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 
 load_dotenv()
+
+
+# =================== Response Interface ===================
+@dataclass
+class LLMResponse:
+    """
+    Standard response interface for all LLM agents.
+
+    Attributes:
+        content: The main response content from the LLM.
+        reasoning_summary: Optional summary of the LLM's reasoning (e.g., from o1/o3 models).
+        reasoning_type: The type of reasoning used. One of:
+            - "NO_REASONING": No reasoning was requested
+            - "REASONING_BEFORE": Reasoning appears before the answer
+            - "REASONING_AFTER": Reasoning appears after the answer
+    """
+
+    content: Optional[str]
+    reasoning_summary: Optional[str] = None
+    reasoning_type: Literal["NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"] = (
+        "NO_REASONING"
+    )
 
 
 # =================== Utils ===================
@@ -309,7 +332,7 @@ class OpenAIAgent(LLMAgent):
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff
 
-            results[message_idx] = response
+            results[message_idx] = LLMResponse(content=response)
 
         tasks = [process_message(message_idx) for message_idx in range(len(messages))]
         for f in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
@@ -470,7 +493,15 @@ class OpenAIAgentReasoning(OpenAIAgent):
                                     reasoning_summary = out.content[0].text
                             else:
                                 reasoning_summary = None
-            results[message_idx] = (response, reasoning_summary)
+            # Determine reasoning type based on whether reasoning was requested/returned
+            reasoning_type = (
+                "REASONING_BEFORE" if reasoning_summary is not None else "NO_REASONING"
+            )
+            results[message_idx] = LLMResponse(
+                content=response,
+                reasoning_summary=reasoning_summary,
+                reasoning_type=reasoning_type,
+            )
 
         # Create a task for each message
         tasks = [process_message(i) for i in range(len(messages))]
@@ -1349,7 +1380,7 @@ class LiteLLMAgent:
                     response = completion_res.choices[0].message.content.strip()
                     break  # done with retries
 
-            results[message_idx] = response
+            results[message_idx] = LLMResponse(content=response)
 
         # Create a task for each message
         tasks = [process_message(i) for i in range(len(messages))]
@@ -1541,7 +1572,7 @@ class BaseAgent:
                     response = completion_res.choices[0].text.strip()
                     break  # done with retries
 
-            results[message_idx] = response
+            results[message_idx] = LLMResponse(content=response)
 
         # Create a task for each message
         tasks = [process_message(i) for i in range(len(messages))]

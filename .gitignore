@@ -53,5 +53,4 @@ htmlcov/
 dmypy.json
 
 # Experiment results
-utility_analysis/experiments/**/results/
-utility_analysis/shared_utilities/options_hierarchical/
+results/

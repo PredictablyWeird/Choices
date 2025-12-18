@@ -5,12 +5,12 @@ Provides structured access to experiment data while maintaining backwards
 compatibility with existing analysis scripts.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from .variable import Variable, AnalysisConfig
+from .variable import AnalysisConfig, Variable
 
 
 @dataclass
@@ -285,7 +285,7 @@ class ExperimentResults:
             save_dir: Directory to save to
             save_suffix: Suffix for filenames
         """
-        # Import convert_numpy here to avoid circular imports
+        # Import here to avoid circular imports
         import numpy as np
 
         def convert_numpy(obj):

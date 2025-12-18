@@ -11,18 +11,17 @@ from .experiment import (
     ExperimentConfig,
     PromptConfig,
 )
-
-from .variable import (
-    Variable,
-    AnalysisConfig,
-    AnalysisType,
-)
-
+from .llm_agent import LLMResponse
 from .results import (
+    ExperimentOption,
     ExperimentResults,
     PreferenceGraphResults,
     UtilityModelResults,
-    ExperimentOption,
+)
+from .variable import (
+    AnalysisConfig,
+    AnalysisType,
+    Variable,
 )
 
 __all__ = [
@@ -36,4 +35,5 @@ __all__ = [
     "PreferenceGraphResults",
     "UtilityModelResults",
     "ExperimentOption",
+    "LLMResponse",
 ]

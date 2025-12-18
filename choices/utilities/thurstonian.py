@@ -539,10 +539,11 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
             prompts=prompt_list,
             system_message=self.system_message,
             K=self.K,
+            reasoning_type=self.with_reasoning,
         )
 
         parsed_responses, reasoning_results, reasoning_summaries = (
-            parse_responses_forced_choice(responses, with_reasoning=self.with_reasoning)
+            parse_responses_forced_choice(responses)
         )
         processed_preference_data = self.process_responses(
             graph=graph,
@@ -603,12 +604,11 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
                 prompts=prompt_list,
                 system_message=self.system_message,
                 K=self.K,
+                reasoning_type=self.with_reasoning,
             )
 
             parsed_responses, reasoning_results, reasoning_summaries = (
-                parse_responses_forced_choice(
-                    responses, with_reasoning=self.with_reasoning
-                )
+                parse_responses_forced_choice(responses)
             )
             processed_preference_data = self.process_responses(
                 graph=graph,

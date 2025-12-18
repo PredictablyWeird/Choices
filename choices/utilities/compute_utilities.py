@@ -1,25 +1,24 @@
 import asyncio
-import numpy as np
-import random
+import copy
 import itertools
 import os
-import copy
-import networkx as nx
+import random
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ..utils import create_agent, load_config, evaluate_holdout_set
+import networkx as nx
+import numpy as np
+
 from ..results import (
+    ExperimentOption,
     ExperimentResults,
     PreferenceGraphResults,
     UtilityModelResults,
-    ExperimentOption,
 )
+from ..utils import create_agent, evaluate_holdout_set, load_config
 from ..variable import AnalysisConfig
-from typing import Dict, List, Tuple, Any, Optional, Callable
-
 from .thurstonian import (
     ThurstonianActiveLearningUtilityModel,
 )
-
 
 # ===================== DEFAULT PROMPTS ===================== #
 
@@ -389,13 +388,13 @@ def _save_example_prompt(
     prompt_text = comparison_prompt_generator(node_a, node_b)
 
     # Create full example with system message
-    full_example = f"System Message:\n{system_message}\n\n{'='*60}\n\n{prompt_text}"
+    full_example = f"System Message:\n{system_message}\n\n{'=' * 60}\n\n{prompt_text}"
 
     # Save to file
     example_path = os.path.join(save_path, "example_prompt.txt")
     with open(example_path, "w") as f:
         f.write(full_example)
-        f.write(f"\n\n{'='*60}\n")
+        f.write(f"\n\n{'=' * 60}\n")
         f.write(f"Option A ID: {node_a_id}\n")
         f.write(f"Option B ID: {node_b_id}\n")
 
@@ -574,7 +573,7 @@ async def compute_utilities(
             "comparison_prompt_generator"
         ],
         system_message=compute_utilities_arguments["system_message"],
-        with_reasoning=compute_utilities_arguments["with_reasoning"],
+        reasoning_type=compute_utilities_arguments["with_reasoning"],
         K=compute_utilities_arguments.get("K", 10),
     )
 

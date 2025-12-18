@@ -18,6 +18,7 @@ from .llm_agent import (
     HuggingFaceAgent,
     HuggingFaceAgentLogitsPrediction,
     LiteLLMAgent,
+    LLMResponse,
     OpenAIAgent,
     OpenAIAgentReasoning,
     vLLMAgent,
@@ -272,22 +273,22 @@ def create_agent(
 
 
 # ========================== GENERATE AND PARSE RESPONSES ========================== #
-def parse_responses_forced_choice(
-    raw_results, with_reasoning="NO_REASONING", choices=["A", "B"], verbose=True
-):
+def parse_responses_forced_choice(raw_results, choices=["A", "B"], verbose=True):
     """
-    Parses generated responses (a dict of {prompt_idx: [list_of_raw_responses]})
+    Parses generated responses (a dict of {prompt_idx: [list_of_LLMResponse]})
     for a forced choice task.
 
-    :param raw_results:     dict of {prompt_idx: [raw_response_1, raw_response_2, ...]}
-    :param with_reasoning:  if 'NO_REASONING', 'REASONING_BEFORE', or 'REASONING_AFTER',  parse based on "Answer: X" and collect reasoning
+    :param raw_results:     dict of {prompt_idx: [LLMResponse_1, LLMResponse_2, ...]}
     :param choices:         a list of two distinct single characters (e.g., ['A','B'])
     :param verbose:         if True, prints counts of longer_than_expected and unparseable
 
-    Returns a tuple of (parsed_results, reasoning_results) where:
+    Returns a tuple of (parsed_results, reasoning_results, reasoning_summaries) where:
         parsed_results: {prompt_idx: ['A', 'B', 'unparseable', ...]}
-        reasoning_results: {prompt_idx: [reasoning_text_1, reasoning_text_2, ...]} (only when with_reasoning is set)
+        reasoning_results: {prompt_idx: [reasoning_text_1, reasoning_text_2, ...]}
+        reasoning_summaries: {prompt_idx: [reasoning_summary_1, reasoning_summary_2, ...]}
     Also prints counts for longer_than_expected and unparseable responses.
+
+    The reasoning_type is determined from each LLMResponse.reasoning_type field.
     """
     parsed_results = {}
     reasoning_results = {}
@@ -319,24 +320,37 @@ def parse_responses_forced_choice(
         if responses is None:
             # e.g., if we exceeded max retries or got timeouts for all
             parsed_results[prompt_idx] = []
-            if with_reasoning in ["REASONING_BEFORE", "REASONING_AFTER"]:
-                reasoning_results[prompt_idx] = []
+            reasoning_results[prompt_idx] = []
             continue
 
         parsed_list = []
         reasoning_list = []
         reasoning_summary_list = []
-        for response, reasoning_summary in responses:
+        for llm_response in responses:
+            # Handle LLMResponse objects
+            if isinstance(llm_response, LLMResponse):
+                response = llm_response.content
+                reasoning_summary = llm_response.reasoning_summary
+                reasoning_type = llm_response.reasoning_type
+            else:
+                # Fallback for backwards compatibility (raw strings or tuples)
+                if isinstance(llm_response, tuple):
+                    response, reasoning_summary = llm_response
+                else:
+                    response = llm_response
+                    reasoning_summary = None
+                reasoning_type = "NO_REASONING"
+
             # If a single response is None (e.g., final timeout), parse as 'unparseable'.
             if response is None:
                 parsed_list.append("unparseable")
-                if with_reasoning in ["REASONING_BEFORE", "REASONING_AFTER"]:
+                if reasoning_type in ["REASONING_BEFORE", "REASONING_AFTER"]:
                     reasoning_list.append("unparseable")
                     reasoning_summary_list.append("unparseable")
                 counts["unparseable"] += 1
                 continue
 
-            if with_reasoning == "REASONING_BEFORE":
+            if reasoning_type == "REASONING_BEFORE":
                 # Reasoning mode: reasoning comes before "Answer: X"
                 # Extract everything before "Answer: X" as reasoning
                 answer_match = reasoning_before_pattern.search(response)
@@ -355,7 +369,7 @@ def parse_responses_forced_choice(
                     reasoning_list.append("unparseable")
                     reasoning_summary_list.append("unparseable")
                     counts["unparseable"] += 1
-            elif with_reasoning == "REASONING_AFTER":
+            elif reasoning_type == "REASONING_AFTER":
                 # Reasoning mode: "Answer: X" comes first, then everything after it is reasoning
                 # Pattern extracts: Answer: X [everything after]
                 answer_match = reasoning_after_pattern.search(response)
@@ -688,6 +702,7 @@ async def generate_responses(
     prompt_idx_to_key=None,
     cached_responses_mapping=None,
     verbose=True,
+    reasoning_type="NO_REASONING",
 ):
     """
     Generates responses from the model for a list of prompts asynchronously.
@@ -702,9 +717,11 @@ async def generate_responses(
         prompt_idx_to_key: Mapping from prompt indices to cache keys
         cached_responses_mapping: Dictionary of cached responses
         verbose: Whether to print verbose output
+        reasoning_type: The reasoning type for parsing responses. One of:
+            "NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"
 
     Returns:
-        A dictionary mapping prompt indices to their generated responses.
+        A dictionary mapping prompt indices to their generated responses (LLMResponse objects).
     """
 
     # If using cached responses, just return them unmodified (raw)
@@ -749,6 +766,11 @@ async def generate_responses(
     else:
         responses = agent.completions_batch(messages_k)
 
+    # Set reasoning_type on all LLMResponse objects (unless already set by agent)
+    for i, resp in enumerate(responses):
+        if isinstance(resp, LLMResponse) and resp.reasoning_type == "NO_REASONING":
+            resp.reasoning_type = reasoning_type
+
     # Reshape responses into groups of K for each prompt
     num_prompts = len(prompts)
     responses_by_prompt = {}
@@ -764,7 +786,7 @@ async def evaluate_holdout_set(
     utilities,
     comparison_prompt_generator: Callable[[Dict[str, Any], Dict[str, Any]], str],
     system_message=None,
-    with_reasoning=False,
+    reasoning_type="NO_REASONING",
     K=10,
 ):
     """
@@ -777,7 +799,8 @@ async def evaluate_holdout_set(
         utilities: Dictionary of computed utilities
         comparison_prompt_generator: Callable function that takes (option_A_dict, option_B_dict) and returns a prompt string
         system_message: Optional system message for the agent
-        with_reasoning: Whether to use reasoning-based response parsing
+        reasoning_type: The reasoning type for parsing responses. One of:
+            "NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"
         K: Number of responses to generate per prompt
 
     Returns:
@@ -798,12 +821,16 @@ async def evaluate_holdout_set(
 
     # Generate responses for holdout edges
     holdout_responses = await generate_responses(
-        agent=agent, prompts=holdout_prompts, system_message=system_message, K=K
+        agent=agent,
+        prompts=holdout_prompts,
+        system_message=system_message,
+        K=K,
+        reasoning_type=reasoning_type,
     )
 
     # Parse responses and process them into preference data
     parse_result, reasoning_results, reasoning_summaries = (
-        parse_responses_forced_choice(holdout_responses, with_reasoning=with_reasoning)
+        parse_responses_forced_choice(holdout_responses)
     )
     processed_preference_data = utility_model.process_responses(
         graph=graph,

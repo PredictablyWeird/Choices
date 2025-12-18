@@ -143,9 +143,16 @@ class UtilityModel(ABC):
                     "flipped_reasoning_summaries": [],
                 }
 
+            # Extract content from LLMResponse objects for storage
+            from ..llm_agent import LLMResponse
+
+            content_list = [
+                r.content if isinstance(r, LLMResponse) else r for r in response_list
+            ]
+
             # We store the raw and parsed responses in separate buckets
             if direction == "original":
-                pair_data[pair_key]["original_responses"].extend(response_list)
+                pair_data[pair_key]["original_responses"].extend(content_list)
                 pair_data[pair_key]["original_parsed"].extend(parsed_list)
                 pair_data[pair_key]["original_reasoning_summaries"].extend(
                     reasoning_summary_list
@@ -153,7 +160,7 @@ class UtilityModel(ABC):
                 if reasoning_list:
                     pair_data[pair_key]["original_reasoning"].extend(reasoning_list)
             else:  # 'flipped'
-                pair_data[pair_key]["flipped_responses"].extend(response_list)
+                pair_data[pair_key]["flipped_responses"].extend(content_list)
                 pair_data[pair_key]["flipped_parsed"].extend(parsed_list)
                 pair_data[pair_key]["flipped_reasoning_summaries"].extend(
                     reasoning_summary_list
