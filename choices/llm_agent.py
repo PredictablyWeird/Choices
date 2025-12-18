@@ -368,6 +368,7 @@ class OpenAIAgentReasoning(OpenAIAgent):
         super().__init__(temperature, max_tokens)
         self.model = model
         self.max_tokens = max_tokens
+        self.timeout = timeout
         if model in ["gpt-5", "o1", "o1-mini"]:
             base_url = "https://api.openai.com/v1"
             api_key = os.getenv("OPENAI_API_KEY")
@@ -422,14 +423,14 @@ class OpenAIAgentReasoning(OpenAIAgent):
                             completion_kwargs["reasoning"] = self.reasoning_effort
                         if self.text_verbosity:
                             completion_kwargs["text"] = self.text_verbosity
-                        print(f"Making request for message {message_idx}")
+                        # print(f"Making request for message {message_idx}")
                         completion_res = await self.async_client.responses.create(
                             model=self.model,
                             instructions=message[0]["content"],
                             input=message[1]["content"],
                             **completion_kwargs,
                         )
-                        print(f"Request for message {message_idx} completed")
+                        # print(f"Request for message {message_idx} completed")
                     except asyncio.TimeoutError:
                         counts["timeouts"] += 1
 
@@ -493,6 +494,9 @@ class OpenAIAgentReasoning(OpenAIAgent):
                                     reasoning_summary = out.content[0].text
                             else:
                                 reasoning_summary = None
+                    # Success means we don't have to retry again
+                    break
+
             # Determine reasoning type based on whether reasoning was requested/returned
             reasoning_type = (
                 "REASONING_BEFORE" if reasoning_summary is not None else "NO_REASONING"
@@ -512,9 +516,9 @@ class OpenAIAgentReasoning(OpenAIAgent):
         for coro in tqdm_asyncio.as_completed(
             tasks, total=len(tasks), desc="LLM calls"
         ):
-            print(f"Waiting for message {coro_count}")
+            # print(f"Waiting for message {coro_count}")
             await coro
-            print(f"Completed message {coro_count}")
+            # print(f"Completed message {coro_count}")
             coro_count += 1
 
         return [results[i] for i in range(len(messages))]

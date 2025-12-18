@@ -1,4 +1,5 @@
 import asyncio
+
 from choices import (
     AnalysisConfig,
     AnalysisType,
@@ -47,9 +48,7 @@ async def main():
         experiment_config=ExperimentConfig(
             model="deepseek-v3-2-non-reasoning",  # deepseek-v3-2-non-reasoning, deepseek-v3-2-reasoning
             utility_config_key="minimal_debug",
-            utility_config_path="../config/compute_utilities.yaml",
             agent_config_key="default_with_reasoning",
-            agent_config_path="../config/create_agent.yaml",
         ),
         analysis_config=AnalysisConfig(
             fields={
