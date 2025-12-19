@@ -356,27 +356,44 @@ class OpenAIAgent(LLMAgent):
                 yield text
 
 
-class OpenAIAgentReasoning(OpenAIAgent):
+class ReasoningAgent(OpenAIAgent):
+    """
+    Agent for models with reasoning capabilities (e.g., o1, gpt-5, deepseek).
+    Use this agent when reasoning_effort is configured in the model config.
+    """
+
     def __init__(
         self,
         temperature: float = 0.0,
         max_tokens: int = 2048,
         model: str = "gpt-5",
+        model_type: str = "openai",
         concurrency_limit: int = 100,
         timeout: int = 5,
         reasoning_effort: Optional[str] = None,
         text_verbosity: Optional[str] = None,
     ):
         super().__init__(temperature, max_tokens)
-        self.model = model
+        self.model = (
+            model[len("openrouter/") :] if model.startswith("openrouter/") else model
+        )  # For reasoning models we aren't using litellm
+        self.model_type = model_type
         self.max_tokens = max_tokens
         self.timeout = timeout
-        if model in ["gpt-5", "o1", "o1-mini"]:
+
+        # Infer API key and base URL from model_type
+        if model_type == "openai":
             base_url = "https://api.openai.com/v1"
             api_key = os.getenv("OPENAI_API_KEY")
-        else:
+        elif model_type == "openrouter":
             base_url = "https://openrouter.ai/api/v1"
             api_key = os.getenv("OPENROUTER_API_KEY")
+        else:
+            raise ValueError(
+                f"ReasoningAgent does not support model_type '{model_type}'. "
+                "Must be 'openai' or 'openrouter'."
+            )
+
         self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.concurrency_limit = concurrency_limit
         self.reasoning_effort = reasoning_effort
@@ -385,8 +402,6 @@ class OpenAIAgentReasoning(OpenAIAgent):
         self.use_jitter = True
         self.max_delay = 10.0
         self.base_delay = 1.0
-        self.openai_reasoning_models = ["gpt-5", "o1", "o1-mini"]
-        self.openrouter_reasoning_models = ["deepseek-v3.2"]
 
     async def async_completions(
         self, messages: List[List[Dict]], verbose: bool = True, **kwargs
@@ -483,21 +498,19 @@ class OpenAIAgentReasoning(OpenAIAgent):
 
                     # Success: parse the response
                     response = completion_res.output_text
-                    # Access reasoning traces based on model type
+                    # Access reasoning traces based on model_type
                     for out in completion_res.output:
                         if out.type == "reasoning":
-                            model_name = self.model.split("/")[-1]
-                            if model_name in self.openai_reasoning_models:
+                            if self.model_type == "openai":
                                 # OpenAI models provide reasoning summaries
                                 if len(out.summary) > 0:
                                     reasoning_summary = out.summary[0].text
                                 else:
                                     reasoning_summary = None
-                            elif model_name in self.openrouter_reasoning_models:
-                                # Other reasoning models (e.g., deepseek) provide full traces
+                            elif self.model_type == "openrouter":
+                                # OpenRouter reasoning models (e.g., deepseek) provide full traces
                                 if len(out.content):
                                     reasoning = out.content[0].text
-                            # else: no reasoning captured
                     # Success means we don't have to retry again
                     break
 

@@ -20,7 +20,7 @@ from .llm_agent import (
     LiteLLMAgent,
     LLMResponse,
     OpenAIAgent,
-    OpenAIAgentReasoning,
+    ReasoningAgent,
     vLLMAgent,
     vLLMAgentBaseModel,
 )
@@ -190,6 +190,22 @@ def create_agent(
                 f"No API key found for {model_type}. Please add {env_var_name} to your .env file."
             )
 
+        # Use ReasoningAgent when reasoning_effort is configured
+        if reasoning_effort is not None and model_type in ["openai", "openrouter"]:
+            print(
+                f"Using ReasoningAgent for model {model_name} with reasoning effort = {reasoning_effort} and text verbosity = {text_verbosity}"
+            )
+            return ReasoningAgent(
+                model=model_name,
+                model_type=model_type,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                concurrency_limit=concurrency_limit,
+                timeout=kwargs.get("base_timeout", 5),
+                reasoning_effort=reasoning_effort,
+                text_verbosity=text_verbosity,
+            )
+
         return LiteLLMAgent(
             model=model_name,
             temperature=temperature,
@@ -198,19 +214,6 @@ def create_agent(
             accepts_system_message=accepts_system_message,
             base_timeout=kwargs.get("base_timeout", 5),
             extra_body=extra_body,
-            reasoning_effort=reasoning_effort,
-            text_verbosity=text_verbosity,
-        )
-    elif model_type == "openai_reasoning" or model_type == "openrouter_reasoning":
-        print(
-            f"Using OpenAI agent for model {model_name} with reasoning effort = {reasoning_effort} and text verbosity = {text_verbosity}  "
-        )
-        return OpenAIAgentReasoning(
-            model=model_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            concurrency_limit=concurrency_limit,
-            timeout=kwargs.get("base_timeout", 5),
             reasoning_effort=reasoning_effort,
             text_verbosity=text_verbosity,
         )
@@ -268,7 +271,7 @@ def create_agent(
         )
     else:
         raise ValueError(
-            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'huggingface_logits', 'vllm', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
+            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'vllm', 'vllm_base_model', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
         )
 
 
@@ -760,7 +763,7 @@ async def generate_responses(
         responses = await agent.async_completions(
             messages_k, base_timeout=timeout, verbose=verbose
         )
-    elif isinstance(agent, OpenAIAgentReasoning) or isinstance(agent, OpenAIAgent):
+    elif isinstance(agent, ReasoningAgent) or isinstance(agent, OpenAIAgent):
         print(
             f"sending messages to openai reasoning agent: len(messages_k): {len(messages_k)}"
         )
