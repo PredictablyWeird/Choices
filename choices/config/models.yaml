@@ -11,9 +11,24 @@ claude-sonnet-4-5:
       # Unsure if this has an effect, as setting to true doesn't seem to change anything
       # (But responses are only 4 tokens long so maybe it doesn't reason by default with this configuration?)
 
+gpt-5-2:
+  model_name: "gpt-5.2"
+  model_type: openai
+  reasoning_effort:
+    effort: "low"
+    summary: "detailed"
+  #text_verbosity:
+  #  verbosity: "low" # Options: "low", "medium", "high"
+
+gpt-5-2-non-reasoning:
+  model_name: "gpt-5.2"
+  model_type: openai
+  reasoning_effort:
+    effort: "none"
+
 gpt-5:
   model_name: "gpt-5"
-  model_type: openai_reasoning # use this type for gpt-5 reasoning models that can provide reasoning summary
+  model_type: openai
   reasoning_effort:
       effort: "low"
       summary: "detailed"
@@ -21,19 +36,19 @@ gpt-5:
     verbosity: "low" # Options: "low", "medium", "high"
 
 deepseek-v3-2-reasoning:
-  model_name: "deepseek/deepseek-v3.2"
-  model_type: openrouter_reasoning #
+  model_name: "openrouter/deepseek/deepseek-v3.2"
+  model_type: openrouter
   reasoning_effort:
     enabled: true
     effort: "low"
 
 deepseek-v3-2-non-reasoning:
-  model_name: "deepseek/deepseek-v3.2"
-  model_type: openrouter_reasoning #
-  reasoning_effort:
-    enabled: false
-  text_verbosity:
-    verbosity: "low" # Options: "low", "medium", "high"
+  model_name: "openrouter/deepseek/deepseek-v3.2"
+  model_type: openrouter
+  # No reasoning_effort set, so LiteLLMAgent will be used instead of ReasoningAgent
+  extra_body:
+    text:
+      verbosity: "low"  # Options: "low", "medium", "high"
 
 
 # ------------------------------

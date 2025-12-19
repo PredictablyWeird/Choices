@@ -47,7 +47,7 @@ async def main():
         prompt_config=gender_prompt,  # Uses defaults
         experiment_config=ExperimentConfig(
             # model="deepseek-v3-2-reasoning",  # deepseek-v3-2-non-reasoning, deepseek-v3-2-reasoning
-            model="gpt-5",
+            model="gpt-5-2-non-reasoning",
             utility_config_key="minimal_debug",
             agent_config_key="default_with_reasoning",
         ),
