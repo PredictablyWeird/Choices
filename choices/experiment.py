@@ -41,7 +41,9 @@ class ExperimentConfig:
     def __post_init__(self):
         """Resolve default config paths to absolute paths."""
         if self.utility_config_path is None:
-            self.utility_config_path = _get_default_config_path("compute_utilities.yaml")
+            self.utility_config_path = _get_default_config_path(
+                "compute_utilities.yaml"
+            )
         if self.agent_config_path is None:
             self.agent_config_path = _get_default_config_path("create_agent.yaml")
 
