@@ -880,6 +880,7 @@ def create_exchange_rates_plots(
     output_dir: str = None,
     plot_title: str = None,
     model_name: str = None,
+    negate_utilities: bool = False,
 ):
     """
     Create exchange rate plots for an experiment.
@@ -894,6 +895,8 @@ def create_exchange_rates_plots(
         output_dir: Directory to save plots (default: same as results_dir)
         plot_title: Custom plot title
         model_name: Model name (default: extracted from directory)
+        negate_utilities: If True, negate utilities (use for "bads" like deaths where
+            more N = lower utility, to flip negative slopes to positive)
 
     Returns:
         Dictionary of figures
@@ -902,6 +905,11 @@ def create_exchange_rates_plots(
     df, numerical_var = load_exchange_rates_data(
         results_dir, factor_name, numerical_var
     )
+
+    # Negate utilities if requested (for "bads" like deaths)
+    if negate_utilities:
+        df["utility_mean"] = -df["utility_mean"]
+        print("Negated utilities (for 'bads' like deaths)")
 
     if len(df) == 0:
         raise ValueError(
@@ -1054,6 +1062,11 @@ Example usage:
         default=None,
         help="Model name (default: extracted from directory)",
     )
+    parser.add_argument(
+        "--negate_utilities",
+        action="store_true",
+        help="Negate utilities (use for 'bads' like deaths where more N = lower utility)",
+    )
 
     args = parser.parse_args()
 
@@ -1067,6 +1080,7 @@ Example usage:
         output_dir=args.output_dir,
         plot_title=args.plot_title,
         model_name=args.model_name,
+        negate_utilities=args.negate_utilities,
     )
 
 

@@ -126,6 +126,37 @@ def load_config(
 # ========================== GENERATE AND PARSE RESPONSES ========================== #
 
 
+def model_has_active_reasoning(model_key: str) -> bool:
+    """
+    Check if a model has active reasoning enabled (reasoning_effort is set and not "none").
+
+    Args:
+        model_key: Key of the model in models.yaml
+
+    Returns:
+        True if the model has active reasoning, False otherwise
+    """
+    models_yaml_path = os.path.join(os.path.dirname(__file__), "config", "models.yaml")
+    with open(models_yaml_path, "r") as f:
+        models_config = yaml.safe_load(f)
+
+    model_config = models_config.get(model_key)
+    if model_config is None:
+        return False
+
+    reasoning_effort = model_config.get("reasoning_effort")
+    if reasoning_effort is None:
+        return False
+
+    # Check if effort is "none" (no active reasoning)
+    effort = (
+        reasoning_effort.get("effort", None)
+        if isinstance(reasoning_effort, dict)
+        else reasoning_effort
+    )
+    return effort is not None and effort != "none"
+
+
 def create_agent(
     model_key,
     temperature=0.0,

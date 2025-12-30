@@ -33,8 +33,8 @@ gender_prompt.ending = (
 
 experiment_config = ExperimentConfig(
     model="deepseek-v3-2-non-reasoning",
-    utility_config_key="thurstonian_active_learning_k5",
-    agent_config_key="default_with_reasoning",
+    utility_config_key="minimal_debug",
+    # agent_config_key auto-selects based on model reasoning + prompt reasoning
 )
 
 
