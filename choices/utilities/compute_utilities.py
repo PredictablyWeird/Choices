@@ -33,7 +33,7 @@ class PreferenceEdge:
         option_A: Dict[str, Any],
         option_B: Dict[str, Any],
         probability_A: float,
-        aux_data: Dict[str, Any] = None,
+        aux_data: Dict[str, Any] | None = None,
     ):
         """
         Initialize a preference edge.
@@ -292,7 +292,7 @@ class PreferenceGraph:
                 self.training_edges.add(edge_index)
 
     def sample_regular_graph(
-        self, degree: int, seed: int = None
+        self, degree: int, seed: int | None = None
     ) -> List[Tuple[Any, Any]]:
         """
         Sample edge indices forming a regular graph of given degree from training edges pool.
@@ -336,7 +336,7 @@ class PreferenceGraph:
         return initial_pairs
 
     def sample_random_edges(
-        self, n_edges: int, seed: int = None
+        self, n_edges: int, seed: int | None = None
     ) -> List[Tuple[Any, Any]]:
         """
         Sample random edge indices from training edges pool.

@@ -10,9 +10,11 @@ Usage:
     python triage.py --factor nationality --patients cancer_patients.yaml
 """
 
-import asyncio
-import yaml
 import argparse
+import asyncio
+from typing import Optional
+
+import yaml
 
 from choices import (
     AnalysisConfig,
@@ -22,7 +24,6 @@ from choices import (
     PromptConfig,
     Variable,
 )
-
 
 # ============= Configuration =============
 
@@ -50,8 +51,7 @@ def load_factor(yaml_path: str, factor_id: str):
 
     if factor_id not in data["factors"]:
         raise ValueError(
-            f"Factor '{factor_id}' not found. "
-            f"Available: {list(data['factors'].keys())}"
+            f"Factor '{factor_id}' not found. Available: {list(data['factors'].keys())}"
         )
 
     factor_data = data["factors"][factor_id]
@@ -258,7 +258,7 @@ Unit: Step-down. All patients are full code and have previously expressed willin
 
 
 async def run_triage_experiment(
-    factor_id: str = None,
+    factor_id: Optional[str] = None,
     patients_path: str = DEFAULT_PATIENTS_PATH,
     factors_path: str = DEFAULT_FACTORS_PATH,
     model: str = "gpt-4o-mini",
@@ -305,7 +305,7 @@ async def run_triage_experiment(
             Variable(
                 name="factor_value",
                 values=factor_info["values"],
-                description=f'{factor_info["name"]} factor',
+                description=f"{factor_info['name']} factor",
             )
         )
         experiment_name = f"triage_{patient_type}_{factor_info['id']}"

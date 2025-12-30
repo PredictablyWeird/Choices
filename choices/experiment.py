@@ -4,14 +4,14 @@ Experiment class for defining and running preference elicitation experiments.
 Uses the existing PreferenceGraph from compute_utilities.
 """
 
-import os
 import itertools
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 from .utilities import compute_utilities
-from .variable import Variable, AnalysisConfig
+from .variable import AnalysisConfig, Variable
 
 
 @dataclass
@@ -235,11 +235,11 @@ class Experiment:
         """
         print(f"os.getcwd(): {os.getcwd()}")
         if verbose:
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print(f"Running Experiment: {self.name}")
             print(f"Run ID: {self.run_id}")
             print(f"Model: {self.experiment_config.model}")
-            print(f"{'='*80}\n")
+            print(f"{'=' * 80}\n")
 
         # Get options
         options = self.get_options()
@@ -278,7 +278,7 @@ class Experiment:
             compute_utilities_config_key=self.experiment_config.utility_config_key,
             save_dir=save_path,
             save_suffix=None,
-            with_reasoning=self.prompt_config.with_reasoning,
+            with_reasoning=(self.prompt_config.with_reasoning != "NO_REASONING"),
             system_message=self.prompt_config.system_prompt,
             comparison_prompt_generator=self.prompt_config.generate_prompt,
             edge_filter=self.edge_filter,
@@ -287,12 +287,12 @@ class Experiment:
         )
 
         if verbose:
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print("Experiment complete!")
             print(
                 f"Computed utilities for {len(results.utility_model.utilities)} options"
             )
             print(f"Results saved to: {save_path}")
-            print(f"{'='*80}\n")
+            print(f"{'=' * 80}\n")
 
         return results
