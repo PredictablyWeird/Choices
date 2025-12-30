@@ -49,7 +49,7 @@ async def main():
             # model="deepseek-v3-2-reasoning",  # deepseek-v3-2-non-reasoning, deepseek-v3-2-reasoning
             model="gpt-5-2-non-reasoning",
             utility_config_key="minimal_debug",
-            agent_config_key="default_with_reasoning",
+            # agent_config_key auto-selects based on model reasoning + prompt reasoning
         ),
         analysis_config=AnalysisConfig(
             fields={

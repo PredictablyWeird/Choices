@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from .utilities import compute_utilities
+from .utils import model_has_active_reasoning
 from .variable import AnalysisConfig, Variable
 
 
@@ -253,13 +254,16 @@ class Experiment:
                 print(f"  - {opt['label']}")
 
         # Determine agent config key
+        # Use default_with_reasoning if either:
+        # 1. Prompt requests reasoning (with_reasoning != "NO_REASONING")
+        # 2. Model has active reasoning (reasoning_effort is set and not "none")
         agent_config_key = self.experiment_config.agent_config_key
         if agent_config_key is None:
-            agent_config_key = (
-                "default_with_reasoning"
-                if self.prompt_config.with_reasoning
-                else "default"
+            uses_reasoning = (
+                self.prompt_config.with_reasoning != "NO_REASONING"
+                or model_has_active_reasoning(self.experiment_config.model)
             )
+            agent_config_key = "default_with_reasoning" if uses_reasoning else "default"
 
         # Create save directory
         save_path = self.get_save_dir(base_dir=save_dir)
