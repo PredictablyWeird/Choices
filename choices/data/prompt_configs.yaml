@@ -120,6 +120,12 @@ prompt_configs:
 
   social_value_action:
     factor: social_value
-    measure: terminal_illness
+    measure: deaths
+    option_phrasing: action
+    setup: action
+
+  social_status_action:
+    factor: social_status
+    measure: deaths
     option_phrasing: action
     setup: action

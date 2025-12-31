@@ -73,6 +73,10 @@ ALL_FACTORS = {
             "doctor": "doctors",
         },
     ),
+    "social_status": Variable(
+        name="social_status",
+        values=["very low", "low", "medium", "high", "very high"],
+    ),
 }
 
 # N value options
@@ -174,6 +178,19 @@ def create_option_text_fn(factor_name: str, measure: str, option_phrasing: str):
                 else:
                     plural = ALL_FACTORS["social_value"].get_plural(factor_value)
                     return f"{n} {plural} are saved from {condition}."
+
+        elif factor_name == "social_status":
+            condition = "death" if measure == "deaths" else "terminal illness"
+            if option_phrasing == "action":
+                if n == 1:
+                    return f"You save 1 person with {factor_value} social status from {condition}."
+                else:
+                    return f"You save {n} people with {factor_value} social status from {condition}."
+            else:
+                if n == 1:
+                    return f"1 person with {factor_value} social status is saved from {condition}."
+                else:
+                    return f"{n} people with {factor_value} social status are saved from {condition}."
 
         elif option_phrasing == "patients":
             patients = f"{n} patients" if n > 1 else "A patient"
