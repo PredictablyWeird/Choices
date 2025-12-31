@@ -117,3 +117,9 @@ prompt_configs:
   social_value_terminal_illness:
     factor: social_value
     measure: terminal_illness
+
+  social_value_action:
+    factor: social_value
+    measure: terminal_illness
+    option_phrasing: action
+    setup: action
