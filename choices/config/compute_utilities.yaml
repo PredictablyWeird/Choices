@@ -57,7 +57,7 @@ thurstonian_active_learning_k5_reasoning:
   utility_model_class: "ThurstonianActiveLearningUtilityModel"
   utility_model_arguments:
     unparseable_mode: "distribution"
-    with_reasoning: true
+    reasoning_mode: "before"
     num_epochs: 1000
     learning_rate: 0.01
     edge_multiplier: 2

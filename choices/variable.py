@@ -9,6 +9,36 @@ from typing import List, Any, Dict, Optional
 from enum import Enum
 
 
+class ReasoningMode(Enum):
+    """Controls how the model should provide reasoning with its answer."""
+
+    NONE = "none"  # Just answer A or B
+    BEFORE = "before"  # Reason first, then "Answer: A/B"
+    AFTER = "after"  # "Answer: A/B" first, then explain
+
+    @classmethod
+    def from_value(cls, value) -> "ReasoningMode":
+        """Convert from various formats (string, bool, enum) to ReasoningMode."""
+        if isinstance(value, cls):
+            return value
+        if value is None or value is False:
+            return cls.NONE
+        if value is True:
+            return cls.BEFORE  # Default for legacy True
+        if isinstance(value, str):
+            # Handle legacy string formats
+            legacy_map = {
+                "NO_REASONING": cls.NONE,
+                "REASONING_BEFORE": cls.BEFORE,
+                "REASONING_AFTER": cls.AFTER,
+            }
+            if value in legacy_map:
+                return legacy_map[value]
+            # Handle new format
+            return cls(value.lower())
+        raise ValueError(f"Cannot convert {value!r} to ReasoningMode")
+
+
 class AnalysisType(Enum):
     """Analysis type for a field in an option."""
 

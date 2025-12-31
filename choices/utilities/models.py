@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from ..results import PreferenceGraph
+    from ..variable import ReasoningMode
 
 
 class UtilityModel(ABC):
@@ -20,7 +21,7 @@ class UtilityModel(ABC):
         unparseable_mode: str,
         comparison_prompt_generator: Callable[[Dict[str, Any], Dict[str, Any]], str],
         system_message: str,
-        with_reasoning: bool,
+        reasoning_mode: "ReasoningMode",
         **kwargs,
     ):
         """
@@ -30,9 +31,11 @@ class UtilityModel(ABC):
             unparseable_mode: How to handle unparseable responses (can be "skip", "random", or "distribution")
             comparison_prompt_generator: Callable function that takes (option_A_dict, option_B_dict) and returns a prompt string
             system_message: System message for agents that accept a system message
-            with_reasoning: Whether to use response parsing
+            reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER)
             **kwargs: Additional arguments specific to each utility model implementation
         """
+        from ..variable import ReasoningMode
+
         # Validate unparseable_mode
         valid_modes = ["skip", "random", "distribution"]
         if unparseable_mode not in valid_modes:
@@ -44,7 +47,10 @@ class UtilityModel(ABC):
         self.unparseable_mode = unparseable_mode
         self.comparison_prompt_generator = comparison_prompt_generator
         self.system_message = system_message
-        self.with_reasoning = with_reasoning
+        # Convert from legacy formats if needed
+        if not isinstance(reasoning_mode, ReasoningMode):
+            reasoning_mode = ReasoningMode.from_value(reasoning_mode)
+        self.reasoning_mode = reasoning_mode
 
     @abstractmethod
     async def fit(

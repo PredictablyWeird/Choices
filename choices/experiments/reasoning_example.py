@@ -6,6 +6,7 @@ from choices import (
     Experiment,
     ExperimentConfig,
     PromptConfig,
+    ReasoningMode,
     Variable,
 )
 
@@ -22,8 +23,8 @@ def german_format_option(option: dict) -> str:
 
 # define prompt configurations
 gender_prompt = PromptConfig(
-    with_reasoning="NO_REASONING"
-)  # NO_REASONING, REASONING_BEFORE, REASONING_AFTER
+    reasoning_mode=ReasoningMode.NONE,  # Change as needed
+)
 
 gender_prompt.generate_option_text = format_option
 

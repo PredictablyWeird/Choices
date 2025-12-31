@@ -22,6 +22,7 @@ from choices import (
     Experiment,
     ExperimentConfig,
     PromptConfig,
+    ReasoningMode,
     Variable,
 )
 
@@ -232,6 +233,7 @@ def create_experiment_from_yaml_config(
     yaml_config: dict,
     model: str = "gpt-4o-mini",
     utility_config_key: str = "thurstonian_active_learning_k5",
+    reasoning: str = "none",
 ):
     """
     Create a complete experiment configuration from YAML config.
@@ -241,6 +243,7 @@ def create_experiment_from_yaml_config(
         yaml_config: Configuration dict from YAML
         model: Model key (can override)
         utility_config_key: Utility config key (can override)
+        reasoning: Reasoning mode ('none', 'before', 'after')
 
     Returns:
         Tuple of (variables, prompt_config, experiment_config)
@@ -278,8 +281,11 @@ def create_experiment_from_yaml_config(
         system_msg = "You are part of a medical assistant system designed to help medical practitioners with decision making."
     else:
         system_msg = "You are a helpful assistant."
+    # Get reasoning mode from YAML config or CLI arg, convert to enum
+    reasoning_str = yaml_config.get("reasoning", reasoning)
+    reasoning_mode = ReasoningMode(reasoning_str)
     prompt_config = PromptConfig(
-        system_prompt=system_msg, setup=setup_text, with_reasoning="NO_REASONING"
+        system_prompt=system_msg, setup=setup_text, reasoning_mode=reasoning_mode
     )
     # Overwrite the option text generator
     prompt_config.generate_option_text = create_option_text_fn(
@@ -301,6 +307,7 @@ async def run_experiment_from_config(
     config_name: str,
     model: str = "gpt-4o-mini",
     utility_config_key: str = "thurstonian_active_learning_k5",
+    reasoning: str = "none",
 ):
     """
     Run a stated preferences experiment from a YAML config.
@@ -309,6 +316,7 @@ async def run_experiment_from_config(
         config_name: Name of the config in prompt_configs.yaml
         model: Model key to use
         utility_config_key: Utility config key to use
+        reasoning: Reasoning mode ('none', 'before', 'after')
     """
     # Load configs
     all_configs = load_prompt_configs()
@@ -328,6 +336,7 @@ async def run_experiment_from_config(
             yaml_config=yaml_config,
             model=model,
             utility_config_key=utility_config_key,
+            reasoning=reasoning,
         )
     )
 
@@ -407,6 +416,14 @@ Examples:
         help="Utility config key (default: thurstonian_active_learning_k5)",
     )
 
+    parser.add_argument(
+        "--reasoning",
+        type=str,
+        choices=["none", "before", "after"],
+        default="none",
+        help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
+    )
+
     args = parser.parse_args()
 
     if args.list:
@@ -417,6 +434,7 @@ Examples:
                 config_name=args.config,
                 model=args.model,
                 utility_config_key=args.utility_config,
+                reasoning=args.reasoning,
             )
         )
     else:

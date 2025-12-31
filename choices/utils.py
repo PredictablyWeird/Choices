@@ -24,6 +24,7 @@ from .llm_agent import (
     vLLMAgent,
     vLLMAgentBaseModel,
 )
+from .variable import ReasoningMode
 
 # Load environment variables from .env file
 load_dotenv()
@@ -742,7 +743,7 @@ async def generate_responses(
     prompt_idx_to_key=None,
     cached_responses_mapping=None,
     verbose=True,
-    reasoning_type="NO_REASONING",
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
 ):
     """
     Generates responses from the model for a list of prompts asynchronously.
@@ -757,12 +758,14 @@ async def generate_responses(
         prompt_idx_to_key: Mapping from prompt indices to cache keys
         cached_responses_mapping: Dictionary of cached responses
         verbose: Whether to print verbose output
-        reasoning_type: The reasoning type for parsing responses. One of:
-            "NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"
+        reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER)
 
     Returns:
         A dictionary mapping prompt indices to their generated responses (LLMResponse objects).
     """
+    # Convert to ReasoningMode if needed (for backward compatibility)
+    if not isinstance(reasoning_mode, ReasoningMode):
+        reasoning_mode = ReasoningMode.from_value(reasoning_mode)
 
     # If using cached responses, just return them unmodified (raw)
     if use_cached_responses:
@@ -807,9 +810,16 @@ async def generate_responses(
         responses = agent.completions_batch(messages_k)
 
     # Set reasoning_type on all LLMResponse objects (unless already set by agent)
+    # Convert ReasoningMode to legacy string format for LLMResponse
+    legacy_map = {
+        ReasoningMode.NONE: "NO_REASONING",
+        ReasoningMode.BEFORE: "REASONING_BEFORE",
+        ReasoningMode.AFTER: "REASONING_AFTER",
+    }
+    reasoning_type_str = legacy_map[reasoning_mode]
     for i, resp in enumerate(responses):
         if isinstance(resp, LLMResponse) and resp.reasoning_type == "NO_REASONING":
-            resp.reasoning_type = reasoning_type
+            resp.reasoning_type = reasoning_type_str
 
     # Reshape responses into groups of K for each prompt
     num_prompts = len(prompts)
@@ -826,7 +836,7 @@ async def evaluate_holdout_set(
     utilities,
     comparison_prompt_generator: Callable[[Dict[str, Any], Dict[str, Any]], str],
     system_message=None,
-    reasoning_type="NO_REASONING",
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
     K=10,
 ):
     """
@@ -839,8 +849,7 @@ async def evaluate_holdout_set(
         utilities: Dictionary of computed utilities
         comparison_prompt_generator: Callable function that takes (option_A_dict, option_B_dict) and returns a prompt string
         system_message: Optional system message for the agent
-        reasoning_type: The reasoning type for parsing responses. One of:
-            "NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"
+        reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER)
         K: Number of responses to generate per prompt
 
     Returns:
@@ -865,7 +874,7 @@ async def evaluate_holdout_set(
         prompts=holdout_prompts,
         system_message=system_message,
         K=K,
-        reasoning_type=reasoning_type,
+        reasoning_mode=reasoning_mode,
     )
 
     # Parse responses and process them into preference data

@@ -18,6 +18,7 @@ from .models import UtilityModel
 
 if TYPE_CHECKING:
     from ..results import PreferenceGraph
+    from ..variable import ReasoningMode
 
 
 # ===================== THURSTONIAN HELPER FUNCTIONS ===================== #
@@ -411,7 +412,7 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
         unparseable_mode: str,
         comparison_prompt_generator: Callable[[Dict[str, Any], Dict[str, Any]], str],
         system_message: str,
-        with_reasoning: str,
+        reasoning_mode: "ReasoningMode",
         num_epochs: int = 1000,
         learning_rate: float = 0.01,
         edge_multiplier: float = 2.0,
@@ -433,7 +434,7 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
             unparseable_mode: How to handle unparseable responses
             comparison_prompt_generator: Callable function that takes (option_A_dict, option_B_dict) and returns a prompt string
             system_message: System message for agents that accept a system message
-            with_reasoning: Whether to use response parsing (options: 'REASONING_BEFORE', 'REASONING_AFTER', 'NO_REASONING')
+            reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER)
             num_epochs: Number of epochs for optimization
             learning_rate: Learning rate for optimization
             edge_multiplier: Multiplier for number of edges
@@ -453,7 +454,7 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
             unparseable_mode=unparseable_mode,
             comparison_prompt_generator=comparison_prompt_generator,
             system_message=system_message,
-            with_reasoning=with_reasoning,
+            reasoning_mode=reasoning_mode,
         )
 
         # Store model-specific arguments as attributes
@@ -539,7 +540,7 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
             prompts=prompt_list,
             system_message=self.system_message,
             K=self.K,
-            reasoning_type=self.with_reasoning,
+            reasoning_mode=self.reasoning_mode,
         )
 
         parsed_responses, reasoning_results, reasoning_summaries = (
@@ -604,7 +605,7 @@ class ThurstonianActiveLearningUtilityModel(UtilityModel):
                 prompts=prompt_list,
                 system_message=self.system_message,
                 K=self.K,
-                reasoning_type=self.with_reasoning,
+                reasoning_mode=self.reasoning_mode,
             )
 
             parsed_responses, reasoning_results, reasoning_summaries = (
