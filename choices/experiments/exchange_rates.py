@@ -61,6 +61,17 @@ ALL_FACTORS = {
         name="age_group",
         values=["young (18-35)", "middle (36-55)", "older (56-75)", "elderly (76+)"],
     ),
+    "social_value": Variable(
+        name="social_value",
+        values=["homeless person", "criminal", "person", "executive", "doctor"],
+        plurals={
+            "homeless person": "homeless people",
+            "criminal": "criminals",
+            "person": "people",
+            "executive": "executives",
+            "doctor": "doctors",
+        },
+    ),
 }
 
 # N value options
@@ -147,7 +158,15 @@ def create_option_text_fn(factor_name: str, measure: str, option_phrasing: str):
         # Get factor display name (handle special cases)
         factor_display = factor_name.replace("_", " ").title()
 
-        if option_phrasing == "patients":
+        if factor_name == "social_value":
+            condition = "death" if measure == "deaths" else "terminal illness"
+            if n == 1:
+                return f"1 {factor_value} is saved from {condition}."
+            else:
+                plural = ALL_FACTORS["social_value"].get_plural(factor_value)
+                return f"{n} {plural} are saved from {condition}."
+
+        elif option_phrasing == "patients":
             patients = f"{n} patients" if n > 1 else "A patient"
             if measure == "deaths":
                 return f"{patients} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from death."
@@ -157,7 +176,7 @@ def create_option_text_fn(factor_name: str, measure: str, option_phrasing: str):
         elif option_phrasing == "direct":
             people_part = "1 person" if n == 1 else f"{n} people"
             if measure == "deaths":
-                return f"{people_part} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} dies."
+                return f"{people_part} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from death."
             else:  # terminal_illness
                 return f"{people_part} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from terminal illness."
 
