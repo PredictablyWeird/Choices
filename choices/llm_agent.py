@@ -503,14 +503,33 @@ class ReasoningAgent(OpenAIAgent):
                         if out.type == "reasoning":
                             if self.model_type == "openai":
                                 # OpenAI models provide reasoning summaries
-                                if len(out.summary) > 0:
-                                    reasoning_summary = out.summary[0].text
+                                if out.summary and len(out.summary) > 0:
+                                    # Concatenate all summary elements in case there are multiple
+                                    reasoning_summary = "\n".join(
+                                        item.text
+                                        for item in out.summary
+                                        if hasattr(item, "text")
+                                    )
                                 else:
                                     reasoning_summary = None
                             elif self.model_type == "openrouter":
                                 # OpenRouter reasoning models (e.g., deepseek) provide full traces
-                                if len(out.content):
-                                    reasoning = out.content[0].text
+                                # Some models (e.g., grok-4.1-fast) may only provide summaries
+                                if out.content and len(out.content):
+                                    # Concatenate all content elements in case there are multiple
+                                    reasoning = "\n".join(
+                                        item.text
+                                        for item in out.content
+                                        if hasattr(item, "text")
+                                    )
+                                # Fallback to summary if content is not available
+                                elif out.summary and len(out.summary) > 0:
+                                    # Concatenate all summary elements in case there are multiple
+                                    reasoning_summary = "\n".join(
+                                        item.text
+                                        for item in out.summary
+                                        if hasattr(item, "text")
+                                    )
                     # Success means we don't have to retry again
                     break
 

@@ -43,7 +43,7 @@ def load_prompt_configs(yaml_path: str = PROMPT_CONFIGS_PATH) -> dict:
 
 # Define all possible factors (but we'll only use one per experiment)
 ALL_FACTORS = {
-    "gender": Variable(name="gender", values=["male", "female", "transgender"]),
+    "gender": Variable(name="gender", values=["male", "female", "non-binary"]),
     "ethnicity": Variable(
         name="ethnicity",
         values=[
