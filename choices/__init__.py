@@ -21,6 +21,7 @@ from .results import (
 from .variable import (
     AnalysisConfig,
     AnalysisType,
+    ReasoningMode,
     Variable,
 )
 
@@ -31,6 +32,7 @@ __all__ = [
     "Variable",
     "AnalysisConfig",
     "AnalysisType",
+    "ReasoningMode",
     "ExperimentResults",
     "PreferenceGraphResults",
     "UtilityModelResults",

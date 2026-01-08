@@ -9,6 +9,36 @@ from typing import List, Any, Dict, Optional
 from enum import Enum
 
 
+class ReasoningMode(Enum):
+    """Controls how the model should provide reasoning with its answer."""
+
+    NONE = "none"  # Just answer A or B
+    BEFORE = "before"  # Reason first, then "Answer: A/B"
+    AFTER = "after"  # "Answer: A/B" first, then explain
+
+    @classmethod
+    def from_value(cls, value) -> "ReasoningMode":
+        """Convert from various formats (string, bool, enum) to ReasoningMode."""
+        if isinstance(value, cls):
+            return value
+        if value is None or value is False:
+            return cls.NONE
+        if value is True:
+            return cls.BEFORE  # Default for legacy True
+        if isinstance(value, str):
+            # Handle legacy string formats
+            legacy_map = {
+                "NO_REASONING": cls.NONE,
+                "REASONING_BEFORE": cls.BEFORE,
+                "REASONING_AFTER": cls.AFTER,
+            }
+            if value in legacy_map:
+                return legacy_map[value]
+            # Handle new format
+            return cls(value.lower())
+        raise ValueError(f"Cannot convert {value!r} to ReasoningMode")
+
+
 class AnalysisType(Enum):
     """Analysis type for a field in an option."""
 
@@ -61,11 +91,14 @@ class Variable:
         name: Variable name (e.g., 'gender', 'N', 'country')
         values: List of possible values this variable can take
         description: Optional human-readable description
+        plurals: Optional dict mapping values to their plural forms.
+                 Useful when option text needs to handle "1 person" vs "5 people".
     """
 
     name: str
     values: List[Any]
     description: str = ""
+    plurals: Dict[Any, str] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validate variable configuration."""
@@ -76,10 +109,22 @@ class Variable:
         """Return number of possible values."""
         return len(self.values)
 
+    def get_plural(self, value: Any) -> str:
+        """
+        Get the plural form of a value.
+
+        Returns the plural from the plurals dict if defined,
+        otherwise returns the value itself (as string).
+        """
+        return self.plurals.get(value, str(value))
+
     def to_dict(self) -> dict:
         """Convert to dictionary representation."""
-        return {
+        result = {
             "name": self.name,
             "values": self.values,
             "description": self.description,
         }
+        if self.plurals:
+            result["plurals"] = self.plurals
+        return result

@@ -109,3 +109,23 @@ prompt_configs:
     setup: hospital
     N_values: original
     option_phrasing: original
+
+  social_value_deaths:
+    factor: social_value
+    measure: deaths
+
+  social_value_terminal_illness:
+    factor: social_value
+    measure: terminal_illness
+
+  social_value_action:
+    factor: social_value
+    measure: deaths
+    option_phrasing: action
+    setup: action
+
+  social_status_action:
+    factor: social_status
+    measure: deaths
+    option_phrasing: action
+    setup: action

@@ -15,7 +15,7 @@ from ..results import (
     UtilityModelResults,
 )
 from ..utils import create_agent, evaluate_holdout_set, load_config
-from ..variable import AnalysisConfig
+from ..variable import AnalysisConfig, ReasoningMode
 from .thurstonian import (
     ThurstonianActiveLearningUtilityModel,
 )
@@ -409,7 +409,7 @@ async def compute_utilities(
     compute_utilities_config_path: Optional[str] = None,
     compute_utilities_config_key: Optional[str] = None,
     system_message: Optional[str] = None,
-    with_reasoning: Optional[bool] = None,
+    reasoning_mode: Optional[ReasoningMode] = None,
     save_dir: str = "results",
     save_suffix: Optional[str] = None,
     edge_filter: Optional[Callable[[Dict[str, Any], Dict[str, Any]], bool]] = None,
@@ -429,7 +429,7 @@ async def compute_utilities(
         compute_utilities_config_path: Path to compute_utilities.yaml
         compute_utilities_config_key: Key to use in compute_utilities.yaml
         system_message: Optional system message for the agent. If provided, overrides the value in compute_utilities.yaml
-        with_reasoning: Whether to use reasoning-based response parsing. If provided (True/False), overrides the config value
+        reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER). If provided, overrides the config value
         save_dir: Directory to save results
         save_suffix: Suffix for saved files
         edge_filter: Optional function returning True to keep edge, False to exclude.
@@ -457,10 +457,17 @@ async def compute_utilities(
     # Override config values with provided arguments if they exist; if not provided anywhere, use default values
     compute_utilities_arguments["system_message"] = system_message  # default is None
 
-    if with_reasoning is not None:
-        compute_utilities_arguments["with_reasoning"] = with_reasoning
-    elif compute_utilities_arguments.get("with_reasoning") is None:
-        compute_utilities_arguments["with_reasoning"] = False  # default
+    # Handle reasoning_mode - convert from various formats to ReasoningMode
+    if reasoning_mode is not None:
+        compute_utilities_arguments["reasoning_mode"] = reasoning_mode
+    else:
+        # Check config for legacy 'with_reasoning' or new 'reasoning_mode'
+        config_value = compute_utilities_arguments.get(
+            "reasoning_mode", compute_utilities_arguments.get("with_reasoning")
+        )
+        compute_utilities_arguments["reasoning_mode"] = ReasoningMode.from_value(
+            config_value
+        )
 
     compute_utilities_arguments["comparison_prompt_generator"] = (
         comparison_prompt_generator
@@ -512,7 +519,7 @@ async def compute_utilities(
             "comparison_prompt_generator"
         ],
         "system_message": compute_utilities_arguments["system_message"],
-        "with_reasoning": compute_utilities_arguments["with_reasoning"],
+        "reasoning_mode": compute_utilities_arguments["reasoning_mode"],
     }
 
     # Merge required args with model-specific args, giving precedence to model-specific args
@@ -573,27 +580,26 @@ async def compute_utilities(
             "comparison_prompt_generator"
         ],
         system_message=compute_utilities_arguments["system_message"],
-        reasoning_type=compute_utilities_arguments["with_reasoning"],
+        reasoning_mode=compute_utilities_arguments["reasoning_mode"],
         K=compute_utilities_arguments.get("K", 10),
     )
 
     # Prepare results using structured format
-    # Create a serializable version of the config (convert callable to string)
+    # Create a serializable version of the config (convert callable and enum to string)
     serializable_config = copy.deepcopy(compute_utilities_config)
     if "compute_utilities_arguments" in serializable_config:
-        if (
-            "comparison_prompt_generator"
-            in serializable_config["compute_utilities_arguments"]
-        ):
-            generator = serializable_config["compute_utilities_arguments"][
-                "comparison_prompt_generator"
-            ]
+        args = serializable_config["compute_utilities_arguments"]
+        if "comparison_prompt_generator" in args:
+            generator = args["comparison_prompt_generator"]
             if callable(generator):
                 # Replace callable with a string representation
                 func_name = getattr(generator, "__name__", "unknown")
-                serializable_config["compute_utilities_arguments"][
-                    "comparison_prompt_generator"
-                ] = f"<callable: {func_name}>"
+                args["comparison_prompt_generator"] = f"<callable: {func_name}>"
+        # Convert ReasoningMode enum to string
+        if "reasoning_mode" in args and isinstance(
+            args["reasoning_mode"], ReasoningMode
+        ):
+            args["reasoning_mode"] = args["reasoning_mode"].value
 
     # Create PreferenceGraphResults
     graph_config = {
@@ -621,9 +627,17 @@ async def compute_utilities(
     # Normalize utility keys to strings for consistent access
     utilities_normalized = {str(k): v for k, v in utilities.items()}
 
+    # Create serializable copy of utility_model_arguments
+    serializable_model_args = copy.deepcopy(utility_model_arguments)
+    if "reasoning_mode" in serializable_model_args and isinstance(
+        serializable_model_args["reasoning_mode"], ReasoningMode
+    ):
+        serializable_model_args["reasoning_mode"] = serializable_model_args[
+            "reasoning_mode"
+        ].value
     model_config = {
         "utility_model_class": utility_model_class_name,
-        "utility_model_arguments": utility_model_arguments,
+        "utility_model_arguments": serializable_model_args,
     }
     utility_results = UtilityModelResults(
         utilities=utilities_normalized,

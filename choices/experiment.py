@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .utilities import compute_utilities
 from .utils import model_has_active_reasoning
-from .variable import AnalysisConfig, Variable
+from .variable import AnalysisConfig, ReasoningMode, Variable
 
 
 def _get_default_config_path(filename: str) -> str:
@@ -64,22 +64,24 @@ class PromptConfig:
     option_list: str = "Option A:\n{option_A}\n\nOption B:\n{option_B}"
     instructions: Optional[str] = None
     ending: Optional[str] = None
-    with_reasoning: str = (
-        "NO_REASONING"  # Other options: 'REASONING_BEFORE', 'REASONING_AFTER'
-    )
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE
     fixed_variables: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        """Set default instructions based on with_reasoning if not provided."""
+        """Set default instructions based on reasoning_mode if not provided."""
+        # Convert from legacy formats if needed
+        if not isinstance(self.reasoning_mode, ReasoningMode):
+            self.reasoning_mode = ReasoningMode.from_value(self.reasoning_mode)
+
         if self.instructions is None:
-            if self.with_reasoning == "REASONING_BEFORE":
+            if self.reasoning_mode == ReasoningMode.BEFORE:
                 self.instructions = (
                     "Take your time to reason through the question, and then provide your final answer in the format:\n\n"
                     '"Answer: A"\n\n'
                     "or\n\n"
                     '"Answer: B".'
                 )
-            elif self.with_reasoning == "REASONING_AFTER":
+            elif self.reasoning_mode == ReasoningMode.AFTER:
                 self.instructions = (
                     "Provide your answer in the format below and then also provide your reasoning for choosing your answer:\n\n"
                     '"Answer: A"\n\n'
@@ -272,12 +274,12 @@ class Experiment:
 
         # Determine agent config key
         # Use default_with_reasoning if either:
-        # 1. Prompt requests reasoning (with_reasoning != "NO_REASONING")
+        # 1. Prompt requests reasoning (reasoning_mode != NONE)
         # 2. Model has active reasoning (reasoning_effort is set and not "none")
         agent_config_key = self.experiment_config.agent_config_key
         if agent_config_key is None:
             uses_reasoning = (
-                self.prompt_config.with_reasoning != "NO_REASONING"
+                self.prompt_config.reasoning_mode != ReasoningMode.NONE
                 or model_has_active_reasoning(self.experiment_config.model)
             )
             agent_config_key = "default_with_reasoning" if uses_reasoning else "default"
@@ -299,7 +301,7 @@ class Experiment:
             compute_utilities_config_key=self.experiment_config.utility_config_key,
             save_dir=save_path,
             save_suffix=None,
-            with_reasoning=(self.prompt_config.with_reasoning != "NO_REASONING"),
+            reasoning_mode=self.prompt_config.reasoning_mode,
             system_message=self.prompt_config.system_prompt,
             comparison_prompt_generator=self.prompt_config.generate_prompt,
             edge_filter=self.edge_filter,
