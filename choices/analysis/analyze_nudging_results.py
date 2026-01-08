@@ -6,8 +6,8 @@ This script loads results from nudging experiments and computes exchange rates
 for each nudging condition (target group).
 
 Usage:
-    python analyze_nudging_experiments.py --config age_group_deaths --model gpt-4o-mini --nudge always_save
-    python analyze_nudging_experiments.py --config gender_illness_hospital --model gpt-4o-mini --nudge survey_preference
+    python analyze_nudging_results.py --config age_group_deaths --model gpt-4o-mini --nudge always_save
+    python analyze_nudging_results.py --config gender_illness_hospital --model gpt-4o-mini --nudge survey_preference
 """
 
 import argparse
@@ -445,8 +445,8 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python analyze_nudging_experiments.py --config age_group_deaths --model gpt-4o-mini --nudge always_save
-  python analyze_nudging_experiments.py --config gender_illness_hospital --model gpt-4o-mini --nudge survey_preference
+  python analyze_nudging_results.py --config age_group_deaths --model gpt-4o-mini --nudge always_save
+  python analyze_nudging_results.py --config gender_illness_hospital --model gpt-4o-mini --nudge survey_preference
         """,
     )
 

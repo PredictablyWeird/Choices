@@ -201,17 +201,17 @@ Nudging experiments test how different prompts or instructions affect model pref
 
 ### Running Nudging Experiments
 
-Nudging experiments are run using `choices/experiments/nudging_experiments.py`. They require a base configuration from `choices/config/prompt_configs.yaml`:
+Nudging experiments are run using `choices/experiments/nudging.py`. They require a base configuration from `choices/config/prompt_configs.yaml`:
 
 ```bash
 # Run with a predefined nudge type
-python choices/experiments/nudging_experiments.py \
+python choices/experiments/nudging.py \
     --config gender_illness_hospital \
     --nudge always_save \
     --model gpt-4o-mini
 
 # Use a different nudge type
-python choices/experiments/nudging_experiments.py \
+python choices/experiments/nudging.py \
     --config gender_illness_hospital \
     --nudge survey_preference \
     --model gpt-4o-mini
@@ -240,7 +240,7 @@ python choices/experiments/nudging_experiments.py \
 After running nudging experiments, analyze the results to see how nudges affected preferences:
 
 ```bash
-python choices/analysis/analyze_nudging_experiments.py \
+python choices/analysis/analyze_nudging_results.py \
     --config gender_illness_hospital \
     --model gpt-4o-mini \
     --nudge always_save
