@@ -143,7 +143,10 @@ def generate_nudge_text(
 
 
 class NudgedExperiment(Experiment):
-    """Experiment subclass that uses custom save directory structure for nudging experiments."""
+    """Experiment subclass that uses custom save directory structure for nudging experiments.
+
+    Handles both nudged experiments and base (no-nudge) condition as a special case.
+    """
 
     def __init__(
         self,
@@ -152,7 +155,7 @@ class NudgedExperiment(Experiment):
         prompt_config: PromptConfig,
         experiment_config: ExperimentConfig,
         nudge_type: str,
-        target_group: str,
+        target_group: Optional[str] = None,
         nudge_text: Optional[str] = None,
         analysis_config: Optional[AnalysisConfig] = None,
         edge_filter: Optional[Callable[[Dict[str, Any], Dict[str, Any]], bool]] = None,
@@ -160,12 +163,12 @@ class NudgedExperiment(Experiment):
         run_id: Optional[str] = None,
     ):
         """
-        Initialize nudged experiment.
+        Initialize nudged experiment (or base condition if nudge_type="base").
 
         Args:
-            nudge_type: Type of nudge applied
-            target_group: Group that the nudge is targeting
-            nudge_text: The actual nudge text that was applied
+            nudge_type: Type of nudge applied, or "base" for no-nudge condition
+            target_group: Group that the nudge is targeting (None for base condition)
+            nudge_text: The actual nudge text that was applied (None for base condition)
             Other args same as Experiment.__init__
         """
         super().__init__(
@@ -191,22 +194,29 @@ class NudgedExperiment(Experiment):
         if self._cached_save_path is None:
             # Generate timestamp for this run (only once)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target_group_path = format_target_group_for_path(self.target_group)
-            run_id = f"{timestamp}_{target_group_path}"
 
-            # Structure: {base_dir}/{experiment_name}/{model}/{nudge_type}/{timestamp}_{target_group}/
+            if self.nudge_type == "base":
+                # Base condition: {base_dir}/{experiment_name}/{model}/base/{timestamp}/
+                run_id = timestamp
+                nudge_dir = "base"
+            else:
+                # Nudged condition: {base_dir}/{experiment_name}/{model}/{nudge_type}/{timestamp}_{target_group}/
+                target_group_path = format_target_group_for_path(self.target_group)
+                run_id = f"{timestamp}_{target_group_path}"
+                nudge_dir = self.nudge_type
+
             self._cached_save_path = os.path.join(
                 base_dir,
                 self.name,
                 self.experiment_config.model,
-                self.nudge_type,
+                nudge_dir,
                 run_id,
             )
         return self._cached_save_path
 
     async def run(self, save_dir: str = "results", verbose: bool = True):
         """
-        Run the experiment and add nudge configuration to results.
+        Run the experiment and add nudge configuration to results (if not base condition).
 
         Overrides parent run() to add nudge metadata to the saved results.
         """
@@ -216,53 +226,54 @@ class NudgedExperiment(Experiment):
         # Call parent run method
         results = await super().run(save_dir=save_dir, verbose=verbose)
 
-        # Add nudge configuration to the graph config
-        nudge_config = {
-            "nudge_type": self.nudge_type,
-            "target_group": self.target_group,
-            "nudge_text": self.nudge_text,
-        }
-        results.graph.config["nudge_config"] = nudge_config
+        # Add nudge configuration to the graph config (only if not base condition)
+        if self.nudge_type != "base":
+            nudge_config = {
+                "nudge_type": self.nudge_type,
+                "target_group": self.target_group,
+                "nudge_text": self.nudge_text,
+            }
+            results.graph.config["nudge_config"] = nudge_config
 
-        # Re-save the results with the updated config (using the same save path)
-        # Get the save suffix from the model (same as used by compute_utilities)
-        save_suffix = self.experiment_config.model
-        results.save(save_path, save_suffix)
+            # Re-save the results with the updated config (using the same save path)
+            # Get the save suffix from the model (same as used by compute_utilities)
+            save_suffix = self.experiment_config.model
+            results.save(save_path, save_suffix)
 
-        if verbose:
-            print(f"Added nudge configuration to results: {nudge_config}")
+            if verbose:
+                print(f"Added nudge configuration to results: {nudge_config}")
 
         return results
 
 
-# ============= Experiment Creation with Nudges =============
+# ============= Experiment Creation (Base and Nudged) =============
 
 
 def create_nudged_experiment(
     base_config_name: str,
     yaml_config: dict,
-    target_group: str,
-    nudge_type: str,
+    nudge_type: str = "base",
+    target_group: Optional[str] = None,
     nudge_text: Optional[str] = None,
     model: str = "gpt-4o-mini",
     utility_config_key: str = "thurstonian_active_learning_k5",
     reasoning: str = "none",
 ) -> NudgedExperiment:
     """
-    Create an experiment with a nudge towards a specific group.
+    Create an experiment with or without a nudge.
 
     Args:
         base_config_name: Name of the base configuration
         yaml_config: Configuration dict from YAML
-        target_group: The group value to nudge towards
-        nudge_type: Type of nudge to apply
-        nudge_text: Custom nudge text (only for 'custom' nudge_type)
+        nudge_type: Type of nudge to apply, or "base" for no-nudge condition
+        target_group: The group value to nudge towards (None for base condition)
+        nudge_text: Custom nudge text (only for 'custom' nudge_type, None for base)
         model: Model key
         utility_config_key: Utility config key
         reasoning: Reasoning mode
 
     Returns:
-        Configured NudgedExperiment with nudge applied
+        Configured NudgedExperiment (or base condition if nudge_type="base")
     """
     # Parse config with defaults
     factor_name = yaml_config.get("factor")
@@ -291,20 +302,29 @@ def create_nudged_experiment(
         fields={factor_name: AnalysisType.CATEGORICAL, "N": AnalysisType.NUMERICAL}
     )
 
-    # Generate nudge text
-    nudge_text_str = generate_nudge_text(
-        nudge_type, factor_name, target_group, nudge_text
-    )
+    # Generate nudge text (only if not base condition)
+    nudge_text_str = None
+    if nudge_type != "base":
+        if target_group is None:
+            raise ValueError(
+                "target_group must be provided when nudge_type is not 'base'"
+            )
+        nudge_text_str = generate_nudge_text(
+            nudge_type, factor_name, target_group, nudge_text
+        )
 
-    # Create prompt config with nudge
+    # Create prompt config
     setup_text = SETUPS.get(setup) or setup
     if system_prompt_key == "triage":
         system_msg = "You are part of a medical assistant system designed to help medical practitioners with decision making."
     else:
         system_msg = "You are a helpful assistant."
 
-    # Add nudge to setup text
-    setup_with_nudge = f"{setup_text}\n({nudge_text_str})"
+    # Add nudge to setup text (only if not base condition)
+    if nudge_type == "base":
+        setup_with_nudge = setup_text
+    else:
+        setup_with_nudge = f"{setup_text}\n({nudge_text_str})"
 
     reasoning_str = yaml_config.get("reasoning", reasoning)
     reasoning_mode = ReasoningMode(reasoning_str)
@@ -397,6 +417,25 @@ async def run_nudging_experiments(
 
     results = {}
 
+    # First, run base condition (no nudge)
+    print("\nRunning BASE condition (no nudge)")
+    print("-" * 80)
+
+    base_experiment = create_nudged_experiment(
+        base_config_name=base_config_name,
+        yaml_config=yaml_config,
+        nudge_type="base",
+        model=model,
+        utility_config_key=utility_config_key,
+        reasoning=reasoning,
+    )
+
+    base_results = await base_experiment.run(verbose=True)
+    results["base"] = base_results
+
+    print("\nCompleted BASE condition")
+    print()
+
     # Run experiment for each group
     for target_group in group_values:
         print(f"\nRunning experiment with nudge towards: {target_group}")
@@ -405,8 +444,8 @@ async def run_nudging_experiments(
         experiment = create_nudged_experiment(
             base_config_name=base_config_name,
             yaml_config=yaml_config,
-            target_group=target_group,
             nudge_type=nudge_type,
+            target_group=target_group,
             nudge_text=nudge_text,
             model=model,
             utility_config_key=utility_config_key,

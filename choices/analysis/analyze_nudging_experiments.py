@@ -50,6 +50,35 @@ def load_nudge_config(results_dir: str) -> Optional[Dict]:
     return nudge_config
 
 
+def find_base_result_directory(
+    config_name: str, model: str, results_base_dir: str = "results"
+) -> Optional[Tuple[str, str]]:
+    """
+    Find the base (no-nudge) result directory.
+
+    Args:
+        config_name: Name of the base config
+        model: Model name
+        results_base_dir: Base directory for results
+
+    Returns:
+        (result_dir_path, "base") tuple or None if not found
+    """
+    base_path = Path(results_base_dir) / config_name / model / "base"
+
+    if not base_path.exists():
+        return None
+
+    # Find the most recent base result directory
+    result_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+    if not result_dirs:
+        return None
+
+    # Sort by modification time, get most recent
+    most_recent = max(result_dirs, key=lambda d: d.stat().st_mtime)
+    return (str(most_recent), "base")
+
+
 def find_nudging_result_directories(
     config_name: str, model: str, nudge_type: str, results_base_dir: str = "results"
 ) -> List[Tuple[str, Optional[str]]]:
@@ -218,10 +247,20 @@ def analyze_nudging_experiment(
     print("=" * 80)
     print()
 
-    # Find all result directories
+    # Find base condition (no nudge)
+    base_result_dir = find_base_result_directory(config_name, model, results_base_dir)
+
+    # Find all result directories for nudging conditions
     result_dirs = find_nudging_result_directories(
         config_name, model, nudge_type, results_base_dir
     )
+
+    # Combine base and nudging conditions
+    all_result_dirs = []
+    if base_result_dir:
+        all_result_dirs.append(base_result_dir)
+        print("Found BASE condition (no nudge)")
+    all_result_dirs.extend(result_dirs)
 
     print(f"Found {len(result_dirs)} nudging conditions:")
     for result_dir, target_group in result_dirs:
@@ -255,7 +294,7 @@ def analyze_nudging_experiment(
     all_groups_set = set()
     group_slopes_map = {}  # Map condition -> {group -> slope} to find common groups
 
-    for result_dir, target_group in result_dirs:
+    for result_dir, target_group in all_result_dirs:
         df, numerical_var = load_exchange_rates_data(result_dir, factor_name)
         if df.empty:
             continue
@@ -305,18 +344,24 @@ def analyze_nudging_experiment(
     # Second pass: compute exchange rates for each condition using the same canonical group
     all_results = []
 
-    for result_dir, target_group in result_dirs:
-        print(f"Analyzing condition: nudge towards '{target_group}'")
+    for result_dir, target_group in all_result_dirs:
+        if target_group == "base":
+            print("Analyzing condition: BASE (no nudge)")
+        else:
+            print(f"Analyzing condition: nudge towards '{target_group}'")
         print("-" * 80)
 
-        # Load nudge config
+        # Load nudge config (will be None for base condition)
         nudge_config = load_nudge_config(result_dir)
         if nudge_config:
             print(f"Nudge Type: {nudge_config.get('nudge_type', 'unknown')}")
             print(f"Target Group: {nudge_config.get('target_group', 'unknown')}")
             print(f"Nudge Text: {nudge_config.get('nudge_text', 'N/A')}")
         else:
-            print("Warning: Could not load nudge configuration")
+            if target_group == "base":
+                print("No nudge applied (base condition)")
+            else:
+                print("Warning: Could not load nudge configuration")
 
         # Compute exchange rates using the consistent canonical group
         exchange_rates = compute_exchange_rates_for_condition(
@@ -363,9 +408,16 @@ def analyze_nudging_experiment(
                 all_groups.update(result["exchange_rates"].keys())
             all_groups = sorted(all_groups)
 
+        # Sort results: base first, then others alphabetically
+        def sort_key(result):
+            target = result["target_group"]
+            return (0 if target == "base" else 1, target)
+
+        sorted_results = sorted(all_results, key=sort_key)
+
         # Print header
         print(f"\n{'Group':<30s}", end="")
-        for result in all_results:
+        for result in sorted_results:
             print(f"  {result['target_group']:>20s}", end="")
         print()
 
@@ -374,7 +426,7 @@ def analyze_nudging_experiment(
         # Print exchange rates for each group
         for group in all_groups:
             print(f"{group:<30s}", end="")
-            for result in all_results:
+            for result in sorted_results:
                 rate = result["exchange_rates"].get(group)
                 formatted = format_exchange_rate(rate) if rate is not None else "N/A"
                 print(f"  {formatted:>20s}", end="")

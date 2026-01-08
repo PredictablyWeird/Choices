@@ -50,6 +50,19 @@ deepseek-v3-2-non-reasoning:
     text:
       verbosity: "low"  # Options: "low", "medium", "high"
 
+grok-41-fast-non-reasoning:
+  model_name: "openrouter/x-ai/grok-4.1-fast"
+  model_type: openrouter
+  reasoning_effort:
+    enabled: false
+
+grok-41-fast-reasoning:
+  model_name: "openrouter/x-ai/grok-4.1-fast"
+  model_type: openrouter
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
 
 # ------------------------------
 # OpenRouter
