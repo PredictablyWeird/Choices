@@ -62,6 +62,10 @@ qwen-turbo:
   model_name: "openrouter/qwen/qwen-turbo"
   model_type: openrouter
 
+qwen3-32b:
+  model_name: "openrouter/qwen/qwen3-32b"
+  model_type: openrouter
+
 
 # ------------------------------
 # OpenRouter base models
