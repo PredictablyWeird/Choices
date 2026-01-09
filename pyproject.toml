@@ -3,11 +3,12 @@ name = "choices"
 version = "0.0.1"
 description = "Preference Choices"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.13"
 license = { file = "LICENSE" }
 
 dependencies = [
     "accelerate>=1.1.1",
+    "aiolimiter>=1.2.1",
     "anthropic>=0.45.2",
     "fireworks-ai>=0.15.8",
     "google-generativeai>=0.8.0",

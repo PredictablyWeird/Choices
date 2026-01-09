@@ -1,5 +1,4 @@
 import asyncio
-import imghdr
 import json
 import os
 import random
@@ -9,6 +8,7 @@ from abc import ABC, abstractmethod
 from base64 import b64encode
 from dataclasses import dataclass
 from functools import wraps
+from pathlib import Path
 from typing import Dict, List, Literal, Optional, Union
 
 import google.generativeai as genai
@@ -28,6 +28,37 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 
 load_dotenv()
+
+
+def _detect_image_type(filepath: str | Path) -> str | None:
+    """
+    Detect image type from file magic bytes.
+
+    Replacement for imghdr.what() which was removed in Python 3.13.
+    """
+    signatures = {
+        b"\x89PNG\r\n\x1a\n": "png",
+        b"\xff\xd8\xff": "jpeg",
+        b"GIF87a": "gif",
+        b"GIF89a": "gif",
+        b"RIFF": "webp",  # WebP starts with RIFF...WEBP
+        b"BM": "bmp",
+    }
+
+    try:
+        with open(filepath, "rb") as f:
+            header = f.read(12)
+
+        for sig, img_type in signatures.items():
+            if header.startswith(sig):
+                # Special check for WebP (RIFF + WEBP)
+                if sig == b"RIFF" and b"WEBP" not in header:
+                    continue
+                return img_type
+
+        return None
+    except (OSError, IOError):
+        return None
 
 
 # =================== Response Interface ===================
@@ -172,7 +203,7 @@ class OpenAIAgent(LLMAgent):
             if image_path := message.get("image_path"):
                 image_data = _encode_image(image_path)
                 image_type = (
-                    imghdr.what(image_path) or "jpeg"
+                    _detect_image_type(image_path) or "jpeg"
                 )  # Default to 'jpeg' if type can't be determined
                 message["content"] = [
                     {"type": "text", "text": message["content"]},
@@ -601,7 +632,7 @@ class AnthropicAgent(LLMAgent):
         for message in messages:
             if image_path := message.get("image_path"):
                 image_data = _encode_image(image_path)
-                image_type = imghdr.what(image_path) or "jpeg"
+                image_type = _detect_image_type(image_path) or "jpeg"
                 message["content"] = [
                     {
                         "type": "image",

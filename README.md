@@ -258,6 +258,85 @@ This script:
 
 The analysis shows how much preferences shifted when different groups were targeted by the nudge, helping identify which nudges are most effective and which groups are most sensitive to framing effects.
 
+### Reasoning Trace Analysis
+
+For experiments run with `with_reasoning="REASONING_BEFORE"` or `"REASONING_AFTER"`, you can analyze the reasoning traces to understand *why* the model made certain choices.
+
+```bash
+# Full pipeline: extract traces, code arguments, analyze
+python -m choices.analysis.reasoning.cli pipeline \
+    results/my_experiment/gpt-4o-mini/20251124_120000 \
+    --codebook exchange_rate \
+    --exchange-rate \
+    -o analysis_output/
+
+# Or run steps individually:
+python -m choices.analysis.reasoning.cli extract results/... -o traces.json
+python -m choices.analysis.reasoning.cli code traces.json --codebook exchange_rate -o coded.json
+python -m choices.analysis.reasoning.cli analyze coded.json --exchange-rate
+```
+
+Available built-in codebooks:
+- `exchange_rate` — Numerical vs vulnerability arguments
+- `age` — Numerical vs life-years/potential arguments
+- `occupation` — Numerical vs social utility arguments
+
+You can also provide a custom codebook JSON file.
+
+### Causal Audit (Rejection Sampling)
+
+Test whether moral arguments are *causal drivers* of decisions or *post-hoc rationalizations* using rejection sampling:
+
+```bash
+# List available categories
+python -m choices.analysis.causal_audit_cli list
+
+# Run a causal audit
+python -m choices.analysis.causal_audit_cli run countries \
+    --max-comparisons 50 \
+    -o results_countries.json
+
+# Run with resampling (for high contamination rates)
+python -m choices.analysis.causal_audit_cli resample age \
+    --target-clean 100 \
+    -o results_age.json
+
+# Analyze existing results
+python -m choices.analysis.causal_audit_cli analyze results_countries.json
+```
+
+**How it works:**
+1. Generate responses with reasoning traces
+2. Code each trace for presence of a "forbidden" argument (e.g., vulnerability reasoning)
+3. Compare decision rates between "clean" (no forbidden argument) and "contaminated" samples
+4. The difference in rates is the causal effect of the argument
+
+Available categories: `countries`, `age`, `occupation`, `criminal_status`
+
+**Programmatic usage:**
+
+```python
+import asyncio
+from choices.analysis import run_causal_audit, run_causal_audit_with_resampling
+
+# Simple run
+results = asyncio.run(run_causal_audit(
+    category="countries",
+    samples_per_comparison=10,
+    max_comparisons=50,
+    output_file="results.json"
+))
+
+# With resampling for rare clean samples
+results = asyncio.run(run_causal_audit_with_resampling(
+    category="age",
+    target_clean_samples=100,
+    max_samples_per_comparison=50,
+    output_file="results_resampled.json"
+))
+```
+
+
 ## Origin
 
 This repo is based on the [emergent-values](https://github.com/centerforaisafety/emergent-values) repository.
