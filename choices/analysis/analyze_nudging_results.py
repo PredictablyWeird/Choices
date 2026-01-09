@@ -23,6 +23,7 @@ from choices.analysis.create_exchange_rates_plots import (
     load_exchange_rates_data,
     two_way_geometric_exchange_rate,
 )
+from choices.analysis.steerability_metric import compute_steerability_bias
 from choices.results import ExperimentResults
 from choices.utils import find_result_files
 
@@ -433,6 +434,95 @@ def analyze_nudging_experiment(
             print()
 
         print()
+
+    # Compute and display steerability analysis
+    if all_results and len(all_results) >= 2:
+        # Build rate lookup: {condition: {group: rate}}
+        rates_by_condition = {}
+        for result in all_results:
+            target = result["target_group"]
+            rates_by_condition[target] = result["exchange_rates"]
+
+        base_rates = rates_by_condition.get("base", {})
+
+        # Only compute if we have base condition and at least 2 groups
+        if base_rates and len(all_groups) >= 2:
+            print()
+            print("=" * 80)
+            print("VALUE STEERABILITY ANALYSIS")
+            print("=" * 80)
+            print()
+
+            pairwise_data = {}
+            for i, group_A in enumerate(all_groups):
+                for group_B in all_groups[i + 1 :]:
+                    # Get raw rates (relative to canonical) for each condition
+                    rate_A_base = base_rates.get(group_A, 1.0)
+                    rate_B_base = base_rates.get(group_B, 1.0)
+
+                    nudge_A_rates = rates_by_condition.get(group_A, {})
+                    rate_A_nudge_A = nudge_A_rates.get(group_A, rate_A_base)
+                    rate_B_nudge_A = nudge_A_rates.get(group_B, rate_B_base)
+
+                    nudge_B_rates = rates_by_condition.get(group_B, {})
+                    rate_A_nudge_B = nudge_B_rates.get(group_A, rate_A_base)
+                    rate_B_nudge_B = nudge_B_rates.get(group_B, rate_B_base)
+
+                    # Pass raw rates to function - it handles the B/A conversion
+                    steer_A, steer_B, bias = compute_steerability_bias(
+                        rate_A_base,
+                        rate_B_base,
+                        rate_A_nudge_A,
+                        rate_B_nudge_A,
+                        rate_A_nudge_B,
+                        rate_B_nudge_B,
+                    )
+
+                    if steer_A is not None:
+                        # Compute gains for display
+                        rate_base = rate_B_base / rate_A_base
+                        rate_nudge_A = rate_B_nudge_A / rate_A_nudge_A
+                        rate_nudge_B = rate_B_nudge_B / rate_A_nudge_B
+                        gain_A = rate_base / rate_nudge_A
+                        gain_B = rate_nudge_B / rate_base
+                        pairwise_data[(group_A, group_B)] = {
+                            "gain_A": gain_A,
+                            "gain_B": gain_B,
+                            "bias": bias,
+                        }
+
+            print()
+            for (group_A, group_B), data in pairwise_data.items():
+                print(f"  {group_A} vs {group_B}:")
+                print(f"    Nudge {group_A}: {group_A} value × {data['gain_A']:.2f}")
+                print(f"    Nudge {group_B}: {group_B} value × {data['gain_B']:.2f}")
+                print()
+
+            # Display bias matrix
+            print("Bias Matrix (positive = easier to steer toward row):")
+            print()
+
+            # Build matrix
+            col_width = max(len(g) for g in all_groups) + 2
+            header = " " * col_width + "".join(f"{g:>{col_width}}" for g in all_groups)
+            print(header)
+            print("-" * len(header))
+
+            for group_A in all_groups:
+                row = f"{group_A:<{col_width}}"
+                for group_B in all_groups:
+                    if group_A == group_B:
+                        row += f"{'—':>{col_width}}"
+                    elif (group_A, group_B) in pairwise_data:
+                        bias = -pairwise_data[(group_A, group_B)]["bias"]
+                        row += f"{bias:>+{col_width}.2f}"
+                    elif (group_B, group_A) in pairwise_data:
+                        bias = pairwise_data[(group_B, group_A)]["bias"]
+                        row += f"{bias:>+{col_width}.2f}"
+                    else:
+                        row += f"{'N/A':>{col_width}}"
+                print(row)
+            print()
 
     print("=" * 80)
     print("Analysis complete!")
