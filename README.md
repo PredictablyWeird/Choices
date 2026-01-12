@@ -258,6 +258,43 @@ This script:
 
 The analysis shows how much preferences shifted when different groups were targeted by the nudge, helping identify which nudges are most effective and which groups are most sensitive to framing effects.
 
+## Simple Nudging Experiments
+
+A simplified version of nudging experiments using binary factors and random edge sampling (no active learning). Useful for quick experiments with straightforward analysis.
+
+### Running Simple Nudging Experiments
+
+```bash
+# List available factors and nudge types
+python choices/experiments/simple_nudging.py --list-factors
+python choices/experiments/simple_nudging.py --list-nudges
+
+# Run experiment
+python choices/experiments/simple_nudging.py \
+    --factor gender \
+    --nudge always_save \
+    --model gpt-4o-mini
+```
+
+You can also modify the number of requests done in each condition via command line arguments.
+
+Results are saved to: `results/simple_{factor}/{model}/{nudge_type}/{timestamp}_{target_group}/`
+
+### Analyzing Simple Nudging Results
+
+```bash
+python choices/analysis/analyze_simple_nudging_results.py \
+    --factor gender \
+    --model gpt-4o-mini \
+    --nudge always_save
+```
+
+The analysis shows:
+- Factor preferences (e.g., male vs female chosen %)
+- Larger N preference (how often saving more people is preferred)
+- Nudge effects (change from baseline)
+- Nudge effectiveness summary
+
 ## Origin
 
 This repo is based on the [emergent-values](https://github.com/centerforaisafety/emergent-values) repository.
