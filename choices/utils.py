@@ -6,7 +6,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
@@ -506,6 +506,168 @@ def parse_responses_forced_choice(raw_results, choices=["A", "B"], verbose=True)
         print(f"Number of unparseable responses: {counts['unparseable']}")
 
     return parsed_results, reasoning_results, reasoning_summaries
+
+
+def process_responses_to_preference_data(
+    responses: Dict[int, List],
+    parsed_responses: Dict[int, List[str]],
+    prompt_idx_to_key: Dict[int, Tuple[Any, Any, str]],
+    options_by_id: Dict[Any, Dict],
+    reasoning_results: Optional[Dict[int, List[Optional[str]]]] = None,
+    reasoning_summaries: Optional[Dict[int, List[Optional[str]]]] = None,
+    unparseable_mode: str = "skip",
+) -> List[Dict]:
+    """
+    Convert parsed responses into preference data with reasoning stored in aux_data.
+
+    This is a standalone version of UtilityModel.process_responses for use in
+    simple experiments that don't need the full utility model infrastructure.
+
+    Args:
+        responses: Dict mapping prompt_idx to list of LLMResponse objects
+        parsed_responses: Dict mapping prompt_idx to list of parsed choices ('A', 'B', or 'unparseable')
+        prompt_idx_to_key: Mapping from prompt index to (option_A_id, option_B_id, direction)
+        options_by_id: Dict mapping option IDs to option dicts
+        reasoning_results: Dict mapping prompt_idx to list of reasoning texts
+        reasoning_summaries: Dict mapping prompt_idx to list of reasoning summaries
+        unparseable_mode: How to handle unparseable responses: "skip", "random", or "distribution"
+
+    Returns:
+        List of preference data dicts ready for graph.add_edges(), each with:
+        - option_A, option_B, probability_A, aux_data (including reasoning)
+    """
+    import random as rng_module
+
+    rng = rng_module.Random(42)
+
+    # Group responses by pair
+    pair_data = {}
+
+    for prompt_idx, response_list in responses.items():
+        if prompt_idx not in prompt_idx_to_key:
+            continue
+
+        A_id, B_id, direction = prompt_idx_to_key[prompt_idx]
+        parsed_list = parsed_responses.get(prompt_idx, [])
+        reasoning_list = (
+            reasoning_results.get(prompt_idx, []) if reasoning_results else []
+        )
+        reasoning_summary_list = (
+            reasoning_summaries.get(prompt_idx, []) if reasoning_summaries else []
+        )
+
+        pair_key = (A_id, B_id)
+        if pair_key not in pair_data:
+            pair_data[pair_key] = {
+                "option_A": options_by_id[A_id],
+                "option_B": options_by_id[B_id],
+                "original_responses": [],
+                "flipped_responses": [],
+                "original_parsed": [],
+                "flipped_parsed": [],
+                "original_reasoning": [],
+                "flipped_reasoning": [],
+                "original_reasoning_summaries": [],
+                "flipped_reasoning_summaries": [],
+            }
+
+        # Extract content from LLMResponse objects
+        content_list = [
+            r.content if hasattr(r, "content") else str(r) if r else ""
+            for r in response_list
+        ]
+
+        if direction == "original":
+            pair_data[pair_key]["original_responses"].extend(content_list)
+            pair_data[pair_key]["original_parsed"].extend(parsed_list)
+            pair_data[pair_key]["original_reasoning_summaries"].extend(
+                reasoning_summary_list
+            )
+            if reasoning_list:
+                pair_data[pair_key]["original_reasoning"].extend(reasoning_list)
+        else:
+            pair_data[pair_key]["flipped_responses"].extend(content_list)
+            pair_data[pair_key]["flipped_parsed"].extend(parsed_list)
+            pair_data[pair_key]["flipped_reasoning_summaries"].extend(
+                reasoning_summary_list
+            )
+            if reasoning_list:
+                pair_data[pair_key]["flipped_reasoning"].extend(reasoning_list)
+
+    # Convert to preference data
+    preference_data = []
+
+    for (A_id, B_id), data in pair_data.items():
+        dist_list = []
+
+        def add_to_dist_list(parsed_char, is_flipped=False):
+            if parsed_char == "A":
+                dist_list.append((1.0, 0.0) if not is_flipped else (0.0, 1.0))
+            elif parsed_char == "B":
+                dist_list.append((0.0, 1.0) if not is_flipped else (1.0, 0.0))
+            else:  # unparseable
+                if unparseable_mode == "skip":
+                    pass
+                elif unparseable_mode == "random":
+                    if rng.random() < 0.5:
+                        dist_list.append((1.0, 0.0) if not is_flipped else (0.0, 1.0))
+                    else:
+                        dist_list.append((0.0, 1.0) if not is_flipped else (1.0, 0.0))
+                elif unparseable_mode == "distribution":
+                    dist_list.append((0.5, 0.5))
+
+        for parsed in data["original_parsed"]:
+            add_to_dist_list(parsed, is_flipped=False)
+        for parsed in data["flipped_parsed"]:
+            add_to_dist_list(parsed, is_flipped=True)
+
+        total_A = sum(d[0] for d in dist_list)
+        total_B = sum(d[1] for d in dist_list)
+        total_responses = len(dist_list)
+
+        if total_responses > 0:
+            probability_A = (
+                total_A / (total_A + total_B) if (total_A + total_B) > 0 else 0.5
+            )
+
+            aux_data = {
+                "count_A": total_A,
+                "count_B": total_B,
+                "total_responses": total_responses,
+                "original_responses": data["original_responses"],
+                "flipped_responses": data["flipped_responses"],
+                "original_parsed": data["original_parsed"],
+                "flipped_parsed": data["flipped_parsed"],
+                "unparseable_mode": unparseable_mode,
+            }
+
+            # Add reasoning if present
+            def has_content(lst):
+                return lst and any(x is not None and x != "unparseable" for x in lst)
+
+            if has_content(data.get("original_reasoning")):
+                aux_data["original_reasoning"] = data["original_reasoning"]
+            if has_content(data.get("flipped_reasoning")):
+                aux_data["flipped_reasoning"] = data["flipped_reasoning"]
+            if has_content(data.get("original_reasoning_summaries")):
+                aux_data["original_reasoning_summaries"] = data[
+                    "original_reasoning_summaries"
+                ]
+            if has_content(data.get("flipped_reasoning_summaries")):
+                aux_data["flipped_reasoning_summaries"] = data[
+                    "flipped_reasoning_summaries"
+                ]
+
+            preference_data.append(
+                {
+                    "option_A": data["option_A"],
+                    "option_B": data["option_B"],
+                    "probability_A": probability_A,
+                    "aux_data": aux_data,
+                }
+            )
+
+    return preference_data
 
 
 async def parse_responses_forced_choice_freeform(

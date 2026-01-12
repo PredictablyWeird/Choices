@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from choices import PromptConfig, Variable
+from choices import PromptConfig, ReasoningMode, Variable
 from choices.results import (
     ExperimentOption,
     ExperimentResults,
@@ -33,7 +33,13 @@ from choices.results import (
 )
 from choices.utilities.compute_utilities import PreferenceGraph
 from choices.utilities.thurstonian import fit_thurstonian_model
-from choices.utils import create_agent, generate_responses, load_config
+from choices.utils import (
+    create_agent,
+    generate_responses,
+    load_config,
+    parse_responses_forced_choice,
+    process_responses_to_preference_data,
+)
 from choices.variable import AnalysisConfig, AnalysisType
 
 # Import from simple_rates
@@ -169,6 +175,7 @@ async def run_nudged_simple_experiment(
     seed: int = 42,
     save_dir: str = "results",
     verbose: bool = True,
+    reasoning: str = "none",
 ) -> ExperimentResults:
     """
     Run a simple preference experiment with nudging.
@@ -280,9 +287,14 @@ async def run_nudged_simple_experiment(
     if verbose:
         print(f"\nTotal prompts to send: {len(prompt_list)}")
 
-    # Create agent
+    # Create agent - use reasoning config if reasoning mode is enabled
+    agent_config_key = (
+        "default_with_reasoning"
+        if prompt_config.reasoning_mode != ReasoningMode.NONE
+        else "default"
+    )
     agent_config = load_config(
-        _get_config_path("create_agent.yaml"), "default", "create_agent.yaml"
+        _get_config_path("create_agent.yaml"), agent_config_key, "create_agent.yaml"
     )
     agent = create_agent(model_key=model, **agent_config)
 
@@ -319,82 +331,29 @@ async def run_nudged_simple_experiment(
         system_message=prompt_config.system_prompt,
         K=1,
         verbose=verbose,
+        reasoning_mode=prompt_config.reasoning_mode,
     )
 
     if verbose:
         print(f"Received responses for {len(responses_by_prompt)} prompts")
 
-    # Parse responses and aggregate by edge
-    edge_results = {}
-    for prompt_idx, response_list in responses_by_prompt.items():
-        if prompt_idx not in prompt_idx_to_key:
-            continue
-
-        A_id, B_id, direction = prompt_idx_to_key[prompt_idx]
-        edge_key = (A_id, B_id)
-
-        if edge_key not in edge_results:
-            edge_results[edge_key] = {
-                "option_A": graph.options_by_id[A_id],
-                "option_B": graph.options_by_id[B_id],
-                "responses": [],
-            }
-
-        response = response_list[0] if response_list else None
-        if hasattr(response, "content"):
-            response_text = response.content or ""
-        else:
-            response_text = str(response) if response else ""
-
-        # Parse response
-        choice = None
-        response_text_upper = response_text.strip().upper()
-        if "A" in response_text_upper and "B" not in response_text_upper:
-            choice = "A"
-        elif "B" in response_text_upper and "A" not in response_text_upper:
-            choice = "B"
-        elif response_text_upper.startswith("A"):
-            choice = "A"
-        elif response_text_upper.startswith("B"):
-            choice = "B"
-
-        prefers_A = None
-        if choice:
-            if direction == "original":
-                prefers_A = choice == "A"
-            else:
-                prefers_A = choice == "B"
-
-        edge_results[edge_key]["responses"].append(
-            {
-                "prompt_idx": prompt_idx,
-                "direction": direction,
-                "raw_response": response_text,
-                "parsed_choice": choice,
-                "prefers_A": prefers_A,
-            }
+    # Parse responses using standard parser (handles reasoning extraction)
+    parsed_responses, reasoning_results, reasoning_summaries = (
+        parse_responses_forced_choice(
+            responses_by_prompt, choices=["A", "B"], verbose=verbose
         )
+    )
 
-    # Calculate aggregate preferences per edge
-    preference_data_for_graph = []
-    for edge_key, data in edge_results.items():
-        valid_responses = [r for r in data["responses"] if r["prefers_A"] is not None]
-        if valid_responses:
-            prob_A = sum(r["prefers_A"] for r in valid_responses) / len(valid_responses)
-            data["probability_A"] = prob_A
-            data["num_valid_responses"] = len(valid_responses)
-        else:
-            data["probability_A"] = 0.5
-            data["num_valid_responses"] = 0
-
-        preference_data_for_graph.append(
-            {
-                "option_A": data["option_A"],
-                "option_B": data["option_B"],
-                "probability_A": data["probability_A"],
-                "aux_data": {"num_responses": data["num_valid_responses"]},
-            }
-        )
+    # Process responses into preference data using shared utility function
+    preference_data_for_graph = process_responses_to_preference_data(
+        responses=responses_by_prompt,
+        parsed_responses=parsed_responses,
+        prompt_idx_to_key=prompt_idx_to_key,
+        options_by_id=graph.options_by_id,
+        reasoning_results=reasoning_results,
+        reasoning_summaries=reasoning_summaries,
+        unparseable_mode="distribution",  # Treat unparseable as 50/50
+    )
 
     graph.add_edges(preference_data_for_graph)
 
@@ -431,6 +390,7 @@ async def run_nudged_simple_experiment(
             "max_requests": max_requests,
             "requests_per_edge": requests_per_edge,
             "seed": seed,
+            "reasoning_mode": prompt_config.reasoning_mode.value,
         },
     }
 
@@ -459,6 +419,7 @@ async def run_nudged_simple_experiment(
         "utility_model_arguments": {
             "num_epochs": 1000,
             "learning_rate": 0.01,
+            "reasoning_mode": prompt_config.reasoning_mode.value,
         },
     }
 
@@ -479,6 +440,7 @@ async def run_nudged_simple_experiment(
     summary_path = os.path.join(save_path, f"summary_{model}.txt")
     with open(summary_path, "w") as f:
         f.write("Utility Model: ThurstonianModel (simple random sampling)\n\n")
+        f.write(f"Reasoning mode: {prompt_config.reasoning_mode.value}\n\n")
 
         if nudge_type != "base":
             f.write("Nudge Configuration:\n")
@@ -522,6 +484,7 @@ def create_nudged_simple_config(
     target_group: Optional[str] = None,
     nudge_text: Optional[str] = None,
     n_values_key: str = "binary",
+    reasoning: str = "none",
 ) -> Tuple[List[Variable], NudgedPromptConfig, AnalysisConfig]:
     """
     Create experiment configuration with nudge support.
@@ -532,6 +495,7 @@ def create_nudged_simple_config(
         target_group: Group to nudge towards (None for base)
         nudge_text: Generated nudge text (None for base)
         n_values_key: N values key
+        reasoning: Reasoning mode ("none", "before", or "after")
 
     Returns:
         Tuple of (variables, prompt_config, analysis_config)
@@ -559,8 +523,10 @@ def create_nudged_simple_config(
         setup_with_nudge = DEFAULT_SETUP
 
     # Create prompt config (uses defaults, just override setup and generate_option_text)
+    reasoning_mode = ReasoningMode(reasoning)
     prompt_config = NudgedPromptConfig(
         setup=setup_with_nudge,
+        reasoning_mode=reasoning_mode,
         nudge_type=nudge_type,
         target_group=target_group,
         nudge_text=nudge_text,
@@ -582,6 +548,7 @@ async def run_nudging_experiments(
     requests_per_edge: int = 2,
     n_values: str = "binary",
     seed: int = 42,
+    reasoning: str = "none",
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -595,6 +562,7 @@ async def run_nudging_experiments(
         requests_per_edge: Requests per edge
         n_values: N values key
         seed: Random seed
+        reasoning: Reasoning mode ("none", "before", or "after")
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -623,6 +591,7 @@ async def run_nudging_experiments(
         factor_name=factor_name,
         nudge_type="base",
         n_values_key=n_values,
+        reasoning=reasoning,
     )
 
     base_results = await run_nudged_simple_experiment(
@@ -636,6 +605,7 @@ async def run_nudging_experiments(
         requests_per_edge=requests_per_edge,
         seed=seed,
         verbose=True,
+        reasoning=reasoning,
     )
     results["base"] = base_results
 
@@ -657,6 +627,7 @@ async def run_nudging_experiments(
             target_group=target_group,
             nudge_text=group_nudge_text,
             n_values_key=n_values,
+            reasoning=reasoning,
         )
 
         experiment_results = await run_nudged_simple_experiment(
@@ -672,6 +643,7 @@ async def run_nudging_experiments(
             requests_per_edge=requests_per_edge,
             seed=seed,
             verbose=True,
+            reasoning=reasoning,
         )
         results[target_group] = experiment_results
 
@@ -790,6 +762,14 @@ Examples:
         help="Random seed (default: 42)",
     )
 
+    parser.add_argument(
+        "--reasoning",
+        type=str,
+        choices=["none", "before", "after"],
+        default="none",
+        help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -810,6 +790,7 @@ Examples:
                 requests_per_edge=args.requests_per_edge,
                 n_values=args.n_values,
                 seed=args.seed,
+                reasoning=args.reasoning,
             )
         )
     else:

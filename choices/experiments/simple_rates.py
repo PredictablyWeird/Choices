@@ -19,7 +19,7 @@ import random
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Tuple
 
-from choices import PromptConfig, Variable
+from choices import PromptConfig, ReasoningMode, Variable
 from choices.results import (
     ExperimentOption,
     ExperimentResults,
@@ -28,7 +28,13 @@ from choices.results import (
 )
 from choices.utilities.compute_utilities import PreferenceGraph
 from choices.utilities.thurstonian import fit_thurstonian_model
-from choices.utils import create_agent, generate_responses, load_config
+from choices.utils import (
+    create_agent,
+    generate_responses,
+    load_config,
+    parse_responses_forced_choice,
+    process_responses_to_preference_data,
+)
 from choices.variable import AnalysisConfig, AnalysisType
 
 
@@ -372,9 +378,14 @@ async def run_simple_experiment(
     if verbose:
         print(f"\nTotal prompts to send: {len(prompt_list)}")
 
-    # Create agent
+    # Create agent - use reasoning config if reasoning mode is enabled
+    agent_config_key = (
+        "default_with_reasoning"
+        if prompt_config.reasoning_mode != ReasoningMode.NONE
+        else "default"
+    )
     agent_config = load_config(
-        _get_config_path("create_agent.yaml"), "default", "create_agent.yaml"
+        _get_config_path("create_agent.yaml"), agent_config_key, "create_agent.yaml"
     )
     agent = create_agent(model_key=model, **agent_config)
 
@@ -406,85 +417,29 @@ async def run_simple_experiment(
         system_message=prompt_config.system_prompt,
         K=1,  # Single response per prompt
         verbose=verbose,
+        reasoning_mode=prompt_config.reasoning_mode,
     )
 
     if verbose:
         print(f"Received responses for {len(responses_by_prompt)} prompts")
 
-    # Parse responses and aggregate by edge
-    edge_results = {}
-    for prompt_idx, response_list in responses_by_prompt.items():
-        if prompt_idx not in prompt_idx_to_key:
-            continue
-
-        A_id, B_id, direction = prompt_idx_to_key[prompt_idx]
-        edge_key = (A_id, B_id)
-
-        if edge_key not in edge_results:
-            edge_results[edge_key] = {
-                "option_A": graph.options_by_id[A_id],
-                "option_B": graph.options_by_id[B_id],
-                "responses": [],
-            }
-
-        # Get the response content (handle LLMResponse objects)
-        response = response_list[0] if response_list else None
-        if hasattr(response, "content"):
-            response_text = response.content or ""
-        else:
-            response_text = str(response) if response else ""
-
-        # Parse response
-        choice = None
-        response_text_upper = response_text.strip().upper()
-        if "A" in response_text_upper and "B" not in response_text_upper:
-            choice = "A"
-        elif "B" in response_text_upper and "A" not in response_text_upper:
-            choice = "B"
-        elif response_text_upper.startswith("A"):
-            choice = "A"
-        elif response_text_upper.startswith("B"):
-            choice = "B"
-
-        # Convert to preference for A based on direction
-        prefers_A = None
-        if choice:
-            if direction == "original":
-                prefers_A = choice == "A"
-            else:  # flipped
-                prefers_A = choice == "B"
-
-        edge_results[edge_key]["responses"].append(
-            {
-                "prompt_idx": prompt_idx,
-                "direction": direction,
-                "raw_response": response_text,
-                "parsed_choice": choice,
-                "prefers_A": prefers_A,
-            }
+    # Parse responses using standard parser (handles reasoning extraction)
+    parsed_responses, reasoning_results, reasoning_summaries = (
+        parse_responses_forced_choice(
+            responses_by_prompt, choices=["A", "B"], verbose=verbose
         )
+    )
 
-    # Calculate aggregate preferences per edge and add to graph
-    preference_data_for_graph = []
-    for edge_key, data in edge_results.items():
-        valid_responses = [r for r in data["responses"] if r["prefers_A"] is not None]
-        if valid_responses:
-            prob_A = sum(r["prefers_A"] for r in valid_responses) / len(valid_responses)
-            data["probability_A"] = prob_A
-            data["num_valid_responses"] = len(valid_responses)
-        else:
-            data["probability_A"] = 0.5
-            data["num_valid_responses"] = 0
-
-        # Add to graph for utility fitting
-        preference_data_for_graph.append(
-            {
-                "option_A": data["option_A"],
-                "option_B": data["option_B"],
-                "probability_A": data["probability_A"],
-                "aux_data": {"num_responses": data["num_valid_responses"]},
-            }
-        )
+    # Process responses into preference data using shared utility function
+    preference_data_for_graph = process_responses_to_preference_data(
+        responses=responses_by_prompt,
+        parsed_responses=parsed_responses,
+        prompt_idx_to_key=prompt_idx_to_key,
+        options_by_id=graph.options_by_id,
+        reasoning_results=reasoning_results,
+        reasoning_summaries=reasoning_summaries,
+        unparseable_mode="distribution",  # Treat unparseable as 50/50
+    )
 
     # Add edges to graph
     graph.add_edges(preference_data_for_graph)
@@ -522,6 +477,7 @@ async def run_simple_experiment(
             "max_requests": max_requests,
             "requests_per_edge": requests_per_edge,
             "seed": seed,
+            "reasoning_mode": prompt_config.reasoning_mode.value,
         },
     }
 
@@ -543,6 +499,7 @@ async def run_simple_experiment(
         "utility_model_arguments": {
             "num_epochs": 1000,
             "learning_rate": 0.01,
+            "reasoning_mode": prompt_config.reasoning_mode.value,
         },
     }
 
@@ -563,6 +520,7 @@ async def run_simple_experiment(
     summary_path = os.path.join(save_path, f"summary_{model}.txt")
     with open(summary_path, "w") as f:
         f.write("Utility Model: ThurstonianModel (simple random sampling)\n\n")
+        f.write(f"Reasoning mode: {prompt_config.reasoning_mode.value}\n\n")
         f.write("Training Metrics:\n")
         f.write(f"log_loss: {training_metrics['log_loss']}\n")
         f.write(f"accuracy: {training_metrics['accuracy']}\n\n")
@@ -592,6 +550,7 @@ async def run_simple_experiment(
 def create_simple_experiment_config(
     factor_name: str,
     n_values_key: str = "binary",
+    reasoning: str = "none",
 ) -> Tuple[List[Variable], PromptConfig, AnalysisConfig]:
     """
     Create experiment configuration for a simple binary factor experiment.
@@ -599,6 +558,7 @@ def create_simple_experiment_config(
     Args:
         factor_name: Which binary factor to use
         n_values_key: N values key
+        reasoning: Reasoning mode ("none", "before", or "after")
 
     Returns:
         Tuple of (variables, prompt_config, analysis_config)
@@ -620,7 +580,8 @@ def create_simple_experiment_config(
     )
 
     # Create prompt config (uses defaults for system_prompt and setup)
-    prompt_config = PromptConfig()
+    reasoning_mode = ReasoningMode(reasoning)
+    prompt_config = PromptConfig(reasoning_mode=reasoning_mode)
     prompt_config.generate_option_text = create_option_text_fn(factor_name)
 
     return variables, prompt_config, analysis_config
@@ -646,11 +607,13 @@ async def run_from_cli(
     requests_per_edge: int = 2,
     n_values: str = "binary",
     seed: int = 42,
+    reasoning: str = "none",
 ):
     """Run experiment from CLI arguments."""
     variables, prompt_config, analysis_config = create_simple_experiment_config(
         factor_name=factor_name,
         n_values_key=n_values,
+        reasoning=reasoning,
     )
 
     results = await run_simple_experiment(
@@ -728,6 +691,14 @@ Examples:
         help="Random seed (default: 42)",
     )
 
+    parser.add_argument(
+        "--reasoning",
+        type=str,
+        choices=["none", "before", "after"],
+        default="none",
+        help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
+    )
+
     args = parser.parse_args()
 
     if args.list:
@@ -741,6 +712,7 @@ Examples:
                 requests_per_edge=args.requests_per_edge,
                 n_values=args.n_values,
                 seed=args.seed,
+                reasoning=args.reasoning,
             )
         )
     else:
