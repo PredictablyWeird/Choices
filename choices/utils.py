@@ -6,7 +6,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
@@ -508,6 +508,168 @@ def parse_responses_forced_choice(raw_results, choices=["A", "B"], verbose=True)
     return parsed_results, reasoning_results, reasoning_summaries
 
 
+def process_responses_to_preference_data(
+    responses: Dict[int, List],
+    parsed_responses: Dict[int, List[str]],
+    prompt_idx_to_key: Dict[int, Tuple[Any, Any, str]],
+    options_by_id: Dict[Any, Dict],
+    reasoning_results: Optional[Dict[int, List[Optional[str]]]] = None,
+    reasoning_summaries: Optional[Dict[int, List[Optional[str]]]] = None,
+    unparseable_mode: str = "skip",
+) -> List[Dict]:
+    """
+    Convert parsed responses into preference data with reasoning stored in aux_data.
+
+    This is a standalone version of UtilityModel.process_responses for use in
+    simple experiments that don't need the full utility model infrastructure.
+
+    Args:
+        responses: Dict mapping prompt_idx to list of LLMResponse objects
+        parsed_responses: Dict mapping prompt_idx to list of parsed choices ('A', 'B', or 'unparseable')
+        prompt_idx_to_key: Mapping from prompt index to (option_A_id, option_B_id, direction)
+        options_by_id: Dict mapping option IDs to option dicts
+        reasoning_results: Dict mapping prompt_idx to list of reasoning texts
+        reasoning_summaries: Dict mapping prompt_idx to list of reasoning summaries
+        unparseable_mode: How to handle unparseable responses: "skip", "random", or "distribution"
+
+    Returns:
+        List of preference data dicts ready for graph.add_edges(), each with:
+        - option_A, option_B, probability_A, aux_data (including reasoning)
+    """
+    import random as rng_module
+
+    rng = rng_module.Random(42)
+
+    # Group responses by pair
+    pair_data = {}
+
+    for prompt_idx, response_list in responses.items():
+        if prompt_idx not in prompt_idx_to_key:
+            continue
+
+        A_id, B_id, direction = prompt_idx_to_key[prompt_idx]
+        parsed_list = parsed_responses.get(prompt_idx, [])
+        reasoning_list = (
+            reasoning_results.get(prompt_idx, []) if reasoning_results else []
+        )
+        reasoning_summary_list = (
+            reasoning_summaries.get(prompt_idx, []) if reasoning_summaries else []
+        )
+
+        pair_key = (A_id, B_id)
+        if pair_key not in pair_data:
+            pair_data[pair_key] = {
+                "option_A": options_by_id[A_id],
+                "option_B": options_by_id[B_id],
+                "original_responses": [],
+                "flipped_responses": [],
+                "original_parsed": [],
+                "flipped_parsed": [],
+                "original_reasoning": [],
+                "flipped_reasoning": [],
+                "original_reasoning_summaries": [],
+                "flipped_reasoning_summaries": [],
+            }
+
+        # Extract content from LLMResponse objects
+        content_list = [
+            r.content if hasattr(r, "content") else str(r) if r else ""
+            for r in response_list
+        ]
+
+        if direction == "original":
+            pair_data[pair_key]["original_responses"].extend(content_list)
+            pair_data[pair_key]["original_parsed"].extend(parsed_list)
+            pair_data[pair_key]["original_reasoning_summaries"].extend(
+                reasoning_summary_list
+            )
+            if reasoning_list:
+                pair_data[pair_key]["original_reasoning"].extend(reasoning_list)
+        else:
+            pair_data[pair_key]["flipped_responses"].extend(content_list)
+            pair_data[pair_key]["flipped_parsed"].extend(parsed_list)
+            pair_data[pair_key]["flipped_reasoning_summaries"].extend(
+                reasoning_summary_list
+            )
+            if reasoning_list:
+                pair_data[pair_key]["flipped_reasoning"].extend(reasoning_list)
+
+    # Convert to preference data
+    preference_data = []
+
+    for (A_id, B_id), data in pair_data.items():
+        dist_list = []
+
+        def add_to_dist_list(parsed_char, is_flipped=False):
+            if parsed_char == "A":
+                dist_list.append((1.0, 0.0) if not is_flipped else (0.0, 1.0))
+            elif parsed_char == "B":
+                dist_list.append((0.0, 1.0) if not is_flipped else (1.0, 0.0))
+            else:  # unparseable
+                if unparseable_mode == "skip":
+                    pass
+                elif unparseable_mode == "random":
+                    if rng.random() < 0.5:
+                        dist_list.append((1.0, 0.0) if not is_flipped else (0.0, 1.0))
+                    else:
+                        dist_list.append((0.0, 1.0) if not is_flipped else (1.0, 0.0))
+                elif unparseable_mode == "distribution":
+                    dist_list.append((0.5, 0.5))
+
+        for parsed in data["original_parsed"]:
+            add_to_dist_list(parsed, is_flipped=False)
+        for parsed in data["flipped_parsed"]:
+            add_to_dist_list(parsed, is_flipped=True)
+
+        total_A = sum(d[0] for d in dist_list)
+        total_B = sum(d[1] for d in dist_list)
+        total_responses = len(dist_list)
+
+        if total_responses > 0:
+            probability_A = (
+                total_A / (total_A + total_B) if (total_A + total_B) > 0 else 0.5
+            )
+
+            aux_data = {
+                "count_A": total_A,
+                "count_B": total_B,
+                "total_responses": total_responses,
+                "original_responses": data["original_responses"],
+                "flipped_responses": data["flipped_responses"],
+                "original_parsed": data["original_parsed"],
+                "flipped_parsed": data["flipped_parsed"],
+                "unparseable_mode": unparseable_mode,
+            }
+
+            # Add reasoning if present
+            def has_content(lst):
+                return lst and any(x is not None and x != "unparseable" for x in lst)
+
+            if has_content(data.get("original_reasoning")):
+                aux_data["original_reasoning"] = data["original_reasoning"]
+            if has_content(data.get("flipped_reasoning")):
+                aux_data["flipped_reasoning"] = data["flipped_reasoning"]
+            if has_content(data.get("original_reasoning_summaries")):
+                aux_data["original_reasoning_summaries"] = data[
+                    "original_reasoning_summaries"
+                ]
+            if has_content(data.get("flipped_reasoning_summaries")):
+                aux_data["flipped_reasoning_summaries"] = data[
+                    "flipped_reasoning_summaries"
+                ]
+
+            preference_data.append(
+                {
+                    "option_A": data["option_A"],
+                    "option_B": data["option_B"],
+                    "probability_A": probability_A,
+                    "aux_data": aux_data,
+                }
+            )
+
+    return preference_data
+
+
 async def parse_responses_forced_choice_freeform(
     raw_results,
     system_prompt,
@@ -744,6 +906,9 @@ async def generate_responses(
     cached_responses_mapping=None,
     verbose=True,
     reasoning_mode: ReasoningMode = ReasoningMode.NONE,
+    retry_empty: bool = True,
+    max_retries: int = 2,
+    valid_choices: List[str] = None,
 ):
     """
     Generates responses from the model for a list of prompts asynchronously.
@@ -759,6 +924,9 @@ async def generate_responses(
         cached_responses_mapping: Dictionary of cached responses
         verbose: Whether to print verbose output
         reasoning_mode: How the model should reason (ReasoningMode.NONE, BEFORE, or AFTER)
+        retry_empty: Whether to retry when response content is empty or not a valid choice
+        max_retries: Maximum number of retries for empty/invalid responses
+        valid_choices: List of valid choices (e.g., ["A", "B"]) to check against
 
     Returns:
         A dictionary mapping prompt indices to their generated responses (LLMResponse objects).
@@ -793,21 +961,62 @@ async def generate_responses(
     # Duplicate messages K times to get K completions for each prompt
     messages_k = messages * K
 
-    if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
-        responses = await agent.async_completions(
-            messages_k, base_timeout=timeout, verbose=verbose
-        )
-    elif isinstance(agent, ReasoningAgent) or isinstance(agent, OpenAIAgent):
-        print(
-            f"sending messages to openai reasoning agent: len(messages_k): {len(messages_k)}"
-        )
-        # print(f"messages_k: {messages_k[0]}")
-        responses = await agent.async_completions(messages_k)
-        # print(f"responses: {responses}")
-        # pdb.set_trace()
+    async def get_responses(msgs):
+        if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
+            return await agent.async_completions(
+                msgs, base_timeout=timeout, verbose=verbose
+            )
+        elif isinstance(agent, ReasoningAgent) or isinstance(agent, OpenAIAgent):
+            if verbose:
+                print(
+                    f"sending messages to openai reasoning agent: len(msgs): {len(msgs)}"
+                )
+            return await agent.async_completions(msgs)
+        else:
+            return agent.completions_batch(msgs)
 
-    else:
-        responses = agent.completions_batch(messages_k)
+    def is_valid_response(resp):
+        """Check if response has valid content."""
+        if resp is None:
+            return False
+        content = resp.content if isinstance(resp, LLMResponse) else str(resp)
+        if not content or not content.strip():
+            return False
+        # If valid_choices provided, check if content matches any
+        if valid_choices:
+            content_stripped = content.strip().upper()
+            return any(content_stripped == c.upper() for c in valid_choices)
+        return True
+
+    # Get initial responses
+    responses = await get_responses(messages_k)
+
+    # Retry logic for empty/invalid responses
+    if retry_empty and max_retries > 0:
+        for retry_num in range(max_retries):
+            # Find indices with invalid responses
+            invalid_indices = [
+                i for i, resp in enumerate(responses) if not is_valid_response(resp)
+            ]
+
+            if not invalid_indices:
+                break
+
+            if verbose:
+                print(
+                    f"Retry {retry_num + 1}/{max_retries}: {len(invalid_indices)} empty/invalid responses"
+                )
+
+            # Get messages for invalid responses
+            retry_messages = [messages_k[i] for i in invalid_indices]
+
+            # Retry those messages
+            retry_responses = await get_responses(retry_messages)
+
+            # Replace invalid responses with retry results
+            for idx, new_resp in zip(invalid_indices, retry_responses):
+                if is_valid_response(new_resp):
+                    responses[idx] = new_resp
 
     # Set reasoning_type on all LLMResponse objects (unless already set by agent)
     # Convert ReasoningMode to legacy string format for LLMResponse
