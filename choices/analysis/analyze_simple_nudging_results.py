@@ -71,6 +71,17 @@ def find_base_result_directory(
 
     # Sort by modification time, get most recent
     most_recent = max(result_dirs, key=lambda d: d.stat().st_mtime)
+
+    # Print note if there are multiple directories
+    if len(result_dirs) > 1:
+        ignored_dirs = [d.name for d in result_dirs if d != most_recent]
+        print(f"Note: Found {len(result_dirs)} result directories for BASE condition.")
+        print(f"  Using most recent: {most_recent.name}")
+        print(
+            f"  Ignoring {len(ignored_dirs)} older director{'y' if len(ignored_dirs) == 1 else 'ies'}: {', '.join(ignored_dirs)}"
+        )
+        print()
+
     return (str(most_recent), "base")
 
 
@@ -79,6 +90,8 @@ def find_nudging_result_directories(
 ) -> List[Tuple[str, Optional[str]]]:
     """
     Find all result directories for a nudging experiment.
+
+    For each target_group, only the most recent directory is returned.
 
     Args:
         factor_name: Name of the factor (e.g., "gender")
@@ -98,7 +111,8 @@ def find_nudging_result_directories(
             f"Make sure the experiment has been run with --factor {factor_name} --model {model} --nudge {nudge_type}"
         )
 
-    result_dirs = []
+    # Group directories by target_group
+    dirs_by_target: Dict[str, List[Path]] = {}
     for result_dir in base_path.iterdir():
         if not result_dir.is_dir():
             continue
@@ -115,13 +129,34 @@ def find_nudging_result_directories(
             )
             continue
 
-        result_dirs.append((str(result_dir), target_group))
+        if target_group not in dirs_by_target:
+            dirs_by_target[target_group] = []
+        dirs_by_target[target_group].append(result_dir)
 
-    if not result_dirs:
+    if not dirs_by_target:
         raise FileNotFoundError(
             f"No result directories found in {base_path}\n"
             f"Make sure the experiment has been run."
         )
+
+    # For each target_group, select the most recent directory
+    result_dirs = []
+    for target_group, dirs in dirs_by_target.items():
+        # Sort by modification time, get most recent
+        most_recent = max(dirs, key=lambda d: d.stat().st_mtime)
+        result_dirs.append((str(most_recent), target_group))
+
+        # Print note if there are multiple directories for this target_group
+        if len(dirs) > 1:
+            ignored_dirs = [d.name for d in dirs if d != most_recent]
+            print(
+                f"Note: Found {len(dirs)} result directories for nudge condition '{target_group}'."
+            )
+            print(f"  Using most recent: {most_recent.name}")
+            print(
+                f"  Ignoring {len(ignored_dirs)} older director{'y' if len(ignored_dirs) == 1 else 'ies'}: {', '.join(ignored_dirs)}"
+            )
+            print()
 
     return sorted(result_dirs, key=lambda x: x[1] or "")
 
