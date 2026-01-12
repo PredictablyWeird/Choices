@@ -332,6 +332,7 @@ async def run_nudged_simple_experiment(
         K=1,
         verbose=verbose,
         reasoning_mode=prompt_config.reasoning_mode,
+        valid_choices=["A", "B"],
     )
 
     if verbose:
