@@ -336,9 +336,24 @@ class OpenAIAgent(LLMAgent):
 
             results[message_idx] = LLMResponse(content=response)
 
-        tasks = [process_message(message_idx) for message_idx in range(len(messages))]
-        for f in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
-            await f  # Wait for each task to complete
+        # Create actual tasks (not just coroutines) so we can cancel them if needed
+        tasks = [
+            asyncio.create_task(process_message(message_idx))
+            for message_idx in range(len(messages))
+        ]
+
+        # Wrap in try-except to properly clean up tasks on error or cancellation
+        try:
+            for f in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
+                await f  # Wait for each task to complete
+        except (Exception, asyncio.CancelledError):
+            # Cancel all pending tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to finish (with cancellation)
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise  # Re-raise the original exception
 
         if verbose:
             print(f"Number of timeouts: {counts['timeouts']}")
@@ -498,7 +513,7 @@ class ReasoningAgent(OpenAIAgent):
 
                     # Success: parse the response
                     response = completion_res.output_text
-                    # Access reasoning traces based on model_type
+                    # Access reasoning traces and message content based on model_type
                     for out in completion_res.output:
                         if out.type == "reasoning":
                             if self.model_type == "openai":
@@ -543,19 +558,24 @@ class ReasoningAgent(OpenAIAgent):
                 reasoning_type="NO_REASONING",
             )
 
-        # Create a task for each message
-        tasks = [process_message(i) for i in range(len(messages))]
+        # Create actual tasks (not just coroutines) so we can cancel them if needed
+        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
 
         # Use tqdm_asyncio to track progress as tasks finish
-        # You can also set `leave=False` or other tqdm arguments as needed
-        coro_count = 0
-        for coro in tqdm_asyncio.as_completed(
-            tasks, total=len(tasks), desc="LLM calls"
-        ):
-            # print(f"Waiting for message {coro_count}")
-            await coro
-            # print(f"Completed message {coro_count}")
-            coro_count += 1
+        # Wrap in try-except to properly clean up tasks on error or cancellation
+        try:
+            for coro in tqdm_asyncio.as_completed(
+                tasks, total=len(tasks), desc="LLM calls"
+            ):
+                await coro
+        except (Exception, asyncio.CancelledError):
+            # Cancel all pending tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to finish (with cancellation)
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise  # Re-raise the original exception
 
         return [results[i] for i in range(len(messages))]
 
@@ -1422,15 +1442,24 @@ class LiteLLMAgent:
 
             results[message_idx] = LLMResponse(content=response)
 
-        # Create a task for each message
-        tasks = [process_message(i) for i in range(len(messages))]
+        # Create actual tasks (not just coroutines) so we can cancel them if needed
+        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
 
         # Use tqdm_asyncio to track progress as tasks finish
-        # You can also set `leave=False` or other tqdm arguments as needed
-        for coro in tqdm_asyncio.as_completed(
-            tasks, total=len(tasks), desc="LLM calls"
-        ):
-            await coro
+        # Wrap in try-except to properly clean up tasks on error or cancellation
+        try:
+            for coro in tqdm_asyncio.as_completed(
+                tasks, total=len(tasks), desc="LLM calls"
+            ):
+                await coro
+        except (Exception, asyncio.CancelledError):
+            # Cancel all pending tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to finish (with cancellation)
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise  # Re-raise the original exception
 
         if verbose:
             print(f"Number of timeouts: {counts['timeouts']}")
@@ -1614,15 +1643,24 @@ class BaseAgent:
 
             results[message_idx] = LLMResponse(content=response)
 
-        # Create a task for each message
-        tasks = [process_message(i) for i in range(len(messages))]
+        # Create actual tasks (not just coroutines) so we can cancel them if needed
+        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
 
         # Use tqdm_asyncio to track progress as tasks finish
-        # You can also set `leave=False` or other tqdm arguments as needed
-        for coro in tqdm_asyncio.as_completed(
-            tasks, total=len(tasks), desc="LLM calls"
-        ):
-            await coro
+        # Wrap in try-except to properly clean up tasks on error or cancellation
+        try:
+            for coro in tqdm_asyncio.as_completed(
+                tasks, total=len(tasks), desc="LLM calls"
+            ):
+                await coro
+        except (Exception, asyncio.CancelledError):
+            # Cancel all pending tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to finish (with cancellation)
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise  # Re-raise the original exception
 
         if verbose:
             print(f"Number of timeouts: {counts['timeouts']}")

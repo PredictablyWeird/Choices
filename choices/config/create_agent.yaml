@@ -1,11 +1,11 @@
 default:
   max_tokens: 16
   temperature: 1.0
-  concurrency_limit: 100
-  base_timeout: 100
+  concurrency_limit: 50
+  base_timeout: 10
 
 default_with_reasoning:
   max_tokens: 2000  # For thinking models
   temperature: 1.0
-  concurrency_limit: 500
+  concurrency_limit: 300
   base_timeout: 100
