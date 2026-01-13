@@ -18,6 +18,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from choices.analysis.steerability_metric import (
+    compute_steerability_bias_from_frequencies,
+)
+
 
 def load_nudge_config(results_dir: str) -> Optional[Dict]:
     """
@@ -582,9 +586,222 @@ def analyze_simple_nudging_experiment(
                 )
                 print()
 
+        # Compute and display steerability bias
+        _display_steerability_bias(sorted_results, factor_levels)
+
     print("=" * 80)
     print("Analysis complete!")
     print("=" * 80)
+
+
+def _display_steerability_bias(
+    sorted_results: List[Dict[str, Any]],
+    factor_levels: List[str],
+) -> None:
+    """
+    Compute and display steerability bias for pairwise factor level comparisons.
+
+    Args:
+        sorted_results: List of result dictionaries sorted with base first
+        factor_levels: List of factor level names
+    """
+    # Need base condition and at least 2 factor levels
+    if len(factor_levels) < 2:
+        return
+
+    base_result = next((r for r in sorted_results if r["target_group"] == "base"), None)
+    if not base_result:
+        print("Note: Cannot compute steerability bias without base condition")
+        return
+
+    base_stats = base_result["stats"]
+
+    # Build lookup: {target_group: stats}
+    stats_by_target = {}
+    for result in sorted_results:
+        stats_by_target[result["target_group"]] = result["stats"]
+
+    print("=" * 80)
+    print("STEERABILITY BIAS ANALYSIS")
+    print("=" * 80)
+    print()
+    print(
+        "Steerability measures how much nudging changes the odds ratio for each option."
+    )
+    print(
+        "Bias measures differential steerability (positive = more steerable toward B)."
+    )
+    print()
+
+    # Compute pairwise steerability biases
+    pairwise_results = []
+
+    for i, level_A in enumerate(factor_levels):
+        for level_B in factor_levels[i + 1 :]:
+            # Check if we have nudge conditions for both levels
+            if level_A not in stats_by_target or level_B not in stats_by_target:
+                continue
+
+            # Get frequencies for base condition
+            f_0_A = base_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
+            f_0_B = base_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+
+            if f_0_A is None or f_0_B is None:
+                continue
+
+            # Get frequencies for nudge towards A
+            nudge_A_stats = stats_by_target.get(level_A, {})
+            if not nudge_A_stats:
+                continue
+            f_A_A = nudge_A_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
+            f_A_B = nudge_A_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+
+            if f_A_A is None or f_A_B is None:
+                continue
+
+            # Get frequencies for nudge towards B
+            nudge_B_stats = stats_by_target.get(level_B, {})
+            if not nudge_B_stats:
+                continue
+            f_B_A = nudge_B_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
+            f_B_B = nudge_B_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+
+            if f_B_A is None or f_B_B is None:
+                continue
+
+            # Compute steerability bias
+            steer_A, steer_B, bias = compute_steerability_bias_from_frequencies(
+                f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+            )
+
+            if steer_A is not None:
+                pairwise_results.append(
+                    {
+                        "level_A": level_A,
+                        "level_B": level_B,
+                        "f_0_A": f_0_A,
+                        "f_0_B": f_0_B,
+                        "f_A_A": f_A_A,
+                        "f_A_B": f_A_B,
+                        "f_B_A": f_B_A,
+                        "f_B_B": f_B_B,
+                        "steerability_A": steer_A,
+                        "steerability_B": steer_B,
+                        "bias": bias,
+                    }
+                )
+
+    if not pairwise_results:
+        print(
+            "Could not compute steerability bias (missing nudge conditions or near-zero frequencies)"
+        )
+        print()
+        return
+
+    # Display detailed results for each pair
+    for result in pairwise_results:
+        level_A = result["level_A"]
+        level_B = result["level_B"]
+
+        print(f"{level_A} (A) vs {level_B} (B):")
+        print("-" * 40)
+
+        # Show frequency table
+        print(
+            f"  {'Condition':<20s} {'P(' + level_A + ')':>12s} {'P(' + level_B + ')':>12s} {'Odds(A/B)':>12s}"
+        )
+        print(f"  {'-'*56}")
+
+        # Base condition
+        r_0 = result["f_0_A"] / result["f_0_B"] if result["f_0_B"] > 0 else float("inf")
+        print(
+            f"  {'Base (no nudge)':<20s} {result['f_0_A']:>11.1%} {result['f_0_B']:>12.1%} {r_0:>12.2f}"
+        )
+
+        # Nudge towards A
+        r_A = result["f_A_A"] / result["f_A_B"] if result["f_A_B"] > 0 else float("inf")
+        print(
+            f"  {'Nudge → ' + level_A:<20s} {result['f_A_A']:>11.1%} {result['f_A_B']:>12.1%} {r_A:>12.2f}"
+        )
+
+        # Nudge towards B
+        r_B = result["f_B_A"] / result["f_B_B"] if result["f_B_B"] > 0 else float("inf")
+        print(
+            f"  {'Nudge → ' + level_B:<20s} {result['f_B_A']:>11.1%} {result['f_B_B']:>12.1%} {r_B:>12.2f}"
+        )
+
+        print()
+
+        # Steerability metrics
+        print(
+            f"  Steerability towards {level_A}: s(A) = {result['steerability_A']:+.3f}"
+        )
+        print(
+            f"  Steerability towards {level_B}: s(B) = {result['steerability_B']:+.3f}"
+        )
+        print()
+
+        bias = result["bias"]
+        if abs(bias) < 0.05:
+            interpretation = "roughly equal steerability"
+        elif bias > 0:
+            interpretation = f"more steerable towards {level_B}"
+        else:
+            interpretation = f"more steerable towards {level_A}"
+
+        print(f"  Steerability Bias: {bias:+.3f} ({interpretation})")
+        print()
+
+    # Summary table if multiple pairs
+    if len(pairwise_results) > 1:
+        print("STEERABILITY BIAS SUMMARY:")
+        print("-" * 60)
+        print(f"  {'Pair':<30s} {'s(A)':>10s} {'s(B)':>10s} {'Bias':>10s}")
+        print(f"  {'-'*60}")
+        for result in pairwise_results:
+            pair_name = f"{result['level_A']} vs {result['level_B']}"
+            print(
+                f"  {pair_name:<30s} "
+                f"{result['steerability_A']:>+10.3f} "
+                f"{result['steerability_B']:>+10.3f} "
+                f"{result['bias']:>+10.3f}"
+            )
+        print()
+
+    # Bias matrix for >2 factor levels
+    if len(factor_levels) > 2:
+        print("STEERABILITY BIAS MATRIX:")
+        print("(positive value in row A, column B means more steerable towards B)")
+        print()
+
+        # Build lookup for quick access
+        bias_lookup = {}
+        for result in pairwise_results:
+            bias_lookup[(result["level_A"], result["level_B"])] = result["bias"]
+
+        col_width = max(len(level) for level in factor_levels) + 2
+        header = " " * col_width + "".join(
+            f"{level:>{col_width}}" for level in factor_levels
+        )
+        print(header)
+        print("-" * len(header))
+
+        for level_A in factor_levels:
+            row = f"{level_A:<{col_width}}"
+            for level_B in factor_levels:
+                if level_A == level_B:
+                    row += f"{'—':>{col_width}}"
+                elif (level_A, level_B) in bias_lookup:
+                    bias = bias_lookup[(level_A, level_B)]
+                    row += f"{bias:>+{col_width}.2f}"
+                elif (level_B, level_A) in bias_lookup:
+                    # Bias is antisymmetric
+                    bias = -bias_lookup[(level_B, level_A)]
+                    row += f"{bias:>+{col_width}.2f}"
+                else:
+                    row += f"{'N/A':>{col_width}}"
+            print(row)
+        print()
 
 
 if __name__ == "__main__":
