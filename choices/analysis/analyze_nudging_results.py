@@ -127,6 +127,10 @@ def find_nudging_result_directories(
         if not result_dir.is_dir():
             continue
 
+        # Skip _base directories - these are handled by find_base_result_directory
+        if result_dir.name.endswith("_base"):
+            continue
+
         # Try to get target_group from nudge config
         target_group = None
         nudge_config = load_nudge_config(str(result_dir))
