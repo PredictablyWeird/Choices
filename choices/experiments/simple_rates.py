@@ -430,6 +430,7 @@ async def run_simple_experiment(
         K=1,  # Single response per prompt
         verbose=verbose,
         reasoning_mode=prompt_config.reasoning_mode,
+        valid_choices=["A", "B"],  # Retry responses that don't contain a valid choice
     )
 
     if verbose:
