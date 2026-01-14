@@ -60,6 +60,10 @@ BINARY_FACTORS = {
         name="social_status",
         values=["low", "high"],
     ),
+    "wealth": Variable(
+        name="wealth",
+        values=["poor", "rich"],
+    ),
 }
 
 # N value options
@@ -139,6 +143,11 @@ def create_option_text_fn(factor_name: str) -> Callable[[Dict[str, Any]], str]:
             person = "person" if n == 1 else "people"
             verb = "is" if n == 1 else "are"
             return f"{n} {person} with {factor_value} social status {verb} saved from death."
+
+        elif factor_name == "wealth":
+            person = "person" if n == 1 else "people"
+            verb = "is" if n == 1 else "are"
+            return f"{n} {factor_value} {person} {verb} saved from death."
 
         else:
             # Generic fallback for any new factors

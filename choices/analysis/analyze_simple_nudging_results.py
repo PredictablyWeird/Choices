@@ -258,14 +258,17 @@ def compute_preference_stats(
             n_a = opt_a.get("N")
             n_b = opt_b.get("N")
 
-            # Update factor level stats
-            if level_a in level_stats:
-                level_stats[level_a]["n_presented"] += num_responses
-                level_stats[level_a]["wins"] += prob_a * num_responses
+            # Update factor level stats (only for edges with different factor levels)
+            # Intra-group comparisons (e.g., poor vs poor) don't tell us about
+            # factor preference, so we exclude them - similar to larger_n_stats below
+            if level_a != level_b:
+                if level_a in level_stats:
+                    level_stats[level_a]["n_presented"] += num_responses
+                    level_stats[level_a]["wins"] += prob_a * num_responses
 
-            if level_b in level_stats:
-                level_stats[level_b]["n_presented"] += num_responses
-                level_stats[level_b]["wins"] += (1 - prob_a) * num_responses
+                if level_b in level_stats:
+                    level_stats[level_b]["n_presented"] += num_responses
+                    level_stats[level_b]["wins"] += (1 - prob_a) * num_responses
 
             # Track larger N preference (only for edges with different N values)
             if n_a is not None and n_b is not None and n_a != n_b:
