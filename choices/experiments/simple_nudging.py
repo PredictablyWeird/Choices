@@ -82,6 +82,8 @@ def format_group_label(factor_name: str, group_value: str) -> str:
             return f"{group_value} people"
     elif factor_name == "ethnicity":
         return f"{group_value} people"
+    elif factor_name == "wealth":
+        return f"{group_value} people"
     elif factor_name == "age_group":
         if group_value == "young":
             return "young people"
