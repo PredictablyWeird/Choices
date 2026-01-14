@@ -52,19 +52,38 @@ def load_nudge_config(results_dir: str) -> Optional[Dict]:
 
 
 def find_base_result_directory(
-    config_name: str, model: str, results_base_dir: str = "results"
+    config_name: str,
+    model: str,
+    nudge_type: str,
+    results_base_dir: str = "results",
 ) -> Optional[Tuple[str, str]]:
     """
     Find the base (no-nudge) result directory.
 
+    First looks for base results in the nudge directory (with "_base" suffix),
+    then falls back to the legacy "base" directory.
+
     Args:
         config_name: Name of the base config
         model: Model name
+        nudge_type: Type of nudge (to look for base in nudge directory)
         results_base_dir: Base directory for results
 
     Returns:
         (result_dir_path, "base") tuple or None if not found
     """
+    # First, try to find base in the nudge directory (new location)
+    nudge_path = Path(results_base_dir) / config_name / model / nudge_type
+    if nudge_path.exists():
+        # Look for directories ending with "_base"
+        base_dirs = [
+            d for d in nudge_path.iterdir() if d.is_dir() and d.name.endswith("_base")
+        ]
+        if base_dirs:
+            most_recent = max(base_dirs, key=lambda d: d.stat().st_mtime)
+            return (str(most_recent), "base")
+
+    # Fall back to legacy "base" directory
     base_path = Path(results_base_dir) / config_name / model / "base"
 
     if not base_path.exists():
@@ -106,6 +125,10 @@ def find_nudging_result_directories(
     result_dirs = []
     for result_dir in base_path.iterdir():
         if not result_dir.is_dir():
+            continue
+
+        # Skip _base directories - these are handled by find_base_result_directory
+        if result_dir.name.endswith("_base"):
             continue
 
         # Try to get target_group from nudge config
@@ -248,8 +271,10 @@ def analyze_nudging_experiment(
     print("=" * 80)
     print()
 
-    # Find base condition (no nudge)
-    base_result_dir = find_base_result_directory(config_name, model, results_base_dir)
+    # Find base condition (no nudge) - looks in nudge dir first, then falls back to base dir
+    base_result_dir = find_base_result_directory(
+        config_name, model, nudge_type, results_base_dir
+    )
 
     # Find all result directories for nudging conditions
     result_dirs = find_nudging_result_directories(

@@ -5,11 +5,14 @@
 claude-sonnet-4-5:
   model_name: "openrouter/anthropic/claude-sonnet-4.5"
   model_type: openrouter
-  extra_body:
-    reasoning:
-      enabled: false
-      # Unsure if this has an effect, as setting to true doesn't seem to change anything
-      # (But responses are only 4 tokens long so maybe it doesn't reason by default with this configuration?)
+  reasoning_effort:
+    enabled: false
+
+claude-opus-4-5:
+  model_name: "openrouter/anthropic/claude-opus-4.5"
+  model_type: openrouter
+  reasoning_effort:
+    enabled: false
 
 gpt-5-2:
   model_name: "gpt-5.2"

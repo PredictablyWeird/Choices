@@ -32,6 +32,7 @@ from choices.utils import (
     create_agent,
     generate_responses,
     load_config,
+    model_has_active_reasoning,
     parse_responses_forced_choice,
     process_responses_to_preference_data,
 )
@@ -387,12 +388,14 @@ async def run_simple_experiment(
     if verbose:
         print(f"\nTotal prompts to send: {len(prompt_list)}")
 
-    # Create agent - use reasoning config if reasoning mode is enabled
-    agent_config_key = (
-        "default_with_reasoning"
-        if prompt_config.reasoning_mode != ReasoningMode.NONE
-        else "default"
+    # Create agent - use reasoning config if either:
+    # 1. Prompt requests reasoning (reasoning_mode != NONE)
+    # 2. Model has active reasoning (reasoning_effort is set and not "none")
+    uses_reasoning = (
+        prompt_config.reasoning_mode != ReasoningMode.NONE
+        or model_has_active_reasoning(model)
     )
+    agent_config_key = "default_with_reasoning" if uses_reasoning else "default"
     agent_config = load_config(
         _get_config_path("create_agent.yaml"), agent_config_key, "create_agent.yaml"
     )
@@ -427,7 +430,7 @@ async def run_simple_experiment(
         K=1,  # Single response per prompt
         verbose=verbose,
         reasoning_mode=prompt_config.reasoning_mode,
-        valid_choices=["A", "B"],
+        valid_choices=["A", "B"],  # Retry responses that don't contain a valid choice
     )
 
     if verbose:
