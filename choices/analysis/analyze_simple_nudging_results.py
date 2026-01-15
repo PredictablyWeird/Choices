@@ -18,13 +18,379 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from scipy import stats
 
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
 )
 
+# Default significance level (95% confidence)
+DEFAULT_ALPHA = 0.05
+
 # Threshold for warning about invalid responses (1%)
 INVALID_RESPONSE_WARNING_THRESHOLD = 0.01
+
+
+def binomial_test_vs_half(
+    successes: int,
+    n: int,
+    alpha: float = DEFAULT_ALPHA,
+) -> Dict[str, Any]:
+    """
+    Test if a proportion differs significantly from 0.5 using exact binomial test.
+
+    Args:
+        successes: Number of successes (wins)
+        n: Total number of trials
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with p_value, ci_low, ci_high, and is_significant
+    """
+    if n <= 0:
+        return {
+            "p_value": 1.0,
+            "ci_low": 0.0,
+            "ci_high": 1.0,
+            "is_significant": False,
+        }
+
+    result = stats.binomtest(successes, n, p=0.5, alternative="two-sided")
+    ci = result.proportion_ci(confidence_level=1 - alpha)
+
+    return {
+        "p_value": result.pvalue,
+        "ci_low": ci.low,
+        "ci_high": ci.high,
+        "is_significant": result.pvalue < alpha,
+    }
+
+
+def two_proportion_z_test(
+    p1: float,
+    n1: int,
+    p2: float,
+    n2: int,
+    alpha: float = DEFAULT_ALPHA,
+) -> Dict[str, Any]:
+    """
+    Test if two proportions differ significantly using two-proportion z-test.
+
+    This is the standard test for comparing proportions in academic publications.
+
+    Args:
+        p1: First proportion (e.g., base condition)
+        n1: Sample size for first proportion
+        p2: Second proportion (e.g., nudged condition)
+        n2: Sample size for second proportion
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with z_stat, p_value, diff, ci_low, ci_high, and is_significant
+    """
+    if n1 <= 0 or n2 <= 0:
+        return {
+            "z_stat": 0.0,
+            "p_value": 1.0,
+            "diff": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "is_significant": False,
+        }
+
+    # Pooled proportion under H0: p1 = p2
+    p_pooled = (p1 * n1 + p2 * n2) / (n1 + n2)
+
+    # Standard error under H0
+    se_pooled = np.sqrt(p_pooled * (1 - p_pooled) * (1 / n1 + 1 / n2))
+
+    # Z statistic
+    if se_pooled > 0:
+        z_stat = (p2 - p1) / se_pooled
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+    else:
+        z_stat = 0.0
+        p_value = 1.0
+
+    # Confidence interval for the difference (using unpooled SE)
+    se_diff = np.sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2)
+    z_crit = stats.norm.ppf(1 - alpha / 2)
+    diff = p2 - p1
+    ci_low = diff - z_crit * se_diff
+    ci_high = diff + z_crit * se_diff
+
+    return {
+        "z_stat": z_stat,
+        "p_value": p_value,
+        "diff": diff,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "is_significant": p_value < alpha,
+    }
+
+
+def compute_factor_frequencies_from_edges(
+    edges: Dict[str, Dict],
+    options_by_id: Dict[int, Dict],
+    factor_name: str,
+    target_levels: List[str],
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute factor level frequencies from edge data.
+
+    Args:
+        edges: Dictionary of edge data from graph
+        options_by_id: Lookup dictionary for options
+        factor_name: Name of the factor variable
+        target_levels: List of factor levels to track
+
+    Returns:
+        Dictionary with 'wins' and 'total' for each level
+    """
+    level_stats = {level: {"wins": 0.0, "total": 0} for level in target_levels}
+
+    for edge_key, edge_data in edges.items():
+        try:
+            ids = eval(edge_key)
+            opt_a = options_by_id.get(ids[0])
+            opt_b = options_by_id.get(ids[1])
+
+            if not opt_a or not opt_b:
+                continue
+
+            level_a = opt_a.get(factor_name)
+            level_b = opt_b.get(factor_name)
+
+            # Skip intra-group comparisons
+            if level_a == level_b:
+                continue
+
+            aux_data = edge_data.get("aux_data", {})
+            original_parsed = aux_data.get("original_parsed", [])
+            flipped_parsed = aux_data.get("flipped_parsed", [])
+
+            # Process original responses
+            for resp in original_parsed:
+                if resp == "A" and level_a in level_stats:
+                    level_stats[level_a]["wins"] += 1
+                    level_stats[level_a]["total"] += 1
+                    if level_b in level_stats:
+                        level_stats[level_b]["total"] += 1
+                elif resp == "B" and level_b in level_stats:
+                    level_stats[level_b]["wins"] += 1
+                    level_stats[level_b]["total"] += 1
+                    if level_a in level_stats:
+                        level_stats[level_a]["total"] += 1
+
+            # Process flipped responses (A in flipped = original B)
+            for resp in flipped_parsed:
+                if resp == "A" and level_b in level_stats:
+                    level_stats[level_b]["wins"] += 1
+                    level_stats[level_b]["total"] += 1
+                    if level_a in level_stats:
+                        level_stats[level_a]["total"] += 1
+                elif resp == "B" and level_a in level_stats:
+                    level_stats[level_a]["wins"] += 1
+                    level_stats[level_a]["total"] += 1
+                    if level_b in level_stats:
+                        level_stats[level_b]["total"] += 1
+
+        except Exception:
+            continue
+
+    return level_stats
+
+
+def bootstrap_steerability_bias(
+    base_graph_data: Dict[str, Any],
+    nudge_A_graph_data: Dict[str, Any],
+    nudge_B_graph_data: Dict[str, Any],
+    factor_name: str,
+    level_A: str,
+    level_B: str,
+    n_bootstrap: int = 10000,
+    alpha: float = DEFAULT_ALPHA,
+    random_seed: Optional[int] = 42,
+) -> Dict[str, Any]:
+    """
+    Compute bootstrap confidence intervals for steerability bias.
+
+    Resamples responses within each edge to generate a distribution of
+    steerability bias estimates.
+
+    Args:
+        base_graph_data: Graph data for base (no nudge) condition
+        nudge_A_graph_data: Graph data for nudge-toward-A condition
+        nudge_B_graph_data: Graph data for nudge-toward-B condition
+        factor_name: Name of the factor variable
+        level_A: First factor level
+        level_B: Second factor level
+        n_bootstrap: Number of bootstrap iterations (default 10000)
+        alpha: Significance level for CI (default 0.05)
+        random_seed: Random seed for reproducibility (default 42)
+
+    Returns:
+        Dictionary with ci_low, ci_high, se, and is_significant (CI excludes 0)
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    target_levels = [level_A, level_B]
+
+    def build_options_lookup(graph_data: Dict) -> Dict[int, Dict]:
+        return {opt["id"]: opt for opt in graph_data.get("options", [])}
+
+    def extract_edge_responses(graph_data: Dict) -> List[Dict]:
+        """Extract responses from each edge for resampling."""
+        edges = graph_data.get("edges", {})
+        options_by_id = build_options_lookup(graph_data)
+        edge_list = []
+
+        for edge_key, edge_data in edges.items():
+            try:
+                ids = eval(edge_key)
+                opt_a = options_by_id.get(ids[0])
+                opt_b = options_by_id.get(ids[1])
+
+                if not opt_a or not opt_b:
+                    continue
+
+                level_a = opt_a.get(factor_name)
+                level_b = opt_b.get(factor_name)
+
+                # Skip intra-group comparisons
+                if level_a == level_b:
+                    continue
+
+                # Only include edges involving our target levels
+                if level_a not in target_levels or level_b not in target_levels:
+                    continue
+
+                aux_data = edge_data.get("aux_data", {})
+                original_parsed = aux_data.get("original_parsed", [])
+                flipped_parsed = aux_data.get("flipped_parsed", [])
+
+                # Filter to valid responses only
+                original_valid = [r for r in original_parsed if r in ["A", "B"]]
+                flipped_valid = [r for r in flipped_parsed if r in ["A", "B"]]
+
+                edge_list.append(
+                    {
+                        "level_a": level_a,
+                        "level_b": level_b,
+                        "original": original_valid,
+                        "flipped": flipped_valid,
+                    }
+                )
+            except Exception:
+                continue
+
+        return edge_list
+
+    def compute_frequencies_from_edge_list(
+        edge_list: List[Dict], resample: bool = False
+    ) -> Tuple[float, float]:
+        """Compute frequencies for level_A and level_B from edge list."""
+        wins = {level_A: 0, level_B: 0}
+        total = {level_A: 0, level_B: 0}
+
+        for edge in edge_list:
+            la, lb = edge["level_a"], edge["level_b"]
+            original = edge["original"]
+            flipped = edge["flipped"]
+
+            if resample:
+                # Resample with replacement
+                if original:
+                    original = list(
+                        np.random.choice(original, size=len(original), replace=True)
+                    )
+                if flipped:
+                    flipped = list(
+                        np.random.choice(flipped, size=len(flipped), replace=True)
+                    )
+
+            # Process original responses
+            for resp in original:
+                if resp == "A":
+                    wins[la] += 1
+                else:  # resp == "B"
+                    wins[lb] += 1
+                total[la] += 1
+                total[lb] += 1
+
+            # Process flipped responses (A in flipped = original B position)
+            for resp in flipped:
+                if resp == "A":
+                    wins[lb] += 1
+                else:  # resp == "B"
+                    wins[la] += 1
+                total[la] += 1
+                total[lb] += 1
+
+        # Compute frequencies
+        freq_A = wins[level_A] / total[level_A] if total[level_A] > 0 else 0.5
+        freq_B = wins[level_B] / total[level_B] if total[level_B] > 0 else 0.5
+
+        return freq_A, freq_B
+
+    # Extract edge responses for each condition
+    base_edges = extract_edge_responses(base_graph_data)
+    nudge_A_edges = extract_edge_responses(nudge_A_graph_data)
+    nudge_B_edges = extract_edge_responses(nudge_B_graph_data)
+
+    if not base_edges or not nudge_A_edges or not nudge_B_edges:
+        return {
+            "ci_low": None,
+            "ci_high": None,
+            "se": None,
+            "is_significant": False,
+            "n_bootstrap": 0,
+        }
+
+    # Bootstrap
+    biases = []
+    for _ in range(n_bootstrap):
+        # Resample each condition
+        f_0_A, f_0_B = compute_frequencies_from_edge_list(base_edges, resample=True)
+        f_A_A, f_A_B = compute_frequencies_from_edge_list(nudge_A_edges, resample=True)
+        f_B_A, f_B_B = compute_frequencies_from_edge_list(nudge_B_edges, resample=True)
+
+        # Compute steerability bias
+        _, _, bias = compute_steerability_bias_from_frequencies(
+            f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+        )
+
+        if bias is not None:
+            biases.append(bias)
+
+    if len(biases) < n_bootstrap * 0.5:
+        # Too many failed bootstrap iterations
+        return {
+            "ci_low": None,
+            "ci_high": None,
+            "se": None,
+            "is_significant": False,
+            "n_bootstrap": len(biases),
+        }
+
+    # Compute percentile CI
+    lower_percentile = (alpha / 2) * 100
+    upper_percentile = (1 - alpha / 2) * 100
+    ci_low = np.percentile(biases, lower_percentile)
+    ci_high = np.percentile(biases, upper_percentile)
+    se = np.std(biases)
+
+    # Significant if CI excludes 0
+    is_significant = ci_low > 0 or ci_high < 0
+
+    return {
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "se": se,
+        "is_significant": is_significant,
+        "n_bootstrap": len(biases),
+    }
 
 
 def load_nudge_config(results_dir: str) -> Optional[Dict]:
@@ -468,14 +834,13 @@ def print_balance_check(balance_info: Dict[str, Any]) -> None:
 
 
 def print_response_validity(validity_info: Dict[str, Any]) -> None:
-    """Print response validity check results for a condition."""
+    """Print response validity check results for a condition (without warning banner)."""
     total_attempted = validity_info["total_attempted"]
     if total_attempted == 0:
         return
 
     invalid_rate = validity_info["invalid_rate"]
     invalid_count = validity_info["invalid_count"]
-    # total_responses = validity_info["total_responses"]
     total_unparseable = validity_info["total_unparseable"]
     total_skipped = validity_info["total_skipped"]
 
@@ -494,15 +859,6 @@ def print_response_validity(validity_info: Dict[str, Any]) -> None:
             details.append(f"{total_skipped} skipped")
         detail_str = ", ".join(details)
         print(f"  Invalid: {invalid_count} ({invalid_rate:.2%}) [{detail_str}]")
-
-    if validity_info["has_warning"]:
-        print()
-        print("  " + "!" * 60)
-        print(f"  !!! WARNING: {invalid_rate:.1%} of responses were invalid !!!")
-        print(
-            f"  !!! This exceeds the {INVALID_RESPONSE_WARNING_THRESHOLD:.0%} threshold !!!"
-        )
-        print("  " + "!" * 60)
 
 
 def compute_preference_stats(
@@ -589,22 +945,24 @@ def compute_preference_stats(
 
     # Compute probabilities
     factor_probs = {}
-    for level, stats in level_stats.items():
-        if stats["n_presented"] > 0:
-            prob = stats["wins"] / stats["n_presented"]
-            se = np.sqrt(prob * (1 - prob) / stats["n_presented"])
+    for level, level_stat in level_stats.items():
+        if level_stat["n_presented"] > 0:
+            prob = level_stat["wins"] / level_stat["n_presented"]
+            se = np.sqrt(prob * (1 - prob) / level_stat["n_presented"])
         else:
             prob = 0.5
             se = 0.0
         factor_probs[level] = {
             "prob_chosen": prob,
             "se": se,
-            "n_presented": stats["n_presented"],
+            "n_presented": level_stat["n_presented"],
+            "n_wins": level_stat["wins"],  # Raw wins count for statistical tests
         }
 
     # Compute larger N preference
     larger_n_prob = None
     larger_n_se = None
+    larger_n_wins = None
     if larger_n_stats["n_comparisons"] > 0:
         larger_n_prob = (
             larger_n_stats["larger_n_wins"] / larger_n_stats["n_comparisons"]
@@ -612,6 +970,7 @@ def compute_preference_stats(
         larger_n_se = np.sqrt(
             larger_n_prob * (1 - larger_n_prob) / larger_n_stats["n_comparisons"]
         )
+        larger_n_wins = larger_n_stats["larger_n_wins"]
 
     return {
         "factor_name": factor_name,
@@ -620,7 +979,88 @@ def compute_preference_stats(
         "larger_n_prob": larger_n_prob,
         "larger_n_se": larger_n_se,
         "larger_n_comparisons": larger_n_stats["n_comparisons"],
+        "larger_n_wins": larger_n_wins,  # Raw wins count for statistical tests
     }
+
+
+def add_significance_tests(
+    stats: Dict[str, Any],
+    base_stats: Optional[Dict[str, Any]] = None,
+    alpha: float = DEFAULT_ALPHA,
+) -> None:
+    """
+    Add significance test results to stats dictionary (in-place).
+
+    For base condition (base_stats=None):
+        - Tests if each factor prob differs from 50% (binomial test)
+        - Tests if larger_n_prob differs from 50%
+
+    For nudge conditions (base_stats provided):
+        - Tests if each factor prob differs from base (z-test)
+        - Tests if larger_n_prob differs from base
+
+    Args:
+        stats: Stats dictionary from compute_preference_stats (modified in-place)
+        base_stats: Stats from base condition, or None if this is the base
+        alpha: Significance level
+    """
+    is_base = base_stats is None
+
+    # Add significance for factor probs
+    for level, data in stats["factor_probs"].items():
+        n_presented = int(data["n_presented"])
+        n_wins = data["n_wins"]
+        prob = data["prob_chosen"]
+
+        if is_base:
+            # Binomial test vs 50%
+            test_result = binomial_test_vs_half(int(round(n_wins)), n_presented, alpha)
+        else:
+            # Z-test vs base
+            base_data = base_stats["factor_probs"].get(level, {})
+            base_prob = base_data.get("prob_chosen", 0.5)
+            base_n = int(base_data.get("n_presented", 0))
+            if base_n > 0 and n_presented > 0:
+                test_result = two_proportion_z_test(
+                    base_prob, base_n, prob, n_presented, alpha
+                )
+            else:
+                test_result = {"is_significant": False, "p_value": 1.0}
+
+        data["is_significant"] = test_result["is_significant"]
+        data["p_value"] = test_result.get("p_value", 1.0)
+
+    # Add significance for larger N preference
+    larger_n_prob = stats.get("larger_n_prob")
+    larger_n_comparisons = stats.get("larger_n_comparisons", 0)
+    larger_n_wins = stats.get("larger_n_wins", 0)
+
+    if larger_n_prob is not None and larger_n_comparisons > 0:
+        if is_base:
+            # Binomial test vs 50%
+            test_result = binomial_test_vs_half(
+                int(round(larger_n_wins)), int(larger_n_comparisons), alpha
+            )
+        else:
+            # Z-test vs base
+            base_prob = base_stats.get("larger_n_prob")
+            base_n = base_stats.get("larger_n_comparisons", 0)
+            if base_prob is not None and base_n > 0:
+                test_result = two_proportion_z_test(
+                    base_prob,
+                    int(base_n),
+                    larger_n_prob,
+                    int(larger_n_comparisons),
+                    alpha,
+                )
+            else:
+                test_result = {"is_significant": False, "p_value": 1.0}
+
+        stats["larger_n_is_significant"] = test_result["is_significant"]
+        stats["larger_n_p_value"] = test_result.get("p_value", 1.0)
+    else:
+        stats["larger_n_is_significant"] = False
+        stats["larger_n_p_value"] = 1.0
 
 
 def format_probability(prob: float, se: float = None) -> str:
@@ -637,6 +1077,7 @@ def analyze_simple_nudging_experiment(
     model: str,
     nudge_type: str,
     results_base_dir: str = "results",
+    alpha: float = DEFAULT_ALPHA,
 ):
     """
     Analyze a complete simple nudging experiment.
@@ -646,6 +1087,7 @@ def analyze_simple_nudging_experiment(
         model: Model name
         nudge_type: Type of nudge
         results_base_dir: Base directory for results
+        alpha: Significance level for statistical tests (default 0.05)
     """
     print("=" * 80)
     print("Simple Nudging Experiment Analysis")
@@ -713,7 +1155,7 @@ def analyze_simple_nudging_experiment(
         )
         print_balance_check(balance_info)
 
-        # Check response validity
+        # Check response validity (warning banner displayed in summary at end)
         validity_info = check_response_validity(graph_data)
         print_response_validity(validity_info)
 
@@ -764,6 +1206,7 @@ def analyze_simple_nudging_experiment(
                 "stats": stats,
                 "balance_info": balance_info,
                 "validity_info": validity_info,
+                "graph_data": graph_data,  # Store for bootstrap CI computation
             }
         )
 
@@ -786,6 +1229,29 @@ def analyze_simple_nudging_experiment(
 
         sorted_results = sorted(all_results, key=sort_key)
 
+        # Find base result for comparison tests
+        base_result = next(
+            (r for r in sorted_results if r["target_group"] == "base"), None
+        )
+
+        # Add significance tests to all results (computed once, reused everywhere)
+        base_stats = base_result["stats"] if base_result else None
+        for result in sorted_results:
+            is_base = result["target_group"] == "base"
+            add_significance_tests(
+                result["stats"],
+                base_stats=None if is_base else base_stats,
+                alpha=alpha,
+            )
+
+        # Significance level note
+        confidence_pct = int((1 - alpha) * 100)
+        print(
+            f"\nSignificance markers ({confidence_pct}% confidence level, α={alpha}):"
+        )
+        print("  * in base column: significantly different from 50% (binomial test)")
+        print("  * in nudge columns: significantly different from base (z-test)")
+
         # Print header
         print(f"\n{display_factor_name.upper()} PREFERENCE:")
         print(f"\n{'Level':<20s}", end="")
@@ -798,20 +1264,23 @@ def analyze_simple_nudging_experiment(
 
         print("-" * (20 + 18 * len(sorted_results)))
 
-        # Print factor level preferences
+        # Print factor level preferences with significance markers (pre-computed)
         for level in factor_levels:
             print(f"{level:<20s}", end="")
             for result in sorted_results:
-                prob = result["stats"]["factor_probs"].get(level, {}).get("prob_chosen")
+                factor_data = result["stats"]["factor_probs"].get(level, {})
+                prob = factor_data.get("prob_chosen")
+
                 if prob is not None:
-                    print(f"  {prob:>14.1%}", end="")
+                    marker = "*" if factor_data.get("is_significant", False) else ""
+                    print(f"  {prob:>13.1%}{marker}", end="")
                 else:
                     print(f"  {'N/A':>14s}", end="")
             print()
 
         print()
 
-        # Print larger N preference comparison
+        # Print larger N preference comparison with significance markers (pre-computed)
         print("LARGER N PREFERENCE:")
         print(f"\n{'':20s}", end="")
         for result in sorted_results:
@@ -826,8 +1295,12 @@ def analyze_simple_nudging_experiment(
         print(f"{'Larger N chosen':<20s}", end="")
         for result in sorted_results:
             prob = result["stats"]["larger_n_prob"]
+
             if prob is not None:
-                print(f"  {prob:>14.1%}", end="")
+                marker = (
+                    "*" if result["stats"].get("larger_n_is_significant", False) else ""
+                )
+                print(f"  {prob:>13.1%}{marker}", end="")
             else:
                 print(f"  {'N/A':>14s}", end="")
         print()
@@ -929,7 +1402,7 @@ def analyze_simple_nudging_experiment(
                 print()
 
         # Compute and display steerability bias
-        _display_steerability_bias(sorted_results, factor_levels)
+        _display_steerability_bias(sorted_results, factor_levels, alpha)
 
     # Display validity warnings summary if any
     if validity_warnings:
@@ -977,6 +1450,7 @@ def analyze_simple_nudging_experiment(
 def _display_steerability_bias(
     sorted_results: List[Dict[str, Any]],
     factor_levels: List[str],
+    alpha: float = DEFAULT_ALPHA,
 ) -> None:
     """
     Compute and display steerability bias for pairwise factor level comparisons.
@@ -984,6 +1458,7 @@ def _display_steerability_bias(
     Args:
         sorted_results: List of result dictionaries sorted with base first
         factor_levels: List of factor level names
+        alpha: Significance level for bootstrap CIs (default 0.05)
     """
     # Need base condition and at least 2 factor levels
     if len(factor_levels) < 2:
@@ -996,11 +1471,14 @@ def _display_steerability_bias(
 
     base_stats = base_result["stats"]
 
-    # Build lookup: {target_group: stats}
+    # Build lookups: {target_group: stats} and {target_group: graph_data}
     stats_by_target = {}
+    graph_data_by_target = {}
     for result in sorted_results:
         stats_by_target[result["target_group"]] = result["stats"]
+        graph_data_by_target[result["target_group"]] = result.get("graph_data")
 
+    confidence_pct = int((1 - alpha) * 100)
     print("=" * 80)
     print("STEERABILITY BIAS ANALYSIS")
     print("=" * 80)
@@ -1011,7 +1489,11 @@ def _display_steerability_bias(
     print(
         "Bias measures differential steerability (positive = more steerable toward B)."
     )
+    print(f"Bootstrap CIs computed at {confidence_pct}% confidence level.")
     print()
+
+    # Get factor name from the first result's stats
+    factor_name = base_stats.get("factor_name", "factor")
 
     # Compute pairwise steerability biases
     pairwise_results = []
@@ -1054,22 +1536,86 @@ def _display_steerability_bias(
                 f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
             )
 
+            # Compute bootstrap CI for bias
+            bootstrap_ci = None
+            base_graph = graph_data_by_target.get("base")
+            nudge_A_graph = graph_data_by_target.get(level_A)
+            nudge_B_graph = graph_data_by_target.get(level_B)
+
+            if base_graph and nudge_A_graph and nudge_B_graph:
+                # print(f"Computing bootstrap CI for {level_A} vs {level_B}...", end=" ")
+                bootstrap_ci = bootstrap_steerability_bias(
+                    base_graph,
+                    nudge_A_graph,
+                    nudge_B_graph,
+                    factor_name,
+                    level_A,
+                    level_B,
+                    n_bootstrap=1000,
+                    alpha=alpha,
+                )
+                print("done.")
+
             if steer_A is not None:
+                # Get pre-computed significance flags
+                sig_0_A = (
+                    base_stats["factor_probs"]
+                    .get(level_A, {})
+                    .get("is_significant", False)
+                )
+                sig_0_B = (
+                    base_stats["factor_probs"]
+                    .get(level_B, {})
+                    .get("is_significant", False)
+                )
+                sig_A_A = (
+                    nudge_A_stats["factor_probs"]
+                    .get(level_A, {})
+                    .get("is_significant", False)
+                )
+                sig_A_B = (
+                    nudge_A_stats["factor_probs"]
+                    .get(level_B, {})
+                    .get("is_significant", False)
+                )
+                sig_B_A = (
+                    nudge_B_stats["factor_probs"]
+                    .get(level_A, {})
+                    .get("is_significant", False)
+                )
+                sig_B_B = (
+                    nudge_B_stats["factor_probs"]
+                    .get(level_B, {})
+                    .get("is_significant", False)
+                )
+
                 pairwise_results.append(
                     {
                         "level_A": level_A,
                         "level_B": level_B,
+                        # Probabilities
                         "f_0_A": f_0_A,
                         "f_0_B": f_0_B,
                         "f_A_A": f_A_A,
                         "f_A_B": f_A_B,
                         "f_B_A": f_B_A,
                         "f_B_B": f_B_B,
+                        # Pre-computed significance (reusing from preference table)
+                        "sig_0_A": sig_0_A,
+                        "sig_0_B": sig_0_B,
+                        "sig_A_A": sig_A_A,
+                        "sig_A_B": sig_A_B,
+                        "sig_B_A": sig_B_A,
+                        "sig_B_B": sig_B_B,
+                        # Steerability metrics
                         "steerability_A": steer_A,
                         "steerability_B": steer_B,
                         "bias": bias,
+                        "bootstrap_ci": bootstrap_ci,
                     }
                 )
+
+    print()
 
     if not pairwise_results:
         print(
@@ -1086,7 +1632,9 @@ def _display_steerability_bias(
         print(f"{level_A} (A) vs {level_B} (B):")
         print("-" * 40)
 
-        # Show frequency table
+        # Show frequency table with significance markers (pre-computed)
+        # Base: * if significantly different from 50% (binomial test)
+        # Nudge: * if significantly different from base (z-test)
         print(
             f"  {'Condition':<20s} {'P(' + level_A + ')':>12s} {'P(' + level_B + ')':>12s} {'Odds(A/B)':>12s}"
         )
@@ -1094,20 +1642,26 @@ def _display_steerability_bias(
 
         # Base condition
         r_0 = result["f_0_A"] / result["f_0_B"] if result["f_0_B"] > 0 else float("inf")
+        base_A_marker = "*" if result.get("sig_0_A", False) else ""
+        base_B_marker = "*" if result.get("sig_0_B", False) else ""
         print(
-            f"  {'Base (no nudge)':<20s} {result['f_0_A']:>11.1%} {result['f_0_B']:>12.1%} {r_0:>12.2f}"
+            f"  {'Base (no nudge)':<20s} {result['f_0_A']:>10.1%}{base_A_marker:<1s} {result['f_0_B']:>11.1%}{base_B_marker:<1s} {r_0:>12.2f}"
         )
 
         # Nudge towards A
         r_A = result["f_A_A"] / result["f_A_B"] if result["f_A_B"] > 0 else float("inf")
+        nudge_A_A_marker = "*" if result.get("sig_A_A", False) else ""
+        nudge_A_B_marker = "*" if result.get("sig_A_B", False) else ""
         print(
-            f"  {'Nudge → ' + level_A:<20s} {result['f_A_A']:>11.1%} {result['f_A_B']:>12.1%} {r_A:>12.2f}"
+            f"  {'Nudge → ' + level_A:<20s} {result['f_A_A']:>10.1%}{nudge_A_A_marker:<1s} {result['f_A_B']:>11.1%}{nudge_A_B_marker:<1s} {r_A:>12.2f}"
         )
 
         # Nudge towards B
         r_B = result["f_B_A"] / result["f_B_B"] if result["f_B_B"] > 0 else float("inf")
+        nudge_B_A_marker = "*" if result.get("sig_B_A", False) else ""
+        nudge_B_B_marker = "*" if result.get("sig_B_B", False) else ""
         print(
-            f"  {'Nudge → ' + level_B:<20s} {result['f_B_A']:>11.1%} {result['f_B_B']:>12.1%} {r_B:>12.2f}"
+            f"  {'Nudge → ' + level_B:<20s} {result['f_B_A']:>10.1%}{nudge_B_A_marker:<1s} {result['f_B_B']:>11.1%}{nudge_B_B_marker:<1s} {r_B:>12.2f}"
         )
 
         print()
@@ -1122,6 +1676,8 @@ def _display_steerability_bias(
         print()
 
         bias = result["bias"]
+        bootstrap_ci = result.get("bootstrap_ci")
+
         if abs(bias) < 0.05:
             interpretation = "roughly equal steerability"
         elif bias > 0:
@@ -1129,22 +1685,51 @@ def _display_steerability_bias(
         else:
             interpretation = f"more steerable towards {level_A}"
 
-        print(f"  Steerability Bias: {bias:+.3f} ({interpretation})")
+        # Display bias with bootstrap CI
+        if bootstrap_ci and bootstrap_ci.get("ci_low") is not None:
+            ci_low = bootstrap_ci["ci_low"]
+            ci_high = bootstrap_ci["ci_high"]
+            se = bootstrap_ci["se"]
+            sig_marker = "*" if bootstrap_ci["is_significant"] else ""
+
+            print(f"  Steerability Bias: {bias:+.3f}{sig_marker} ({interpretation})")
+            print(f"  {confidence_pct}% Bootstrap CI: [{ci_low:+.3f}, {ci_high:+.3f}]")
+            print(f"  Bootstrap SE: {se:.3f}")
+            if bootstrap_ci["is_significant"]:
+                print(f"  * Significantly different from zero (p < {alpha})")
+        else:
+            print(f"  Steerability Bias: {bias:+.3f} ({interpretation})")
+            print("  Bootstrap CI: not available")
         print()
 
     # Summary table if multiple pairs
     if len(pairwise_results) > 1:
         print("STEERABILITY BIAS SUMMARY:")
-        print("-" * 60)
-        print(f"  {'Pair':<30s} {'s(A)':>10s} {'s(B)':>10s} {'Bias':>10s}")
-        print(f"  {'-'*60}")
+        print("-" * 90)
+        print(
+            f"  {'Pair':<25s} {'s(A)':>8s} {'s(B)':>8s} {'Bias':>8s} {f'{confidence_pct}% CI':>20s} {'Sig':>5s}"
+        )
+        print(f"  {'-'*88}")
         for result in pairwise_results:
             pair_name = f"{result['level_A']} vs {result['level_B']}"
+            bootstrap_ci = result.get("bootstrap_ci")
+
+            if bootstrap_ci and bootstrap_ci.get("ci_low") is not None:
+                ci_str = (
+                    f"[{bootstrap_ci['ci_low']:+.3f}, {bootstrap_ci['ci_high']:+.3f}]"
+                )
+                sig_str = "*" if bootstrap_ci["is_significant"] else ""
+            else:
+                ci_str = "N/A"
+                sig_str = ""
+
             print(
-                f"  {pair_name:<30s} "
-                f"{result['steerability_A']:>+10.3f} "
-                f"{result['steerability_B']:>+10.3f} "
-                f"{result['bias']:>+10.3f}"
+                f"  {pair_name:<25s} "
+                f"{result['steerability_A']:>+8.3f} "
+                f"{result['steerability_B']:>+8.3f} "
+                f"{result['bias']:>+8.3f} "
+                f"{ci_str:>20s} "
+                f"{sig_str:>5s}"
             )
         print()
 
@@ -1223,6 +1808,13 @@ Examples:
         help="Base directory for results (default: results)",
     )
 
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=DEFAULT_ALPHA,
+        help=f"Significance level for statistical tests (default: {DEFAULT_ALPHA})",
+    )
+
     args = parser.parse_args()
 
     analyze_simple_nudging_experiment(
@@ -1230,4 +1822,5 @@ Examples:
         model=args.model,
         nudge_type=args.nudge,
         results_base_dir=args.results_dir,
+        alpha=args.alpha,
     )
