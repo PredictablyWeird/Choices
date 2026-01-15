@@ -270,7 +270,7 @@ def compute_amce(
                 continue
 
             prob_a = edge_data.get("probability_A", 0.5)
-            num_responses = edge_data.get("aux_data", {}).get("num_responses", 1)
+            num_responses = edge_data.get("aux_data", {}).get("total_responses", 1)
 
             # Get factor levels
             level_a = opt_a.get(factor_name)

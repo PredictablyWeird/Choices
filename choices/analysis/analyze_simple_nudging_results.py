@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,6 +22,9 @@ import numpy as np
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
 )
+
+# Threshold for warning about invalid responses (1%)
+INVALID_RESPONSE_WARNING_THRESHOLD = 0.01
 
 
 def load_nudge_config(results_dir: str) -> Optional[Dict]:
@@ -236,6 +240,271 @@ def load_results(results_dir: str) -> Dict[str, Any]:
     }
 
 
+def check_balance(
+    options: List[Dict],
+    edges: Dict[str, Dict],
+    variables: List[Dict],
+) -> Dict[str, Any]:
+    """
+    Check if the experiment is balanced.
+
+    For a balanced design:
+    - Each option should appear in approximately equal numbers of comparisons
+    - For each N value, it should be paired with each factor level equally often
+      (e.g., N=1 appears with male and female the same number of times)
+
+    Args:
+        options: List of option dictionaries
+        edges: Dictionary of edges
+        variables: List of variable definitions
+
+    Returns:
+        Dictionary with balance statistics
+    """
+    # Build option lookup
+    options_by_id = {opt["id"]: opt for opt in options}
+
+    # Count appearances per option
+    option_counts = defaultdict(int)
+    for edge_key in edges.keys():
+        try:
+            ids = eval(edge_key)
+            if isinstance(ids, tuple):
+                option_counts[ids[0]] += 1
+                option_counts[ids[1]] += 1
+        except Exception:
+            parts = edge_key.strip("()").split(",")
+            if len(parts) == 2:
+                option_counts[int(parts[0].strip())] += 1
+                option_counts[int(parts[1].strip())] += 1
+
+    # Get N variable and factor variable
+    n_var = None
+    factor_var = None
+    for var in variables:
+        if var["name"] == "N":
+            n_var = var
+        else:
+            factor_var = var
+
+    if not factor_var or not n_var:
+        return {
+            "option_counts": dict(option_counts),
+            "n_factor_balance": {},
+            "is_balanced": True,
+        }
+
+    factor_name = factor_var["name"]
+    factor_levels = factor_var["values"]
+    n_values = sorted(n_var["values"])
+
+    # For each pair of N values, count how often each N is paired with each factor level
+    n_factor_balance = {}
+
+    for i, n1 in enumerate(n_values):
+        for n2 in n_values[i + 1 :]:
+            # For this N pair, count factor level distribution
+            factor_with_lower_n = defaultdict(int)
+            factor_with_higher_n = defaultdict(int)
+
+            for edge_key in edges.keys():
+                try:
+                    ids = eval(edge_key)
+                    opt_a = options_by_id.get(ids[0])
+                    opt_b = options_by_id.get(ids[1])
+
+                    if not opt_a or not opt_b:
+                        continue
+
+                    n_a = opt_a.get("N")
+                    n_b = opt_b.get("N")
+                    factor_a = opt_a.get(factor_name)
+                    factor_b = opt_b.get(factor_name)
+
+                    # Check if this edge involves the N pair (n1, n2)
+                    if n_a == n1 and n_b == n2:
+                        factor_with_lower_n[factor_a] += 1
+                        factor_with_higher_n[factor_b] += 1
+                    elif n_a == n2 and n_b == n1:
+                        factor_with_higher_n[factor_a] += 1
+                        factor_with_lower_n[factor_b] += 1
+
+                except Exception:
+                    pass
+
+            # Skip N pairs with no samples
+            total_samples = sum(factor_with_lower_n.values()) + sum(
+                factor_with_higher_n.values()
+            )
+            if total_samples == 0:
+                continue
+
+            # Check if balanced: each factor level should have equal counts
+            lower_counts = [factor_with_lower_n[f] for f in factor_levels]
+            higher_counts = [factor_with_higher_n[f] for f in factor_levels]
+
+            is_balanced = (
+                len(set(lower_counts)) <= 1
+                and len(set(higher_counts)) <= 1
+                and all(c > 0 for c in lower_counts)
+                and all(c > 0 for c in higher_counts)
+            )
+
+            n_factor_balance[(n1, n2)] = {
+                "factor_with_lower_n": dict(factor_with_lower_n),
+                "factor_with_higher_n": dict(factor_with_higher_n),
+                "balanced": is_balanced,
+            }
+
+    return {
+        "option_counts": dict(option_counts),
+        "n_factor_balance": n_factor_balance,
+        "is_balanced": all(v["balanced"] for v in n_factor_balance.values())
+        if n_factor_balance
+        else True,
+    }
+
+
+def check_response_validity(
+    graph_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Check the validity of responses in the experiment.
+
+    Examines the parsed response fields to count unparseable responses.
+    This works regardless of whether unparseable_mode is "skip" or "distribution".
+
+    Args:
+        graph_data: Loaded preference graph data
+
+    Returns:
+        Dictionary with validity statistics
+    """
+    edges = graph_data.get("edges", {})
+    config = graph_data.get("simple_experiment_config", {})
+
+    # Get expected requests per edge from config
+    requests_per_edge = config.get("requests_per_edge", None)
+
+    total_responses = 0
+    total_unparseable = 0
+    total_skipped = 0  # For skip mode - difference between expected and actual
+    edges_with_issues = []
+
+    for edge_key, edge_data in edges.items():
+        aux_data = edge_data.get("aux_data", {})
+        unparseable_mode = aux_data.get("unparseable_mode", "skip")
+
+        # Count unparseable responses from parsed fields
+        original_parsed = aux_data.get("original_parsed", [])
+        flipped_parsed = aux_data.get("flipped_parsed", [])
+
+        edge_unparseable = 0
+        for parsed in original_parsed:
+            if parsed == "unparseable":
+                edge_unparseable += 1
+        for parsed in flipped_parsed:
+            if parsed == "unparseable":
+                edge_unparseable += 1
+
+        # Total responses attempted for this edge
+        edge_total = len(original_parsed) + len(flipped_parsed)
+        total_responses += edge_total
+        total_unparseable += edge_unparseable
+
+        # Check for skipped responses (when unparseable_mode is "skip")
+        # In skip mode, total_responses in aux_data may be less than expected
+        if requests_per_edge is not None:
+            expected_for_edge = 2 * requests_per_edge
+            if edge_total < expected_for_edge:
+                total_skipped += expected_for_edge - edge_total
+
+        if edge_unparseable > 0:
+            edges_with_issues.append(
+                {
+                    "edge": edge_key,
+                    "total": edge_total,
+                    "unparseable": edge_unparseable,
+                    "unparseable_mode": unparseable_mode,
+                }
+            )
+
+    # Calculate invalidity rate
+    # Invalid = unparseable + skipped
+    invalid_count = total_unparseable + total_skipped
+    total_attempted = total_responses + total_skipped  # Total we tried to get
+    invalid_rate = invalid_count / total_attempted if total_attempted > 0 else 0
+
+    return {
+        "total_attempted": total_attempted,
+        "total_responses": total_responses,
+        "total_unparseable": total_unparseable,
+        "total_skipped": total_skipped,
+        "invalid_count": invalid_count,
+        "invalid_rate": invalid_rate,
+        "requests_per_edge": requests_per_edge,
+        "num_edges": len(edges),
+        "edges_with_issues": edges_with_issues,
+        "has_warning": invalid_rate > INVALID_RESPONSE_WARNING_THRESHOLD,
+    }
+
+
+def print_balance_check(balance_info: Dict[str, Any]) -> None:
+    """Print balance check results for a condition."""
+    print("\nBalance Check:")
+
+    option_counts = balance_info["option_counts"]
+    if option_counts:
+        min_count = min(option_counts.values())
+        max_count = max(option_counts.values())
+        print(f"  Option presentations: min={min_count}, max={max_count}", end="")
+        print(f" {'(balanced)' if min_count == max_count else '(imbalanced)'}")
+
+    n_factor_balance = balance_info.get("n_factor_balance", {})
+    if n_factor_balance:
+        balanced_pairs = sum(1 for v in n_factor_balance.values() if v["balanced"])
+        total_pairs = len(n_factor_balance)
+        print(f"  N-factor balance: {balanced_pairs}/{total_pairs} pairs balanced")
+
+
+def print_response_validity(validity_info: Dict[str, Any]) -> None:
+    """Print response validity check results for a condition."""
+    total_attempted = validity_info["total_attempted"]
+    if total_attempted == 0:
+        return
+
+    invalid_rate = validity_info["invalid_rate"]
+    invalid_count = validity_info["invalid_count"]
+    # total_responses = validity_info["total_responses"]
+    total_unparseable = validity_info["total_unparseable"]
+    total_skipped = validity_info["total_skipped"]
+
+    valid_count = total_attempted - invalid_count
+
+    print("\nResponse Validity:")
+    print(
+        f"  Valid responses: {valid_count}/{total_attempted} ({valid_count/total_attempted:.1%})"
+    )
+
+    if invalid_count > 0:
+        details = []
+        if total_unparseable > 0:
+            details.append(f"{total_unparseable} unparseable")
+        if total_skipped > 0:
+            details.append(f"{total_skipped} skipped")
+        detail_str = ", ".join(details)
+        print(f"  Invalid: {invalid_count} ({invalid_rate:.2%}) [{detail_str}]")
+
+    if validity_info["has_warning"]:
+        print()
+        print("  " + "!" * 60)
+        print(f"  !!! WARNING: {invalid_rate:.1%} of responses were invalid !!!")
+        print(
+            f"  !!! This exceeds the {INVALID_RESPONSE_WARNING_THRESHOLD:.0%} threshold !!!"
+        )
+        print("  " + "!" * 60)
+
+
 def compute_preference_stats(
     graph_data: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -285,7 +554,7 @@ def compute_preference_stats(
                 continue
 
             prob_a = edge_data.get("probability_A", 0.5)
-            num_responses = edge_data.get("aux_data", {}).get("num_responses", 1)
+            num_responses = edge_data.get("aux_data", {}).get("total_responses", 1)
 
             # Get factor levels
             level_a = opt_a.get(factor_name)
@@ -412,6 +681,9 @@ def analyze_simple_nudging_experiment(
     # Collect results for all conditions
     all_results = []
 
+    # Track validity warnings across all conditions
+    validity_warnings = []
+
     for result_dir, target_group in all_result_dirs:
         condition_label = (
             "BASE (no nudge)" if target_group == "base" else f"nudge → {target_group}"
@@ -431,8 +703,34 @@ def analyze_simple_nudging_experiment(
         if nudge_config:
             print(f"Nudge Text: {nudge_config.get('nudge_text', 'N/A')}")
 
+        graph_data = results_data["graph"]
+
+        # Check balance
+        balance_info = check_balance(
+            graph_data.get("options", []),
+            graph_data.get("edges", {}),
+            graph_data.get("variables", []),
+        )
+        print_balance_check(balance_info)
+
+        # Check response validity
+        validity_info = check_response_validity(graph_data)
+        print_response_validity(validity_info)
+
+        if validity_info["has_warning"]:
+            validity_warnings.append(
+                {
+                    "condition": condition_label,
+                    "invalid_rate": validity_info["invalid_rate"],
+                    "invalid_count": validity_info["invalid_count"],
+                    "total_attempted": validity_info["total_attempted"],
+                    "total_unparseable": validity_info["total_unparseable"],
+                    "total_skipped": validity_info["total_skipped"],
+                }
+            )
+
         # Compute preference stats
-        stats = compute_preference_stats(results_data["graph"])
+        stats = compute_preference_stats(graph_data)
 
         if "error" in stats:
             print(f"Error: {stats['error']}")
@@ -464,6 +762,8 @@ def analyze_simple_nudging_experiment(
                 "target_group": target_group,
                 "nudge_config": nudge_config,
                 "stats": stats,
+                "balance_info": balance_info,
+                "validity_info": validity_info,
             }
         )
 
@@ -630,6 +930,44 @@ def analyze_simple_nudging_experiment(
 
         # Compute and display steerability bias
         _display_steerability_bias(sorted_results, factor_levels)
+
+    # Display validity warnings summary if any
+    if validity_warnings:
+        print("=" * 80)
+        print("!" * 80)
+        print("!!! RESPONSE VALIDITY WARNINGS !!!")
+        print("!" * 80)
+        print()
+        print(
+            f"The following {len(validity_warnings)} condition(s) had >{INVALID_RESPONSE_WARNING_THRESHOLD:.0%} invalid responses:"
+        )
+        print()
+        for warning in validity_warnings:
+            print(f"  {warning['condition']}:")
+            print(f"    Invalid rate: {warning['invalid_rate']:.2%}")
+            print(
+                f"    Invalid: {warning['invalid_count']}/{warning['total_attempted']}",
+                end="",
+            )
+            details = []
+            if warning["total_unparseable"] > 0:
+                details.append(f"{warning['total_unparseable']} unparseable")
+            if warning["total_skipped"] > 0:
+                details.append(f"{warning['total_skipped']} skipped")
+            if details:
+                print(f" [{', '.join(details)}]")
+            else:
+                print()
+            print()
+        print(
+            "This may indicate issues with the API responses (rate limiting, empty responses,"
+        )
+        print(
+            "unparseable outputs, etc.). Consider re-running affected conditions or increasing"
+        )
+        print("--max-retries.")
+        print()
+        print("!" * 80)
 
     print("=" * 80)
     print("Analysis complete!")

@@ -280,6 +280,7 @@ async def run_nudged_simple_experiment(
     verbose: bool = True,
     reasoning: str = "none",
     save_nudge_dir: Optional[str] = None,
+    max_retries: int = 10,
 ) -> ExperimentResults:
     """
     Run a simple preference experiment with nudging.
@@ -299,6 +300,7 @@ async def run_nudged_simple_experiment(
         save_dir: Base directory for saving results
         verbose: Whether to print progress
         save_nudge_dir: Override directory for saving (used when saving base in nudge dir)
+        max_retries: Maximum number of retries for empty/invalid API responses
 
     Returns:
         ExperimentResults object
@@ -438,6 +440,7 @@ async def run_nudged_simple_experiment(
         verbose=verbose,
         reasoning_mode=prompt_config.reasoning_mode,
         valid_choices=["A", "B"],
+        max_retries=max_retries,
     )
 
     if verbose:
@@ -458,7 +461,7 @@ async def run_nudged_simple_experiment(
         options_by_id=graph.options_by_id,
         reasoning_results=reasoning_results,
         reasoning_summaries=reasoning_summaries,
-        unparseable_mode="distribution",  # Treat unparseable as 50/50
+        unparseable_mode="skip",
     )
 
     graph.add_edges(preference_data_for_graph)
@@ -683,6 +686,7 @@ async def run_nudging_experiments(
     seed: int = 42,
     reasoning: str = "none",
     setup: str = "original",
+    max_retries: int = 10,
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -698,6 +702,7 @@ async def run_nudging_experiments(
         seed: Random seed
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
+        max_retries: Maximum number of retries for empty/invalid API responses
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -743,6 +748,7 @@ async def run_nudging_experiments(
         verbose=True,
         reasoning=reasoning,
         save_nudge_dir=nudge_type,  # Save base in the nudge directory
+        max_retries=max_retries,
     )
     results["base"] = base_results
 
@@ -782,6 +788,7 @@ async def run_nudging_experiments(
             seed=seed,
             verbose=True,
             reasoning=reasoning,
+            max_retries=max_retries,
         )
         results[target_group] = experiment_results
 
@@ -939,6 +946,13 @@ Examples:
         help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
     )
 
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=10,
+        help="Maximum number of retries for empty/invalid API responses (default: 10)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -963,6 +977,7 @@ Examples:
                 seed=args.seed,
                 reasoning=args.reasoning,
                 setup=args.setup,
+                max_retries=args.max_retries,
             )
         )
     else:
