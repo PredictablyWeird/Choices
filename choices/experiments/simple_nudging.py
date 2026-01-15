@@ -458,7 +458,7 @@ async def run_nudged_simple_experiment(
         options_by_id=graph.options_by_id,
         reasoning_results=reasoning_results,
         reasoning_summaries=reasoning_summaries,
-        unparseable_mode="distribution",  # Treat unparseable as 50/50
+        unparseable_mode="skip",
     )
 
     graph.add_edges(preference_data_for_graph)
