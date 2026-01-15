@@ -1307,64 +1307,9 @@ def analyze_simple_nudging_experiment(
 
         print()
 
-        # Compute and display nudge effects
+        # Nudge effects summary
         print("=" * 80)
-        print("NUDGE EFFECTS (change from base)")
-        print("=" * 80)
-        print()
-
-        # Find base results
-        base_result = next(
-            (r for r in sorted_results if r["target_group"] == "base"), None
-        )
-        if base_result:
-            base_stats = base_result["stats"]
-
-            for result in sorted_results:
-                if result["target_group"] == "base":
-                    continue
-
-                target = result["target_group"]
-                stats = result["stats"]
-
-                print(f"Nudge towards '{target}':")
-
-                # Factor level changes
-                for level in factor_levels:
-                    base_prob = (
-                        base_stats["factor_probs"]
-                        .get(level, {})
-                        .get("prob_chosen", 0.5)
-                    )
-                    nudge_prob = (
-                        stats["factor_probs"].get(level, {}).get("prob_chosen", 0.5)
-                    )
-                    change = nudge_prob - base_prob
-
-                    marker = "↑" if change > 0 else "↓" if change < 0 else "→"
-                    print(
-                        f"  {level}: {base_prob:.1%} → {nudge_prob:.1%} ({marker} {abs(change):.1%})"
-                    )
-
-                # Larger N preference change
-                if (
-                    base_stats["larger_n_prob"] is not None
-                    and stats["larger_n_prob"] is not None
-                ):
-                    base_n_prob = base_stats["larger_n_prob"]
-                    nudge_n_prob = stats["larger_n_prob"]
-                    n_change = nudge_n_prob - base_n_prob
-
-                    marker = "↑" if n_change > 0 else "↓" if n_change < 0 else "→"
-                    print(
-                        f"  Larger N: {base_n_prob:.1%} → {nudge_n_prob:.1%} ({marker} {abs(n_change):.1%})"
-                    )
-
-                print()
-
-        # Effectiveness summary
-        print("=" * 80)
-        print("NUDGE EFFECTIVENESS SUMMARY")
+        print("NUDGE EFFECTS")
         print("=" * 80)
         print()
 
@@ -1378,6 +1323,7 @@ def analyze_simple_nudging_experiment(
                 target = result["target_group"]
                 stats = result["stats"]
 
+                # Get the change for the target level
                 base_prob = (
                     base_stats["factor_probs"].get(target, {}).get("prob_chosen", 0.5)
                 )
@@ -1385,6 +1331,12 @@ def analyze_simple_nudging_experiment(
                     stats["factor_probs"].get(target, {}).get("prob_chosen", 0.5)
                 )
                 change = nudge_prob - base_prob
+
+                # Use pre-computed significance
+                is_sig = (
+                    stats["factor_probs"].get(target, {}).get("is_significant", False)
+                )
+                sig_marker = "*" if is_sig else ""
 
                 if change > 0.05:
                     effectiveness = "EFFECTIVE"
@@ -1397,7 +1349,7 @@ def analyze_simple_nudging_experiment(
 
                 print(f"Nudge towards '{target}': {effectiveness}")
                 print(
-                    f"  Preference for {target}: {base_prob:.1%} → {nudge_prob:.1%} (Δ = {change:+.1%})"
+                    f"  Preference for {target}: {base_prob:.1%} → {nudge_prob:.1%}{sig_marker} (Δ = {change:+.1%})"
                 )
                 print()
 
@@ -1554,7 +1506,7 @@ def _display_steerability_bias(
                     n_bootstrap=1000,
                     alpha=alpha,
                 )
-                print("done.")
+                # print("done.")
 
             if steer_A is not None:
                 # Get pre-computed significance flags
