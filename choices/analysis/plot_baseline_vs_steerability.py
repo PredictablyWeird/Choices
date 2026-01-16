@@ -54,6 +54,37 @@ MODEL_COLORS = {
     "o1-mini": "#F15BB5",  # pink
 }
 
+# Extended color palette for models not in MODEL_COLORS
+_EXTRA_COLORS = [
+    "#264653",  # dark teal
+    "#e76f51",  # burnt sienna
+    "#8338ec",  # purple
+    "#ff006e",  # pink
+    "#3a86ff",  # blue
+    "#fb5607",  # orange
+    "#ffbe0b",  # yellow
+    "#06d6a0",  # mint
+    "#118ab2",  # ocean blue
+    "#ef476f",  # red-pink
+]
+
+# Cache for dynamically assigned model colors
+_dynamic_model_colors: Dict[str, str] = {}
+
+
+def get_model_color(model: str) -> str:
+    """Get color for a model, auto-assigning from palette if not predefined."""
+    if model in MODEL_COLORS:
+        return MODEL_COLORS[model]
+
+    if model not in _dynamic_model_colors:
+        # Assign next available color from palette
+        idx = len(_dynamic_model_colors) % len(_EXTRA_COLORS)
+        _dynamic_model_colors[model] = _EXTRA_COLORS[idx]
+
+    return _dynamic_model_colors[model]
+
+
 CATEGORY_MARKERS = {
     "gender": "o",  # circle
     "wealth": "s",  # square
@@ -432,7 +463,7 @@ def create_scatter_plot(
             model = point["model"]
             category = point["category"]
 
-            color = MODEL_COLORS.get(model, "#888888")
+            color = get_model_color(model)
             marker = CATEGORY_MARKERS.get(category, "o")
 
             ax.scatter(
@@ -444,7 +475,6 @@ def create_scatter_plot(
                 alpha=0.8,
                 edgecolors="white",
                 linewidths=1.5,
-                label=f"{get_model_display_name(model)} / {category}",
             )
 
     elif single_category:
@@ -453,7 +483,7 @@ def create_scatter_plot(
             model = point["model"]
             nudge_type = point["nudge_type"]
 
-            color = MODEL_COLORS.get(model, "#888888")
+            color = get_model_color(model)
             marker = NUDGE_MARKERS.get(nudge_type, "o")
 
             ax.scatter(
@@ -472,7 +502,7 @@ def create_scatter_plot(
         # Color by model only
         for point in data_points:
             model = point["model"]
-            color = MODEL_COLORS.get(model, "#888888")
+            color = get_model_color(model)
 
             ax.scatter(
                 point["baseline_bias"],
@@ -514,9 +544,63 @@ def create_scatter_plot(
                 "Baseline vs Steerability Bias", fontsize=16, fontweight="bold"
             )
 
-    # Legend
-    if show_legend:
-        # Create custom legend to avoid duplicates
+    # Legend - create separate sections for models (colors) and categories (markers)
+    if show_legend and single_nudge:
+        from matplotlib.lines import Line2D
+
+        legend_handles = []
+        legend_labels = []
+
+        # Add model entries (colors)
+        unique_models = list(dict.fromkeys(p["model"] for p in data_points))
+        for model in unique_models:
+            color = get_model_color(model)
+            handle = Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=color,
+                markersize=10,
+                label=get_model_display_name(model),
+            )
+            legend_handles.append(handle)
+            legend_labels.append(get_model_display_name(model))
+
+        # Add separator
+        legend_handles.append(Line2D([0], [0], color="none"))
+        legend_labels.append("")
+
+        # Add category entries (markers) with level_B info
+        unique_categories = list(dict.fromkeys(p["category"] for p in data_points))
+        for category in unique_categories:
+            marker = CATEGORY_MARKERS.get(category, "o")
+            level_A, level_B = get_factor_levels(category)
+            # Show category name with level_B in parentheses
+            label = f"{category.replace('_', ' ').title()} (+ → {level_B})"
+            handle = Line2D(
+                [0],
+                [0],
+                marker=marker,
+                color="w",
+                markerfacecolor="gray",
+                markeredgecolor="gray",
+                markersize=10,
+                label=label,
+            )
+            legend_handles.append(handle)
+            legend_labels.append(label)
+
+        ax.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1),
+            fontsize=10,
+            framealpha=0.9,
+        )
+    elif show_legend:
+        # Fallback for other cases
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         ax.legend(
@@ -575,7 +659,7 @@ def create_model_comparison_plot(
             )
 
             if result:
-                color = MODEL_COLORS.get(model, "#888888")
+                color = get_model_color(model)
                 ax.scatter(
                     result["baseline_bias"],
                     result["steerability_bias"],
