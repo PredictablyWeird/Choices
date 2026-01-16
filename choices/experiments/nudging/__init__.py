@@ -12,10 +12,10 @@ Modules:
 
 Quick usage:
     # Run a single experiment
-    python -m choices.experiments.nudging.simple --factor gender --nudge emotional --model gpt-4o-mini
+    uv run python -m choices.experiments.nudging.simple --factor gender --nudge emotional --model gpt-4o-mini
 
     # Run batch experiments
-    python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges emotional --dry-run
+    uv run python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges emotional --dry-run
 """
 
 from choices.experiments.nudging.templates import NUDGE_TEMPLATES, get_nudge_names

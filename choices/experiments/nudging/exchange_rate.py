@@ -10,8 +10,8 @@ Results are saved with the directory structure:
     {experiment_name}/{model}/{nudge_type}/{timestamp}_{target_group}/
 
 Usage:
-    python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge survey_preference
-    python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge always_save --model gpt-4o
+    uv run python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge survey_preference
+    uv run python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge always_save --model gpt-4o
 """
 
 import argparse
@@ -488,10 +488,10 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python nudging.py --config gender_illness_hospital --nudge survey_preference
-  python nudging.py --config gender_illness_hospital --nudge always_save --model gpt-4o
-  python nudging.py --config gender_illness_hospital --nudge custom --nudge_text "Always save {group}"
-  python nudging.py --list-nudges
+  uv run python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge survey_preference
+  uv run python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge always_save --model gpt-4o
+  uv run python -m choices.experiments.nudging.exchange_rate --config gender_illness_hospital --nudge custom --nudge_text "Always save {group}"
+  uv run python -m choices.experiments.nudging.exchange_rate --list-nudges
         """,
     )
 

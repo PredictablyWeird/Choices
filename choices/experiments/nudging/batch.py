@@ -10,19 +10,19 @@ from nudging.simple. For active learning experiments, see nudging.exchange_rate.
 
 Usage:
     # Using config file
-    python -m choices.experiments.nudging.batch run --config experiments_config.yaml
+    uv run python -m choices.experiments.nudging.batch run --config experiments_config.yaml
 
     # Using command line args (runs all combinations)
-    python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges always_save
+    uv run python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges always_save
 
     # Dry run to see what would be executed
-    python -m choices.experiments.nudging.batch run --config experiments_config.yaml --dry-run
+    uv run python -m choices.experiments.nudging.batch run --config experiments_config.yaml --dry-run
 
     # Low request mode for testing
-    python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges always_save --max-requests 20
+    uv run python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges always_save --max-requests 20
 
     # Generate sample config
-    python -m choices.experiments.nudging.batch generate-config > my_experiments.yaml
+    uv run python -m choices.experiments.nudging.batch generate-config > my_experiments.yaml
 """
 
 import asyncio
@@ -245,7 +245,7 @@ def generate_config():
     factors_yaml = "\n".join(f"  - {name}" for name in BINARY_FACTORS.keys())
 
     sample_config = f"""# Batch Nudging Experiments Configuration
-# Run with: python batch_nudging.py run --config this_file.yaml
+# Run with: uv run python -m choices.experiments.nudging.batch run --config this_file.yaml
 
 models:
   - gpt-4o-mini

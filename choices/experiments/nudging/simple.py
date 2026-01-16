@@ -9,9 +9,9 @@ Results are saved with the directory structure:
     simple_{factor_name}/{model}/{nudge_type}/{timestamp}_{target_group}/
 
 Usage:
-    python -m choices.experiments.nudging.simple --factor gender --nudge survey_preference
-    python -m choices.experiments.nudging.simple --factor gender --nudge emotional --model gpt-4o
-    python -m choices.experiments.nudging.simple --factor gender --nudge custom --nudge_text "Your custom nudge"
+    uv run python -m choices.experiments.nudging.simple --factor gender --nudge survey_preference
+    uv run python -m choices.experiments.nudging.simple --factor gender --nudge emotional --model gpt-4o
+    uv run python -m choices.experiments.nudging.simple --factor gender --nudge custom --nudge_text "Your custom nudge"
 """
 
 import argparse
@@ -829,14 +829,14 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python simple_nudging.py --factor gender --nudge survey_preference
-  python simple_nudging.py --factor gender --nudge always_save --model gpt-4o
-  python simple_nudging.py --factor gender --nudge custom --nudge_text "Always save {group}"
-  python simple_nudging.py --factor wealth --nudge few_shot_3
-  python simple_nudging.py --factor wealth --nudge always_save --setup hospital
-  python simple_nudging.py --list-nudges
-  python simple_nudging.py --list-factors
-  python simple_nudging.py --list-setups
+  uv run python -m choices.experiments.nudging.simple --factor gender --nudge survey_preference
+  uv run python -m choices.experiments.nudging.simple --factor gender --nudge always_save --model gpt-4o
+  uv run python -m choices.experiments.nudging.simple --factor gender --nudge custom --nudge_text "Always save {group}"
+  uv run python -m choices.experiments.nudging.simple --factor wealth --nudge few_shot_3
+  uv run python -m choices.experiments.nudging.simple --factor wealth --nudge always_save --setup hospital
+  uv run python -m choices.experiments.nudging.simple --list-nudges
+  uv run python -m choices.experiments.nudging.simple --list-factors
+  uv run python -m choices.experiments.nudging.simple --list-setups
         """,
     )
 
