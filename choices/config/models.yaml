@@ -5,18 +5,21 @@
 claude-sonnet-4-5:
   model_name: "openrouter/anthropic/claude-sonnet-4.5"
   model_type: openrouter
+  display_name: "Claude Sonnet 4.5"
   reasoning_effort:
     enabled: false
 
 claude-opus-4-5:
   model_name: "openrouter/anthropic/claude-opus-4.5"
   model_type: openrouter
+  display_name: "Claude Opus 4.5"
   reasoning_effort:
     enabled: false
 
-gpt-5-2:
+gpt-5-2-reasoning:
   model_name: "gpt-5.2"
   model_type: openai
+  display_name: "GPT-5.2 (reasoning)"
   reasoning_effort:
     effort: "low"
     summary: "detailed"
@@ -26,12 +29,14 @@ gpt-5-2:
 gpt-5-2-non-reasoning:
   model_name: "gpt-5.2"
   model_type: openai
+  display_name: "GPT-5.2"
   reasoning_effort:
     effort: "none"
 
-gpt-5:
+gpt-5-reasoning:
   model_name: "gpt-5"
   model_type: openai
+  display_name: "GPT-5 (reasoning)"
   reasoning_effort:
       effort: "low"
       summary: "detailed"
@@ -41,6 +46,7 @@ gpt-5:
 deepseek-v3-2-reasoning:
   model_name: "openrouter/deepseek/deepseek-v3.2"
   model_type: openrouter
+  display_name: "DeepSeek V3.2 (reasoning)"
   reasoning_effort:
     enabled: true
     effort: "low"
@@ -48,6 +54,7 @@ deepseek-v3-2-reasoning:
 deepseek-v3-2-non-reasoning:
   model_name: "openrouter/deepseek/deepseek-v3.2"
   model_type: openrouter
+  display_name: "DeepSeek V3.2"
   # No reasoning_effort set, so LiteLLMAgent will be used instead of ReasoningAgent
   extra_body:
     text:
@@ -56,12 +63,14 @@ deepseek-v3-2-non-reasoning:
 grok-41-fast-non-reasoning:
   model_name: "openrouter/x-ai/grok-4.1-fast"
   model_type: openrouter
+  display_name: "Grok 4.1 Fast"
   reasoning_effort:
     enabled: false
 
 grok-41-fast-reasoning:
   model_name: "openrouter/x-ai/grok-4.1-fast"
   model_type: openrouter
+  display_name: "Grok 4.1 Fast (reasoning)"
   reasoning_effort:
     enabled: true
     effort: "low"
@@ -89,6 +98,7 @@ qwen3-235b-a22b-2507:
 llama-33-70b:
   model_name: "openrouter/meta-llama/llama-3.3-70b-instruct"
   model_type: openrouter
+  display_name: "Llama 3.3 70B"
 
 
 # ------------------------------
@@ -109,10 +119,12 @@ gpt-35-turbo:
 gpt-4o-mini:
   model_name: "gpt-4o-mini"
   model_type: openai
+  display_name: "GPT-4o Mini"
 
 gpt-4o:
   model_name: "gpt-4o"
   model_type: openai
+  display_name: "GPT-4o"
 
 gpt-5-chat:
   model_name: "gpt-5-chat-latest"

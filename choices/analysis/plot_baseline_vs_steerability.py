@@ -26,10 +26,21 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import yaml
 
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
 )
+
+
+def load_models_config() -> Dict[str, Any]:
+    """Load the models configuration from models.yaml."""
+    config_path = Path(__file__).parent.parent / "config" / "models.yaml"
+    if not config_path.exists():
+        return {}
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f) or {}
+
 
 # Color palettes for different groupings
 MODEL_COLORS = {
@@ -306,9 +317,30 @@ def compute_baseline_and_steerability_bias(
     )
 
     if steerability_bias is None:
-        print(
-            f"  Warning: Could not compute steerability bias for {model}/{category}/{nudge_type}"
-        )
+        # Find which frequencies are at the boundary (0 or 1)
+        boundary_issues = []
+        if f_0_A < 0.01 or f_0_A > 0.99:
+            boundary_issues.append(f"f_0({level_A})={f_0_A:.1%}")
+        if f_0_B < 0.01 or f_0_B > 0.99:
+            boundary_issues.append(f"f_0({level_B})={f_0_B:.1%}")
+        if f_A_A < 0.01 or f_A_A > 0.99:
+            boundary_issues.append(f"f_{level_A}({level_A})={f_A_A:.1%}")
+        if f_A_B < 0.01 or f_A_B > 0.99:
+            boundary_issues.append(f"f_{level_A}({level_B})={f_A_B:.1%}")
+        if f_B_A < 0.01 or f_B_A > 0.99:
+            boundary_issues.append(f"f_{level_B}({level_A})={f_B_A:.1%}")
+        if f_B_B < 0.01 or f_B_B > 0.99:
+            boundary_issues.append(f"f_{level_B}({level_B})={f_B_B:.1%}")
+
+        if boundary_issues:
+            print(
+                f"  Warning: Saturated frequencies for {model}/{category}/{nudge_type}: "
+                f"{', '.join(boundary_issues)}"
+            )
+        else:
+            print(
+                f"  Warning: Could not compute steerability bias for {model}/{category}/{nudge_type}"
+            )
         return None
 
     return {
@@ -323,19 +355,18 @@ def compute_baseline_and_steerability_bias(
     }
 
 
+# Cache for models config
+_models_config: Optional[Dict[str, Any]] = None
+
+
 def get_model_display_name(model: str) -> str:
-    """Get a shorter display name for a model."""
-    name_mapping = {
-        "grok-41-fast-non-reasoning": "Grok-4.1",
-        "deepseek-v3-2-non-reasoning": "DeepSeek-V3.2",
-        "llama-33-70b": "Llama-3.3-70B",
-        "gpt-4o-mini": "GPT-4o-mini",
-        "gpt-4o": "GPT-4o",
-        "claude-3-5-sonnet-latest": "Claude-3.5-Sonnet",
-        "claude-3-opus": "Claude-3-Opus",
-        "o1-mini": "o1-mini",
-    }
-    return name_mapping.get(model, model)
+    """Get the display name for a model from models.yaml config."""
+    global _models_config
+    if _models_config is None:
+        _models_config = load_models_config()
+
+    model_config = _models_config.get(model, {})
+    return model_config.get("display_name", model)
 
 
 def create_scatter_plot(
