@@ -982,17 +982,28 @@ async def generate_responses(
         content = resp.content if isinstance(resp, LLMResponse) else str(resp)
         if not content or not content.strip():
             return False
-        # If valid_choices provided, check if response contains exactly one of them
-        # Uses word-boundary matching (same as parse_responses_forced_choice)
+        # If valid_choices provided, check if response contains valid answer
         if valid_choices:
-            # Build regex patterns for each choice with word boundaries
-            choice_patterns = [
-                re.compile(rf"(?:^|[^\w])({re.escape(c)})(?:[^\w]|$)", re.IGNORECASE)
-                for c in valid_choices
-            ]
-            matches = [bool(pattern.search(content)) for pattern in choice_patterns]
-            # Valid if exactly one choice appears (not zero, not both)
-            return sum(matches) == 1
+            # For reasoning mode, responses contain reasoning text that may mention
+            # both options (A and B). We need to look for "Answer: X" pattern.
+            if reasoning_mode in (ReasoningMode.BEFORE, ReasoningMode.AFTER):
+                # Build pattern like: Answer:\s*(A|B)
+                pattern_str = "|".join(re.escape(c) for c in valid_choices)
+                answer_pattern = re.compile(
+                    rf"Answer:\s*({pattern_str})", re.IGNORECASE
+                )
+                return bool(answer_pattern.search(content))
+            else:
+                # Non-reasoning mode: check for exactly one choice with word boundaries
+                choice_patterns = [
+                    re.compile(
+                        rf"(?:^|[^\w])({re.escape(c)})(?:[^\w]|$)", re.IGNORECASE
+                    )
+                    for c in valid_choices
+                ]
+                matches = [bool(pattern.search(content)) for pattern in choice_patterns]
+                # Valid if exactly one choice appears (not zero, not both)
+                return sum(matches) == 1
         return True
 
     # Get initial responses
