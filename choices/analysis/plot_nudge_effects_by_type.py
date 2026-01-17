@@ -12,10 +12,14 @@ By default, uses magnitude (absolute value) of effect sizes, which shows
 how much the nudge can shift preferences regardless of direction.
 Use --signed to show signed effect sizes instead.
 
+Use --baseline-threshold to filter out experiments with biased baselines
+(e.g., where one option is chosen >90% of the time at baseline).
+
 Usage:
     uv run python -m choices.analysis.plot_nudge_effects_by_type
     uv run python -m choices.analysis.plot_nudge_effects_by_type --output nudge_effects.pdf
     uv run python -m choices.analysis.plot_nudge_effects_by_type --signed  # Use signed effect sizes
+    uv run python -m choices.analysis.plot_nudge_effects_by_type --baseline-threshold 10  # Filter biased baselines
     uv run python -m choices.analysis.plot_nudge_effects_by_type --results-dir results --show
 """
 
@@ -97,6 +101,7 @@ def plot_nudge_effect_sizes(
     show: bool = False,
     figsize: tuple = (12, 7),
     use_signed: bool = False,
+    baseline_threshold: float = 0,
 ) -> None:
     """
     Create a bar plot showing average effect size by nudge type.
@@ -108,10 +113,12 @@ def plot_nudge_effect_sizes(
         figsize: Figure size (width, height) in inches
         use_signed: If False (default), use magnitude (absolute value) of effect sizes.
                     If True, use signed effect sizes.
+        baseline_threshold: Filter out experiments where baseline preference is
+                           outside [threshold%, (100-threshold)%]. Default 0 = no filtering.
     """
     # Compute all effect sizes
     print("Computing effect sizes from results...")
-    effect_sizes = compute_all_effect_sizes(results_base_dir)
+    effect_sizes = compute_all_effect_sizes(results_base_dir, baseline_threshold)
 
     if not effect_sizes:
         print("No effect size data found. Make sure experiments have been run.")
@@ -296,10 +303,12 @@ def plot_nudge_effect_sizes(
 
 
 def print_summary_table(
-    results_base_dir: str = "results", use_signed: bool = False
+    results_base_dir: str = "results",
+    use_signed: bool = False,
+    baseline_threshold: float = 0,
 ) -> None:
     """Print a summary table of effect sizes by nudge type."""
-    effect_sizes = compute_all_effect_sizes(results_base_dir)
+    effect_sizes = compute_all_effect_sizes(results_base_dir, baseline_threshold)
 
     if not effect_sizes:
         print("No effect size data found.")
@@ -395,6 +404,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--baseline-threshold",
+        type=float,
+        default=0,
+        help="Filter out experiments with biased baselines. "
+        "Threshold specifies how far from 50%% the baseline can be. "
+        "E.g., 10 filters baselines >90%% or <10%%. Default 0 = no filtering.",
+    )
+
+    parser.add_argument(
         "--figsize",
         type=str,
         default="12,7",
@@ -407,7 +425,11 @@ Examples:
     figsize = tuple(map(float, args.figsize.split(",")))
 
     if args.summary:
-        print_summary_table(args.results_dir, use_signed=args.signed)
+        print_summary_table(
+            args.results_dir,
+            use_signed=args.signed,
+            baseline_threshold=args.baseline_threshold,
+        )
 
     plot_nudge_effect_sizes(
         results_base_dir=args.results_dir,
@@ -415,6 +437,7 @@ Examples:
         show=args.show,
         figsize=figsize,
         use_signed=args.signed,
+        baseline_threshold=args.baseline_threshold,
     )
 
 

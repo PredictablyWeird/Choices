@@ -362,24 +362,72 @@ def discover_experiments(
     return experiments
 
 
+def is_baseline_too_biased(
+    effect_size: NudgeEffectSize,
+    threshold: float,
+) -> bool:
+    """
+    Check if the baseline is too biased (one option dominates).
+
+    Args:
+        effect_size: NudgeEffectSize object with baseline probabilities
+        threshold: Maximum allowed deviation from 50%.
+                   E.g., threshold=10 means baselines must be in [10%, 90%].
+                   threshold=0 means no filtering.
+
+    Returns:
+        True if the baseline is too biased and should be filtered out
+    """
+    if threshold <= 0:
+        return False
+
+    lower_bound = threshold / 100.0
+    upper_bound = 1.0 - lower_bound
+
+    # Check if either baseline probability is outside the allowed range
+    if effect_size.p_A_baseline < lower_bound or effect_size.p_A_baseline > upper_bound:
+        return True
+    if effect_size.p_B_baseline < lower_bound or effect_size.p_B_baseline > upper_bound:
+        return True
+
+    return False
+
+
 def compute_all_effect_sizes(
     results_base_dir: str = "results",
+    baseline_threshold: float = 0,
 ) -> List[NudgeEffectSize]:
     """
     Compute effect sizes for all available experiments.
+
+    Args:
+        results_base_dir: Base directory for results
+        baseline_threshold: Filter out experiments where baseline preference
+                           is outside [threshold%, (100-threshold)%].
+                           E.g., threshold=10 filters baselines >90% or <10%.
+                           Default 0 means no filtering.
 
     Returns:
         List of NudgeEffectSize objects
     """
     experiments = discover_experiments(results_base_dir)
     effect_sizes = []
+    filtered_count = 0
 
     for factor_name, model, nudge_type in experiments:
         effect_size = compute_nudge_effect_size(
             factor_name, model, nudge_type, results_base_dir
         )
         if effect_size is not None:
-            effect_sizes.append(effect_size)
+            if is_baseline_too_biased(effect_size, baseline_threshold):
+                filtered_count += 1
+            else:
+                effect_sizes.append(effect_size)
+
+    if filtered_count > 0 and baseline_threshold > 0:
+        print(
+            f"Filtered out {filtered_count} experiments with biased baselines (threshold={baseline_threshold}%)"
+        )
 
     return effect_sizes
 
