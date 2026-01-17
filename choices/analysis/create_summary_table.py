@@ -204,6 +204,59 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
     return "unknown"
 
 
+def get_base_model_name(model: str) -> str:
+    """
+    Get the base model name by stripping reasoning-related suffixes.
+
+    E.g., "deepseek-v3-2-reasoning" -> "deepseek-v3-2"
+          "deepseek-v3-2-non-reasoning" -> "deepseek-v3-2"
+          "llama-33-70b" -> "llama-33-70b"
+    """
+    # Check -non-reasoning FIRST (it also ends with -reasoning)
+    if model.endswith("-non-reasoning"):
+        return model[:-14]  # len("-non-reasoning") == 14
+    elif model.endswith("-reasoning"):
+        return model[:-10]  # len("-reasoning") == 10
+    return model
+
+
+def filter_complete_reasoning_pairs(
+    results: List["ExperimentResult"],
+) -> List["ExperimentResult"]:
+    """
+    Filter results to only keep model-factor-nudge combinations that have
+    both a 'none' reasoning condition and at least one other condition.
+
+    This allows comparing reasoning vs non-reasoning for the same setup.
+
+    Args:
+        results: List of ExperimentResult objects
+
+    Returns:
+        Filtered list containing only complete pairs
+    """
+    from collections import defaultdict
+
+    # Group by (base_model, factor, nudge_type)
+    groups: Dict[tuple, List["ExperimentResult"]] = defaultdict(list)
+    for r in results:
+        base_model = get_base_model_name(r.model)
+        key = (base_model, r.factor, r.nudge_type)
+        groups[key].append(r)
+
+    # Keep only groups that have 'none' plus at least one other condition
+    filtered = []
+    for key, group_results in groups.items():
+        conditions = {r.reasoning_condition for r in group_results}
+        has_none = "none" in conditions
+        has_other = len(conditions - {"none"}) > 0
+
+        if has_none and has_other:
+            filtered.extend(group_results)
+
+    return filtered
+
+
 def get_model_display_name(model: str, strip_reasoning_suffix: bool = True) -> str:
     """
     Get the display name for a model from models.yaml config.
@@ -560,6 +613,7 @@ def compute_all_results(
     model_filter: Optional[List[str]] = None,
     factor_filter: Optional[List[str]] = None,
     nudge_type_filter: Optional[List[str]] = None,
+    require_reasoning_pairs: bool = True,
 ) -> List[ExperimentResult]:
     """
     Compute results for all available experiments.
@@ -569,6 +623,9 @@ def compute_all_results(
         model_filter: Optional list of models to include
         factor_filter: Optional list of factors to include
         nudge_type_filter: Optional list of nudge types to include
+        require_reasoning_pairs: If True (default), only keep model-factor-nudge
+            combinations that have both 'none' reasoning and at least one other
+            reasoning condition
 
     Returns:
         List of ExperimentResult objects
@@ -585,6 +642,17 @@ def compute_all_results(
         if result is not None:
             results.append(result)
 
+    # Filter to complete reasoning pairs if requested
+    if require_reasoning_pairs:
+        original_count = len(results)
+        results = filter_complete_reasoning_pairs(results)
+        filtered_count = original_count - len(results)
+        if filtered_count > 0:
+            print(
+                f"Filtered {filtered_count} results without complete reasoning pairs "
+                f"(use --keep-incomplete to include them)"
+            )
+
     return results
 
 
@@ -596,8 +664,17 @@ def format_table(
     if not results:
         return "No results found."
 
-    # Sort by model, factor, nudge_type
-    results = sorted(results, key=lambda r: (r.model, r.factor, r.nudge_type))
+    # Sort by base_model, factor, nudge_type, reasoning_condition
+    # This groups model variants together with their reasoning pairs adjacent
+    results = sorted(
+        results,
+        key=lambda r: (
+            get_base_model_name(r.model),
+            r.factor,
+            r.nudge_type,
+            r.reasoning_condition,
+        ),
+    )
 
     # Build header
     headers = [
@@ -659,8 +736,17 @@ def format_detailed_table(
     if not results:
         return "No results found."
 
-    # Sort by model, factor, nudge_type
-    results = sorted(results, key=lambda r: (r.model, r.factor, r.nudge_type))
+    # Sort by base_model, factor, nudge_type, reasoning_condition
+    # This groups model variants together with their reasoning pairs adjacent
+    results = sorted(
+        results,
+        key=lambda r: (
+            get_base_model_name(r.model),
+            r.factor,
+            r.nudge_type,
+            r.reasoning_condition,
+        ),
+    )
 
     # Build header
     headers = [
@@ -733,8 +819,17 @@ def write_csv(
         print("No results to write.")
         return
 
-    # Sort by model, factor, nudge_type
-    results = sorted(results, key=lambda r: (r.model, r.factor, r.nudge_type))
+    # Sort by base_model, factor, nudge_type, reasoning_condition
+    # This groups model variants together with their reasoning pairs adjacent
+    results = sorted(
+        results,
+        key=lambda r: (
+            get_base_model_name(r.model),
+            r.factor,
+            r.nudge_type,
+            r.reasoning_condition,
+        ),
+    )
 
     headers = [
         "model",
@@ -861,6 +956,13 @@ Examples:
         help="Use raw model names instead of display names",
     )
 
+    parser.add_argument(
+        "--keep-incomplete",
+        action="store_true",
+        help="Keep model-factor-nudge combinations even if they don't have both "
+        "'none' reasoning and another reasoning condition",
+    )
+
     args = parser.parse_args()
 
     print("=" * 70)
@@ -882,6 +984,7 @@ Examples:
         model_filter=args.models,
         factor_filter=args.factors,
         nudge_type_filter=args.nudge_types,
+        require_reasoning_pairs=not args.keep_incomplete,
     )
 
     print(f"Found {len(results)} complete experiments\n")
