@@ -86,14 +86,17 @@ kimi-k2:
 qwen-turbo:
   model_name: "openrouter/qwen/qwen-turbo"
   model_type: openrouter
+  display_name: "Qwen Turbo"
 
 qwen3-32b:
   model_name: "openrouter/qwen/qwen3-32b"
   model_type: openrouter
+  display_name: "Qwen 3.3 32B"
 
 qwen3-235b-a22b-2507:
   model_name: "openrouter/qwen/qwen3-235b-a22b-2507"
   model_type: openrouter
+  display_name: "Qwen 3.2 235B"
 
 llama-33-70b:
   model_name: "openrouter/meta-llama/llama-3.3-70b-instruct"
