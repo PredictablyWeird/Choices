@@ -296,11 +296,15 @@ class OpenAIAgent(LLMAgent):
             for attempt in range(max_retries):
                 try:
                     async with semaphore:
-                        completion = await self.async_client.chat.completions.create(
-                            model=self.model,
-                            messages=message,
-                            max_tokens=self.max_tokens,
-                            temperature=self.temperature,
+                        # Use asyncio.wait_for to enforce hard timeout at asyncio level
+                        completion = await asyncio.wait_for(
+                            self.async_client.chat.completions.create(
+                                model=self.model,
+                                messages=message,
+                                max_tokens=self.max_tokens,
+                                temperature=self.temperature,
+                                timeout=current_timeout,
+                            ),
                             timeout=current_timeout,
                         )
                     response = completion.choices[0].message.content.strip()
@@ -457,11 +461,15 @@ class ReasoningAgent(OpenAIAgent):
                         if self.text_verbosity:
                             completion_kwargs["text"] = self.text_verbosity
                         # print(f"Making request for message {message_idx}")
-                        completion_res = await self.async_client.responses.create(
-                            model=self.model,
-                            instructions=message[0]["content"],
-                            input=message[1]["content"],
-                            **completion_kwargs,
+                        # Use asyncio.wait_for to enforce hard timeout at asyncio level
+                        completion_res = await asyncio.wait_for(
+                            self.async_client.responses.create(
+                                model=self.model,
+                                instructions=message[0]["content"],
+                                input=message[1]["content"],
+                                **completion_kwargs,
+                            ),
+                            timeout=current_timeout,
                         )
                         # print(f"Request for message {message_idx} completed")
                     except asyncio.TimeoutError:
@@ -1388,7 +1396,12 @@ class LiteLLMAgent:
                         if self.extra_body:
                             completion_kwargs["extra_body"] = self.extra_body
 
-                        completion_res = await litellm_acompletion(**completion_kwargs)
+                        # Use asyncio.wait_for to enforce hard timeout at asyncio level
+                        # (litellm's internal timeout may not be respected by all providers)
+                        completion_res = await asyncio.wait_for(
+                            litellm_acompletion(**completion_kwargs),
+                            timeout=current_timeout,
+                        )
                     except asyncio.TimeoutError:
                         counts["timeouts"] += 1
 
@@ -1571,8 +1584,12 @@ class BaseAgent:
                             if self.extra_body:
                                 completion_kwargs["extra_body"] = self.extra_body
 
-                            completion_res = await self.client.chat.completions.create(
-                                **completion_kwargs
+                            # Use asyncio.wait_for to enforce hard timeout at asyncio level
+                            completion_res = await asyncio.wait_for(
+                                self.client.chat.completions.create(
+                                    **completion_kwargs
+                                ),
+                                timeout=current_timeout,
                             )
 
                         else:
@@ -1587,8 +1604,10 @@ class BaseAgent:
                             if self.extra_body:
                                 completion_kwargs["extra_body"] = self.extra_body
 
-                            completion_res = await self.client.completions.create(
-                                **completion_kwargs
+                            # Use asyncio.wait_for to enforce hard timeout at asyncio level
+                            completion_res = await asyncio.wait_for(
+                                self.client.completions.create(**completion_kwargs),
+                                timeout=current_timeout,
                             )
                     except asyncio.TimeoutError:
                         counts["timeouts"] += 1
