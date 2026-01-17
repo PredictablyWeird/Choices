@@ -73,6 +73,186 @@ class ExperimentResult:
     n_nudge_B: int
 
 
+@dataclass
+class AggregatedResult:
+    """Aggregated results over one or more dimensions."""
+
+    # Group keys (None if aggregated over this dimension)
+    model: Optional[str]
+    reasoning_condition: Optional[str]
+    factor: Optional[str]
+    nudge_type: Optional[str]
+    # Aggregated metrics
+    avg_baseline_bias: float
+    avg_effect_size: float
+    avg_steerability_bias: Optional[float]
+    # Count
+    n_results: int
+    n_steerability: int  # Number of results with valid steerability
+
+
+def aggregate_results(
+    results: List[ExperimentResult],
+    aggregate_over: List[str],
+) -> List[AggregatedResult]:
+    """
+    Aggregate results over specified dimensions.
+
+    Args:
+        results: List of ExperimentResult objects
+        aggregate_over: List of dimensions to aggregate over.
+            Valid values: "model", "factor", "nudge_type", "reasoning"
+
+    Returns:
+        List of AggregatedResult objects
+    """
+    from collections import defaultdict
+
+    # Map dimension names to result attributes
+    dim_to_attr = {
+        "model": "model",
+        "factor": "factor",
+        "nudge_type": "nudge_type",
+        "reasoning": "reasoning_condition",
+    }
+
+    # Determine which dimensions to keep vs aggregate
+    keep_dims = [d for d in dim_to_attr.keys() if d not in aggregate_over]
+
+    # Group results by the dimensions we're keeping
+    groups: Dict[tuple, List[ExperimentResult]] = defaultdict(list)
+    for r in results:
+        key = tuple(
+            getattr(r, dim_to_attr[d]) if d in keep_dims else None
+            for d in dim_to_attr.keys()
+        )
+        groups[key].append(r)
+
+    # Compute aggregates for each group
+    aggregated = []
+    for key, group_results in groups.items():
+        model_key, factor_key, nudge_key, reasoning_key = key
+
+        # Calculate averages
+        baseline_biases = [r.baseline_bias for r in group_results]
+        effect_sizes = [r.avg_effect_size for r in group_results]
+        steerability_biases = [
+            r.steerability_bias
+            for r in group_results
+            if r.steerability_bias is not None
+        ]
+
+        avg_baseline = sum(baseline_biases) / len(baseline_biases)
+        avg_effect = sum(effect_sizes) / len(effect_sizes)
+        avg_steer = (
+            sum(steerability_biases) / len(steerability_biases)
+            if steerability_biases
+            else None
+        )
+
+        aggregated.append(
+            AggregatedResult(
+                model=model_key,
+                reasoning_condition=reasoning_key,
+                factor=factor_key,
+                nudge_type=nudge_key,
+                avg_baseline_bias=avg_baseline,
+                avg_effect_size=avg_effect,
+                avg_steerability_bias=avg_steer,
+                n_results=len(group_results),
+                n_steerability=len(steerability_biases),
+            )
+        )
+
+    return aggregated
+
+
+def format_aggregated_table(
+    results: List[AggregatedResult],
+    show_display_names: bool = True,
+) -> str:
+    """Format aggregated results as a text table."""
+    if not results:
+        return "No results found."
+
+    # Determine which columns to show based on what's not aggregated
+    has_model = any(r.model is not None for r in results)
+    has_reasoning = any(r.reasoning_condition is not None for r in results)
+    has_factor = any(r.factor is not None for r in results)
+    has_nudge = any(r.nudge_type is not None for r in results)
+
+    # Sort results
+    def sort_key(r):
+        return (
+            get_base_model_name(r.model) if r.model else "",
+            r.factor or "",
+            r.nudge_type or "",
+            r.reasoning_condition or "",
+        )
+
+    results = sorted(results, key=sort_key)
+
+    # Build header
+    headers = []
+    if has_model:
+        headers.append("Model")
+    if has_reasoning:
+        headers.append("Reasoning")
+    if has_factor:
+        headers.append("Factor")
+    if has_nudge:
+        headers.append("Nudge Type")
+    headers.extend(["Baseline Bias", "Effect Size", "Steerability Bias", "N"])
+
+    # Build rows
+    rows = []
+    for r in results:
+        row = []
+        if has_model:
+            model_name = (
+                get_model_display_name(r.model) if show_display_names else r.model
+            )
+            row.append(model_name or "ALL")
+        if has_reasoning:
+            row.append(r.reasoning_condition or "ALL")
+        if has_factor:
+            row.append(r.factor or "ALL")
+        if has_nudge:
+            row.append(r.nudge_type or "ALL")
+
+        steer_str = (
+            f"{r.avg_steerability_bias:+.3f}" if r.avg_steerability_bias else "N/A"
+        )
+        row.extend(
+            [
+                f"{r.avg_baseline_bias:+.3f}",
+                f"{r.avg_effect_size:+.3f}",
+                steer_str,
+                str(r.n_results),
+            ]
+        )
+        rows.append(row)
+
+    # Calculate column widths
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(cell))
+
+    # Format header
+    header_line = " | ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
+    separator = "-+-".join("-" * w for w in col_widths)
+
+    # Format rows
+    row_lines = []
+    for row in rows:
+        row_lines.append(
+            " | ".join(cell.ljust(col_widths[i]) for i, cell in enumerate(row))
+        )
+
+    return "\n".join([header_line, separator] + row_lines)
+
+
 def load_models_config() -> Dict[str, Any]:
     """Load the models configuration from models.yaml."""
     config_path = Path(__file__).parent.parent / "config" / "models.yaml"
@@ -116,7 +296,9 @@ def get_reasoning_effort_from_model(model: str) -> Optional[str]:
     Get the reasoning effort level from model config.
 
     Returns:
-        The effort level ("low", "medium", "high", "none") or None if not configured.
+        The effort level ("low", "medium", "high", "off") or None if not configured.
+        Note: Returns "off" (not "none") for reasoning models with reasoning disabled,
+        to distinguish from chat models with reasoning_mode="none".
     """
     global _models_config
     if _models_config is None:
@@ -134,13 +316,13 @@ def get_reasoning_effort_from_model(model: str) -> Optional[str]:
         enabled = reasoning_effort.get("enabled", None)
         effort = reasoning_effort.get("effort", None)
 
-        # If effort is explicitly set, return it
+        # If effort is explicitly set, return it (but map "none" to "off")
         if effort is not None:
-            return effort
+            return "off" if effort == "none" else effort
 
-        # If enabled is explicitly False, return "none"
+        # If enabled is explicitly False, return "off"
         if enabled is False:
-            return "none"
+            return "off"
 
         # If enabled is True but no effort specified, assume "low"
         if enabled is True:
@@ -175,8 +357,10 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
     """
     Determine the reasoning condition for display.
 
-    For reasoning models (extended thinking): shows effort level ("low", "medium", "high", "none")
+    For reasoning models (extended thinking): shows effort level ("low", "medium", "high", "off")
+        - "off" means reasoning is disabled for this reasoning-capable model
     For chat models: shows reasoning_mode from results ("before", "after", "none")
+        - "none" means no reasoning instruction was given to this chat model
 
     Args:
         model: The model identifier
@@ -192,7 +376,7 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
             return effort
         # Reasoning model but no effort configured - check model name
         if model.endswith("-non-reasoning"):
-            return "none"
+            return "off"
         return "low"  # Default for reasoning models
 
     # For chat models, check the reasoning_mode from results
@@ -225,7 +409,11 @@ def filter_complete_reasoning_pairs(
 ) -> List["ExperimentResult"]:
     """
     Filter results to only keep model-factor-nudge combinations that have
-    both a 'none' reasoning condition and at least one other condition.
+    both a baseline condition and at least one other condition.
+
+    Baseline conditions:
+    - 'off' for reasoning models (reasoning capability disabled)
+    - 'none' for chat models (no reasoning instruction)
 
     This allows comparing reasoning vs non-reasoning for the same setup.
 
@@ -237,6 +425,9 @@ def filter_complete_reasoning_pairs(
     """
     from collections import defaultdict
 
+    # Baseline conditions (no reasoning active)
+    baseline_conditions = {"none", "off"}
+
     # Group by (base_model, factor, nudge_type)
     groups: Dict[tuple, List["ExperimentResult"]] = defaultdict(list)
     for r in results:
@@ -244,14 +435,14 @@ def filter_complete_reasoning_pairs(
         key = (base_model, r.factor, r.nudge_type)
         groups[key].append(r)
 
-    # Keep only groups that have 'none' plus at least one other condition
+    # Keep only groups that have a baseline condition plus at least one other condition
     filtered = []
     for key, group_results in groups.items():
         conditions = {r.reasoning_condition for r in group_results}
-        has_none = "none" in conditions
-        has_other = len(conditions - {"none"}) > 0
+        has_baseline = bool(conditions & baseline_conditions)
+        has_other = bool(conditions - baseline_conditions)
 
-        if has_none and has_other:
+        if has_baseline and has_other:
             filtered.extend(group_results)
 
     return filtered
@@ -905,6 +1096,12 @@ Examples:
 
     # Output to CSV with detailed table
     python create_summary_table.py --output summary.csv --detailed
+
+    # Aggregate over factors and nudge types (show per model+reasoning)
+    python create_summary_table.py --aggregate factor nudge_type
+
+    # Aggregate over models (compare reasoning conditions across models)
+    python create_summary_table.py --aggregate model
         """,
     )
 
@@ -960,7 +1157,16 @@ Examples:
         "--keep-incomplete",
         action="store_true",
         help="Keep model-factor-nudge combinations even if they don't have both "
-        "'none' reasoning and another reasoning condition",
+        "'off'/'none' reasoning and another reasoning condition",
+    )
+
+    parser.add_argument(
+        "--aggregate",
+        nargs="+",
+        choices=["model", "factor", "nudge_type", "reasoning"],
+        default=None,
+        help="Aggregate over specified dimensions. "
+        "E.g., --aggregate factor nudge_type will show averages per model+reasoning",
     )
 
     args = parser.parse_args()
@@ -995,8 +1201,12 @@ Examples:
 
     show_display_names = not args.no_display_names
 
-    # Output results
-    if args.output:
+    # Handle aggregation if requested
+    if args.aggregate:
+        aggregated = aggregate_results(results, args.aggregate)
+        print(f"Aggregated over: {', '.join(args.aggregate)}\n")
+        print(format_aggregated_table(aggregated, show_display_names))
+    elif args.output:
         write_csv(results, args.output, show_display_names)
     else:
         if args.detailed:
@@ -1024,6 +1234,25 @@ Examples:
         steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
         display_name = get_model_display_name(model) if show_display_names else model
         print(f"  {display_name}: avg_effect={avg_effect:+.3f}, avg_steer={steer_str}")
+
+    # By reasoning condition
+    reasoning_conditions = set(r.reasoning_condition for r in results)
+    print(f"\nReasoning Conditions ({len(reasoning_conditions)}):")
+    for condition in sorted(reasoning_conditions):
+        cond_results = [r for r in results if r.reasoning_condition == condition]
+        avg_effect = sum(r.avg_effect_size for r in cond_results) / len(cond_results)
+        avg_bias = sum(r.baseline_bias for r in cond_results) / len(cond_results)
+        steer_results = [r for r in cond_results if r.steerability_bias is not None]
+        avg_steer = (
+            sum(r.steerability_bias for r in steer_results) / len(steer_results)
+            if steer_results
+            else None
+        )
+        steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
+        print(
+            f"  {condition}: n={len(cond_results)}, avg_bias={avg_bias:+.3f}, "
+            f"avg_effect={avg_effect:+.3f}, avg_steer={steer_str}"
+        )
 
     # By nudge type
     nudge_types = set(r.nudge_type for r in results)
