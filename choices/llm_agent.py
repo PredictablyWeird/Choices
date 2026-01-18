@@ -1,3 +1,25 @@
+"""
+LLM Agent classes for interacting with various language model providers.
+
+Class Hierarchy:
+================
+
+Primary Agents (used by create_agent in utils.py):
+--------------------------------------------------
+- LiteLLMAgent: For most API models via litellm (openai, anthropic, gdm, xai, etc.)
+- ReasoningAgent: For reasoning models (o1, gpt-5, deepseek-r1) - extends OpenAIAgent
+- CompletionModelAgent: For base/completion models (base_openrouter, base_fireworks)
+
+Legacy/Base Classes:
+--------------------
+- LLMAgent (ABC): Abstract base class with single-message interface
+- OpenAIAgent: OpenAI-specific implementation, base class for ReasoningAgent
+
+Note: LiteLLMAgent and CompletionModelAgent are standalone classes (not inheriting
+from LLMAgent) because they only implement batch async processing, which is the
+primary interface used throughout the codebase.
+"""
+
 import asyncio
 import imghdr
 import json
@@ -164,17 +186,25 @@ async def run_batch_completions(
 
 
 class LLMAgent(ABC):
+    """
+    Abstract base class for LLM agents.
+
+    Note: This is a legacy base class. The primary agents used are:
+    - LiteLLMAgent: For most API-based models via litellm
+    - CompletionModelAgent: For base/completion models (OpenRouter, Fireworks)
+    - ReasoningAgent: For reasoning models (o1, gpt-5, deepseek-r1)
+
+    OpenAIAgent (which extends this) is mainly used as a base for ReasoningAgent.
+    """
+
     def __init__(
         self,
         temperature: float = 0.0,
         max_tokens: int = 2048,
-        retry_times: int = 3,
         accepts_system_message: bool = True,
     ):
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.default_outputs = "Sorry, I can not satisfy that request."
-        self.retry_times = retry_times
         self.accepts_system_message = accepts_system_message
 
     @abstractmethod
@@ -226,8 +256,9 @@ class OpenAIAgent(LLMAgent):
         max_tokens: int = 2048,
         model: str = "gpt-4o-mini",
         concurrency_limit: int = 100,
+        accepts_system_message: bool = True,
     ):
-        super().__init__(temperature, max_tokens)
+        super().__init__(temperature, max_tokens, accepts_system_message)
         self.model = model
         openai_api_key = os.getenv("OPENAI_API_KEY")
         self.client = openai.OpenAI(api_key=openai_api_key)
@@ -459,7 +490,13 @@ class ReasoningAgent(OpenAIAgent):
         model: str = "gpt-5",
         model_type: str = "openai",
         concurrency_limit: int = 100,
-        timeout: int = 5,
+        accepts_system_message: bool = True,
+        max_retries: int = 5,
+        base_timeout: float = 5.0,
+        base_delay: float = 1.0,
+        max_delay: float = 10.0,
+        use_jitter: bool = True,
+        extra_body: Optional[Dict] = None,
         reasoning_effort: Optional[str] = None,
         text_verbosity: Optional[str] = None,
     ):
@@ -469,7 +506,17 @@ class ReasoningAgent(OpenAIAgent):
         )  # For reasoning models we aren't using litellm
         self.model_type = model_type
         self.max_tokens = max_tokens
-        self.timeout = timeout
+        self.concurrency_limit = concurrency_limit
+        self.accepts_system_message = accepts_system_message
+        self.extra_body = extra_body
+        self.reasoning_effort = reasoning_effort
+        self.text_verbosity = text_verbosity
+
+        self.max_retries = max_retries
+        self.base_timeout = base_timeout
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.use_jitter = use_jitter
 
         # Infer API key and base URL from model_type
         if model_type == "openai":
@@ -485,13 +532,6 @@ class ReasoningAgent(OpenAIAgent):
             )
 
         self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.concurrency_limit = concurrency_limit
-        self.reasoning_effort = reasoning_effort
-        self.text_verbosity = text_verbosity
-        self.max_retries = 5
-        self.use_jitter = True
-        self.max_delay = 10.0
-        self.base_delay = 1.0
 
     async def async_completions(
         self, messages: List[List[Dict]], verbose: bool = True, **kwargs
@@ -561,7 +601,7 @@ class ReasoningAgent(OpenAIAgent):
             parse_response=parse_response,
             concurrency_limit=self.concurrency_limit,
             max_retries=self.max_retries,
-            base_timeout=self.timeout,
+            base_timeout=self.base_timeout,
             base_delay=self.base_delay,
             max_delay=self.max_delay,
             use_jitter=self.use_jitter,
@@ -570,6 +610,13 @@ class ReasoningAgent(OpenAIAgent):
 
 
 class LiteLLMAgent:
+    """
+    Primary agent for most API-based models via the litellm library.
+
+    Used for model types: openai, anthropic, gdm, xai, togetherai, openrouter.
+    This is the default agent for chat-based API models.
+    """
+
     def __init__(
         self,
         model: str,
@@ -642,7 +689,17 @@ class LiteLLMAgent:
         )
 
 
-class BaseAgent:
+class CompletionModelAgent:
+    """
+    Agent for base/completion models that use the completions API (not chat).
+
+    Used for model types: base_openrouter, base_fireworks.
+    These models use raw text prompts instead of chat message format.
+
+    Set treat_as_chat_model=True to use the chat completions API instead
+    (useful for models that support both interfaces).
+    """
+
     def __init__(
         self,
         model: str,

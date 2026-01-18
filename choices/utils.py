@@ -14,10 +14,9 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from .llm_agent import (
-    BaseAgent,
+    CompletionModelAgent,
     LiteLLMAgent,
     LLMResponse,
-    OpenAIAgent,
     ReasoningAgent,
 )
 from .variable import ReasoningMode
@@ -229,7 +228,9 @@ def create_agent(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 concurrency_limit=concurrency_limit,
-                timeout=kwargs.get("base_timeout", 5),
+                accepts_system_message=accepts_system_message,
+                base_timeout=kwargs.get("base_timeout", 5),
+                extra_body=extra_body,
                 reasoning_effort=reasoning_effort,
                 text_verbosity=text_verbosity,
             )
@@ -258,7 +259,7 @@ def create_agent(
             raise ValueError(
                 f"Unknown model type: {model_type}. base model must be one of [base_openrouter', 'base_fireworks']."
             )
-        return BaseAgent(
+        return CompletionModelAgent(
             model=model_name,
             base_url=base_url,
             api_key=api_key,
@@ -931,17 +932,10 @@ async def generate_responses(
     messages_k = messages * K
 
     async def get_responses(msgs):
-        if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
-            return await agent.async_completions(
-                msgs, base_timeout=timeout, verbose=verbose
-            )
-        elif isinstance(agent, ReasoningAgent) or isinstance(agent, OpenAIAgent):
-            if verbose:
-                print(
-                    f"sending messages to openai reasoning agent: len(msgs): {len(msgs)}"
-                )
-            return await agent.async_completions(msgs)
+        if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
+            return await agent.async_completions(msgs, verbose=verbose)
         else:
+            # Fallback for any other agent types (e.g., OpenAIAgent used directly)
             return agent.completions_batch(msgs)
 
     def is_valid_response(resp):
@@ -1103,8 +1097,9 @@ async def evaluate_holdout_set(
 
 async def generate_responses_from_messages(
     agent: Union[
-        BaseAgent,
+        CompletionModelAgent,
         LiteLLMAgent,
+        ReasoningAgent,
     ],
     messages=None,
     timeout=5,
@@ -1124,7 +1119,7 @@ async def generate_responses_from_messages(
         A dictionary mapping prompt indices to their generated responses.
     """
 
-    if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
+    if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
         responses = await agent.async_completions(
             messages, timeout=timeout, verbose=verbose
         )
