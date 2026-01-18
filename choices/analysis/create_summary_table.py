@@ -95,7 +95,7 @@ def aggregate_results(
     results: List[ExperimentResult],
     aggregate_over: List[str],
     use_magnitude: bool = False,
-) -> List[AggregatedResult]:
+) -> Tuple[List[AggregatedResult], bool]:
     """
     Aggregate results over specified dimensions.
 
@@ -106,7 +106,7 @@ def aggregate_results(
         use_magnitude: If True, use absolute values for effect sizes
 
     Returns:
-        List of AggregatedResult objects
+        Tuple of (List of AggregatedResult objects, bool indicating if baseline uses magnitude)
     """
     from collections import defaultdict
 
@@ -120,6 +120,10 @@ def aggregate_results(
 
     # Determine which dimensions to keep vs aggregate
     keep_dims = [d for d in dim_to_attr.keys() if d not in aggregate_over]
+
+    # Use magnitude for baseline bias when aggregating over factors
+    # (because direction is factor-specific and would cancel out)
+    baseline_use_magnitude = "factor" in aggregate_over
 
     # Group results by the dimensions we're keeping
     groups: Dict[tuple, List[ExperimentResult]] = defaultdict(list)
@@ -135,8 +139,13 @@ def aggregate_results(
     for key, group_results in groups.items():
         model_key, factor_key, nudge_key, reasoning_key = key
 
-        # Calculate averages (use magnitude if requested)
-        baseline_biases = [r.baseline_bias for r in group_results]
+        # Calculate averages
+        # Use magnitude for baseline if aggregating over factors
+        baseline_biases = [
+            abs(r.baseline_bias) if baseline_use_magnitude else r.baseline_bias
+            for r in group_results
+        ]
+        # Use magnitude for effect sizes if requested
         effect_sizes = [
             abs(r.avg_effect_size) if use_magnitude else r.avg_effect_size
             for r in group_results
@@ -169,13 +178,14 @@ def aggregate_results(
             )
         )
 
-    return aggregated
+    return aggregated, baseline_use_magnitude
 
 
 def format_aggregated_table(
     results: List[AggregatedResult],
     show_display_names: bool = True,
     use_magnitude: bool = False,
+    baseline_use_magnitude: bool = False,
 ) -> str:
     """Format aggregated results as a text table."""
     if not results:
@@ -208,8 +218,9 @@ def format_aggregated_table(
         headers.append("Factor")
     if has_nudge:
         headers.append("Nudge Type")
+    baseline_header = "|Baseline Bias|" if baseline_use_magnitude else "Baseline Bias"
     effect_header = "|Effect Size|" if use_magnitude else "Effect Size"
-    headers.extend(["Baseline Bias", effect_header, "Steerability Bias", "N"])
+    headers.extend([baseline_header, effect_header, "Steerability Bias", "N"])
 
     # Build rows
     rows = []
@@ -846,10 +857,7 @@ def compute_all_results(
         results = filter_complete_reasoning_pairs(results)
         filtered_count = original_count - len(results)
         if filtered_count > 0:
-            print(
-                f"Filtered {filtered_count} results without complete reasoning pairs "
-                f"(use --keep-incomplete to include them)"
-            )
+            print(f"Filtered {filtered_count} results without complete reasoning pairs")
 
     return results
 
@@ -1161,9 +1169,9 @@ Examples:
     )
 
     parser.add_argument(
-        "--keep-incomplete",
+        "--complete-pairs-only",
         action="store_true",
-        help="Keep model-factor-nudge combinations even if they don't have both "
+        help="Only show model-factor-nudge combinations that have both "
         "'off'/'none' reasoning and another reasoning condition",
     )
 
@@ -1203,7 +1211,7 @@ Examples:
         model_filter=args.models,
         factor_filter=args.factors,
         nudge_type_filter=args.nudge_types,
-        require_reasoning_pairs=not args.keep_incomplete,
+        require_reasoning_pairs=args.complete_pairs_only,
     )
 
     print(f"Found {len(results)} complete experiments\n")
@@ -1216,12 +1224,23 @@ Examples:
 
     # Handle aggregation if requested
     if args.aggregate:
-        aggregated = aggregate_results(results, args.aggregate, args.magnitude)
+        aggregated, baseline_use_magnitude = aggregate_results(
+            results, args.aggregate, args.magnitude
+        )
         agg_info = f"Aggregated over: {', '.join(args.aggregate)}"
+        mag_notes = []
+        if baseline_use_magnitude:
+            mag_notes.append("baseline bias")
         if args.magnitude:
-            agg_info += " (using magnitude for effect sizes)"
+            mag_notes.append("effect sizes")
+        if mag_notes:
+            agg_info += f" (using magnitude for {', '.join(mag_notes)})"
         print(f"{agg_info}\n")
-        print(format_aggregated_table(aggregated, show_display_names, args.magnitude))
+        print(
+            format_aggregated_table(
+                aggregated, show_display_names, args.magnitude, baseline_use_magnitude
+            )
+        )
     elif args.output:
         write_csv(results, args.output, show_display_names)
     else:
@@ -1244,6 +1263,7 @@ Examples:
     effect_label = "|effect|" if args.magnitude else "avg_effect"
 
     # By model (group by base model name to merge reasoning variants)
+    # Use magnitude for baseline bias since aggregating over factors
     from collections import defaultdict
 
     model_groups: Dict[str, List[ExperimentResult]] = defaultdict(list)
@@ -1254,6 +1274,8 @@ Examples:
     print(f"\nModels ({len(model_groups)}):")
     for base_model in sorted(model_groups.keys()):
         model_results = model_groups[base_model]
+        # Use magnitude for baseline bias (aggregating over factors)
+        avg_bias = sum(abs(r.baseline_bias) for r in model_results) / len(model_results)
         avg_effect = sum(get_effect(r) for r in model_results) / len(model_results)
         steer_results = [r for r in model_results if r.steerability_bias is not None]
         avg_steer = (
@@ -1269,17 +1291,18 @@ Examples:
             else base_model
         )
         print(
-            f"  {display_name}: n={len(model_results)}, "
+            f"  {display_name}: n={len(model_results)}, |bias|={avg_bias:.3f}, "
             f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
         )
 
     # By reasoning condition
+    # Use magnitude for baseline bias since aggregating over factors
     reasoning_conditions = set(r.reasoning_condition for r in results)
     print(f"\nReasoning Conditions ({len(reasoning_conditions)}):")
     for condition in sorted(reasoning_conditions):
         cond_results = [r for r in results if r.reasoning_condition == condition]
         avg_effect = sum(get_effect(r) for r in cond_results) / len(cond_results)
-        avg_bias = sum(r.baseline_bias for r in cond_results) / len(cond_results)
+        avg_bias = sum(abs(r.baseline_bias) for r in cond_results) / len(cond_results)
         steer_results = [r for r in cond_results if r.steerability_bias is not None]
         avg_steer = (
             sum(r.steerability_bias for r in steer_results) / len(steer_results)
@@ -1288,18 +1311,21 @@ Examples:
         )
         steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
         print(
-            f"  {condition}: n={len(cond_results)}, avg_bias={avg_bias:+.3f}, "
+            f"  {condition}: n={len(cond_results)}, |bias|={avg_bias:.3f}, "
             f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
         )
 
     # By nudge type
+    # Use magnitude for baseline bias since aggregating over factors
     nudge_types = set(r.nudge_type for r in results)
     print(f"\nNudge Types ({len(nudge_types)}):")
     for nudge_type in sorted(nudge_types):
         nudge_results = [r for r in results if r.nudge_type == nudge_type]
+        avg_bias = sum(abs(r.baseline_bias) for r in nudge_results) / len(nudge_results)
         avg_effect = sum(get_effect(r) for r in nudge_results) / len(nudge_results)
         print(
-            f"  {nudge_type}: n={len(nudge_results)}, {effect_label}={avg_effect:+.3f}"
+            f"  {nudge_type}: n={len(nudge_results)}, |bias|={avg_bias:.3f}, "
+            f"{effect_label}={avg_effect:+.3f}"
         )
 
     # By factor
