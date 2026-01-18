@@ -94,6 +94,7 @@ class AggregatedResult:
 def aggregate_results(
     results: List[ExperimentResult],
     aggregate_over: List[str],
+    use_magnitude: bool = False,
 ) -> List[AggregatedResult]:
     """
     Aggregate results over specified dimensions.
@@ -102,6 +103,7 @@ def aggregate_results(
         results: List of ExperimentResult objects
         aggregate_over: List of dimensions to aggregate over.
             Valid values: "model", "factor", "nudge_type", "reasoning"
+        use_magnitude: If True, use absolute values for effect sizes
 
     Returns:
         List of AggregatedResult objects
@@ -133,9 +135,12 @@ def aggregate_results(
     for key, group_results in groups.items():
         model_key, factor_key, nudge_key, reasoning_key = key
 
-        # Calculate averages
+        # Calculate averages (use magnitude if requested)
         baseline_biases = [r.baseline_bias for r in group_results]
-        effect_sizes = [r.avg_effect_size for r in group_results]
+        effect_sizes = [
+            abs(r.avg_effect_size) if use_magnitude else r.avg_effect_size
+            for r in group_results
+        ]
         steerability_biases = [
             r.steerability_bias
             for r in group_results
@@ -170,6 +175,7 @@ def aggregate_results(
 def format_aggregated_table(
     results: List[AggregatedResult],
     show_display_names: bool = True,
+    use_magnitude: bool = False,
 ) -> str:
     """Format aggregated results as a text table."""
     if not results:
@@ -202,7 +208,8 @@ def format_aggregated_table(
         headers.append("Factor")
     if has_nudge:
         headers.append("Nudge Type")
-    headers.extend(["Baseline Bias", "Effect Size", "Steerability Bias", "N"])
+    effect_header = "|Effect Size|" if use_magnitude else "Effect Size"
+    headers.extend(["Baseline Bias", effect_header, "Steerability Bias", "N"])
 
     # Build rows
     rows = []
@@ -1169,6 +1176,12 @@ Examples:
         "E.g., --aggregate factor nudge_type will show averages per model+reasoning",
     )
 
+    parser.add_argument(
+        "--magnitude",
+        action="store_true",
+        help="Use absolute values for effect sizes (prevents cancellation when aggregating)",
+    )
+
     args = parser.parse_args()
 
     print("=" * 70)
@@ -1203,9 +1216,12 @@ Examples:
 
     # Handle aggregation if requested
     if args.aggregate:
-        aggregated = aggregate_results(results, args.aggregate)
-        print(f"Aggregated over: {', '.join(args.aggregate)}\n")
-        print(format_aggregated_table(aggregated, show_display_names))
+        aggregated = aggregate_results(results, args.aggregate, args.magnitude)
+        agg_info = f"Aggregated over: {', '.join(args.aggregate)}"
+        if args.magnitude:
+            agg_info += " (using magnitude for effect sizes)"
+        print(f"{agg_info}\n")
+        print(format_aggregated_table(aggregated, show_display_names, args.magnitude))
     elif args.output:
         write_csv(results, args.output, show_display_names)
     else:
@@ -1217,14 +1233,22 @@ Examples:
     # Print summary statistics
     print("\n" + "=" * 70)
     print("Summary Statistics")
+    if args.magnitude:
+        print("(using magnitude for effect sizes)")
     print("=" * 70)
+
+    # Helper to get effect size (magnitude or signed)
+    def get_effect(r):
+        return abs(r.avg_effect_size) if args.magnitude else r.avg_effect_size
+
+    effect_label = "|effect|" if args.magnitude else "avg_effect"
 
     # By model
     models = set(r.model for r in results)
     print(f"\nModels ({len(models)}):")
     for model in sorted(models):
         model_results = [r for r in results if r.model == model]
-        avg_effect = sum(r.avg_effect_size for r in model_results) / len(model_results)
+        avg_effect = sum(get_effect(r) for r in model_results) / len(model_results)
         steer_results = [r for r in model_results if r.steerability_bias is not None]
         avg_steer = (
             sum(r.steerability_bias for r in steer_results) / len(steer_results)
@@ -1233,14 +1257,16 @@ Examples:
         )
         steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
         display_name = get_model_display_name(model) if show_display_names else model
-        print(f"  {display_name}: avg_effect={avg_effect:+.3f}, avg_steer={steer_str}")
+        print(
+            f"  {display_name}: {effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
+        )
 
     # By reasoning condition
     reasoning_conditions = set(r.reasoning_condition for r in results)
     print(f"\nReasoning Conditions ({len(reasoning_conditions)}):")
     for condition in sorted(reasoning_conditions):
         cond_results = [r for r in results if r.reasoning_condition == condition]
-        avg_effect = sum(r.avg_effect_size for r in cond_results) / len(cond_results)
+        avg_effect = sum(get_effect(r) for r in cond_results) / len(cond_results)
         avg_bias = sum(r.baseline_bias for r in cond_results) / len(cond_results)
         steer_results = [r for r in cond_results if r.steerability_bias is not None]
         avg_steer = (
@@ -1251,7 +1277,7 @@ Examples:
         steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
         print(
             f"  {condition}: n={len(cond_results)}, avg_bias={avg_bias:+.3f}, "
-            f"avg_effect={avg_effect:+.3f}, avg_steer={steer_str}"
+            f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
         )
 
     # By nudge type
@@ -1259,8 +1285,10 @@ Examples:
     print(f"\nNudge Types ({len(nudge_types)}):")
     for nudge_type in sorted(nudge_types):
         nudge_results = [r for r in results if r.nudge_type == nudge_type]
-        avg_effect = sum(r.avg_effect_size for r in nudge_results) / len(nudge_results)
-        print(f"  {nudge_type}: n={len(nudge_results)}, avg_effect={avg_effect:+.3f}")
+        avg_effect = sum(get_effect(r) for r in nudge_results) / len(nudge_results)
+        print(
+            f"  {nudge_type}: n={len(nudge_results)}, {effect_label}={avg_effect:+.3f}"
+        )
 
     # By factor
     factors = set(r.factor for r in results)
