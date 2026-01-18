@@ -846,10 +846,7 @@ def compute_all_results(
         results = filter_complete_reasoning_pairs(results)
         filtered_count = original_count - len(results)
         if filtered_count > 0:
-            print(
-                f"Filtered {filtered_count} results without complete reasoning pairs "
-                f"(use --keep-incomplete to include them)"
-            )
+            print(f"Filtered {filtered_count} results without complete reasoning pairs")
 
     return results
 
@@ -1161,9 +1158,9 @@ Examples:
     )
 
     parser.add_argument(
-        "--keep-incomplete",
+        "--complete-pairs-only",
         action="store_true",
-        help="Keep model-factor-nudge combinations even if they don't have both "
+        help="Only show model-factor-nudge combinations that have both "
         "'off'/'none' reasoning and another reasoning condition",
     )
 
@@ -1203,7 +1200,7 @@ Examples:
         model_filter=args.models,
         factor_filter=args.factors,
         nudge_type_filter=args.nudge_types,
-        require_reasoning_pairs=not args.keep_incomplete,
+        require_reasoning_pairs=args.complete_pairs_only,
     )
 
     print(f"Found {len(results)} complete experiments\n")
