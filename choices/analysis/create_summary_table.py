@@ -1243,11 +1243,17 @@ Examples:
 
     effect_label = "|effect|" if args.magnitude else "avg_effect"
 
-    # By model
-    models = set(r.model for r in results)
-    print(f"\nModels ({len(models)}):")
-    for model in sorted(models):
-        model_results = [r for r in results if r.model == model]
+    # By model (group by base model name to merge reasoning variants)
+    from collections import defaultdict
+
+    model_groups: Dict[str, List[ExperimentResult]] = defaultdict(list)
+    for r in results:
+        base_model = get_base_model_name(r.model)
+        model_groups[base_model].append(r)
+
+    print(f"\nModels ({len(model_groups)}):")
+    for base_model in sorted(model_groups.keys()):
+        model_results = model_groups[base_model]
         avg_effect = sum(get_effect(r) for r in model_results) / len(model_results)
         steer_results = [r for r in model_results if r.steerability_bias is not None]
         avg_steer = (
@@ -1256,9 +1262,15 @@ Examples:
             else None
         )
         steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
-        display_name = get_model_display_name(model) if show_display_names else model
+        # Get display name from any model in the group
+        display_name = (
+            get_model_display_name(model_results[0].model)
+            if show_display_names
+            else base_model
+        )
         print(
-            f"  {display_name}: {effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
+            f"  {display_name}: n={len(model_results)}, "
+            f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
         )
 
     # By reasoning condition
