@@ -8,7 +8,7 @@ import time
 from abc import ABC, abstractmethod
 from base64 import b64encode
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 
 import openai
 from dotenv import load_dotenv
@@ -47,6 +47,120 @@ class LLMResponse:
 def _encode_image(image_path: str) -> str:
     with open(image_path, "rb") as image_file:
         return b64encode(image_file.read()).decode("utf-8")
+
+
+async def run_batch_completions(
+    messages: List[List[Dict]],
+    make_request: Callable[[List[Dict], float], Awaitable[Any]],
+    parse_response: Callable[[Any], LLMResponse],
+    concurrency_limit: int,
+    max_retries: int,
+    base_timeout: float,
+    base_delay: float,
+    max_delay: float,
+    use_jitter: bool,
+    verbose: bool = True,
+) -> List[LLMResponse]:
+    """
+    Common async batch processing with retries, timeouts, and concurrency limiting.
+
+    Args:
+        messages: List of message lists to process
+        make_request: Async callable that takes (message, timeout) and returns raw response
+        parse_response: Callable that takes raw response and returns LLMResponse
+        concurrency_limit: Maximum concurrent requests
+        max_retries: Maximum retry attempts per message
+        base_timeout: Initial timeout in seconds
+        base_delay: Initial delay for exponential backoff
+        max_delay: Maximum delay between retries
+        use_jitter: Whether to add random jitter to delays
+        verbose: Whether to print progress information
+
+    Returns:
+        List of LLMResponse objects in the same order as input messages
+    """
+    semaphore = asyncio.Semaphore(concurrency_limit)
+    counts = {"timeouts": 0, "errors": 0}
+    results = {}
+
+    async def process_message(message_idx: int):
+        message = messages[message_idx]
+        current_timeout = base_timeout
+        retry_delay = base_delay
+
+        for attempt in range(max_retries):
+            async with semaphore:
+                try:
+                    raw_response = await asyncio.wait_for(
+                        make_request(message, current_timeout),
+                        timeout=current_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    counts["timeouts"] += 1
+                    if verbose:
+                        print(
+                            f"[Timeout] Attempt {attempt + 1}/{max_retries} "
+                            f"for message index {message_idx}. Timed out after {current_timeout:.1f}s."
+                        )
+                    if attempt == max_retries - 1:
+                        results[message_idx] = LLMResponse(content=None)
+                        if verbose:
+                            print(
+                                f"Max retries (timeouts) reached for message index {message_idx}."
+                            )
+                        return
+                    current_timeout *= 2.0
+                    continue
+
+                except Exception as e:
+                    counts["errors"] += 1
+                    if verbose:
+                        print(
+                            f"[Error] Attempt {attempt + 1}/{max_retries} "
+                            f"for message index {message_idx}: {e}"
+                        )
+                    if attempt == max_retries - 1:
+                        results[message_idx] = LLMResponse(content=None)
+                        if verbose:
+                            print(
+                                f"Max retries (errors) reached for message index {message_idx}."
+                            )
+                        return
+                    sleep_for = retry_delay
+                    if use_jitter:
+                        sleep_for += random.uniform(0, 1)
+                    if verbose:
+                        print(
+                            f"Sleeping {sleep_for:.1f}s before retry (error backoff)..."
+                        )
+                    await asyncio.sleep(sleep_for)
+                    retry_delay = min(retry_delay * 2.0, max_delay)
+                    continue
+
+                # Success
+                results[message_idx] = parse_response(raw_response)
+                return
+
+    # Create and run tasks with progress tracking
+    tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
+
+    try:
+        for coro in tqdm_asyncio.as_completed(
+            tasks, total=len(tasks), desc="LLM calls"
+        ):
+            await coro
+    except (Exception, asyncio.CancelledError):
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+    if verbose:
+        print(f"Number of timeouts: {counts['timeouts']}")
+        print(f"Number of generic errors: {counts['errors']}")
+
+    return [results[i] for i in range(len(messages))]
 
 
 class LLMAgent(ABC):
@@ -381,168 +495,78 @@ class ReasoningAgent(OpenAIAgent):
 
     async def async_completions(
         self, messages: List[List[Dict]], verbose: bool = True, **kwargs
-    ) -> List[str]:
+    ) -> List[LLMResponse]:
         """
         Returns a list of LLM responses, in order.
         Uses a semaphore to limit concurrency, and tqdm_asyncio for progress.
         """
 
-        semaphore = asyncio.Semaphore(self.concurrency_limit)
-        counts = {"timeouts": 0, "errors": 0}
-        results = {}
+        async def make_request(message: List[Dict], timeout: float) -> Any:
+            completion_kwargs = {
+                "temperature": self.temperature,
+                "max_output_tokens": self.max_tokens,
+            }
+            if self.reasoning_effort:
+                completion_kwargs["reasoning"] = self.reasoning_effort
+            if self.text_verbosity:
+                completion_kwargs["text"] = self.text_verbosity
+            return await self.async_client.responses.create(
+                model=self.model,
+                instructions=message[0]["content"],
+                input=message[1]["content"],
+                **completion_kwargs,
+            )
 
-        async def process_message(message_idx: int):
-            """
-            Attempts to process a single message up to `max_retries` times.
-            On generic exceptions, sleeps with exponential backoff and optional jitter.
-            On timeout, doubles the request timeout without sleeping.
-            """
-            message = messages[message_idx]
-            retry_delay = 2.0
-            current_timeout = self.timeout
-            response = None
+        def parse_response(completion_res: Any) -> LLMResponse:
+            response = completion_res.output_text
             reasoning = None
             reasoning_summary = None
 
-            for attempt in range(self.max_retries):
-                # Acquire the semaphore before making the LLM call
-                async with semaphore:
-                    try:
-                        completion_kwargs = {
-                            "temperature": self.temperature,
-                            "max_output_tokens": self.max_tokens,
-                        }
-                        # Add reasoning_effort and text_verbosity for OpenAI reasoning models (o1, gpt-5)
-                        if self.reasoning_effort:
-                            completion_kwargs["reasoning"] = self.reasoning_effort
-                        if self.text_verbosity:
-                            completion_kwargs["text"] = self.text_verbosity
-                        # print(f"Making request for message {message_idx}")
-                        # Use asyncio.wait_for to enforce hard timeout at asyncio level
-                        completion_res = await asyncio.wait_for(
-                            self.async_client.responses.create(
-                                model=self.model,
-                                instructions=message[0]["content"],
-                                input=message[1]["content"],
-                                **completion_kwargs,
-                            ),
-                            timeout=current_timeout,
-                        )
-                        # print(f"Request for message {message_idx} completed")
-                    except asyncio.TimeoutError:
-                        counts["timeouts"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Timeout] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}. Timed out after {current_timeout:.1f}s."
+            # Extract reasoning traces based on model_type
+            for out in completion_res.output:
+                if out.type == "reasoning":
+                    if self.model_type == "openai":
+                        # OpenAI models provide reasoning summaries
+                        if out.summary and len(out.summary) > 0:
+                            reasoning_summary = "\n".join(
+                                item.text
+                                for item in out.summary
+                                if hasattr(item, "text")
                             )
-                        if attempt == self.max_retries - 1:
-                            response = None  # no more retries
-                            if verbose:
-                                print(
-                                    f"Max retries (timeouts) reached for message index {message_idx}."
-                                )
-                        else:
-                            current_timeout *= 2.0
-
-                        continue  # next attempt
-
-                    except Exception as e:
-                        counts["errors"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Error] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}: {e}"
+                    elif self.model_type == "openrouter":
+                        # OpenRouter reasoning models provide full traces or summaries
+                        if out.content and len(out.content):
+                            reasoning = "\n".join(
+                                item.text
+                                for item in out.content
+                                if hasattr(item, "text")
                             )
-                        if attempt == self.max_retries - 1:
-                            response = None
-                            if verbose:
-                                print(
-                                    f"Max retries (errors) reached for message index {message_idx}."
-                                )
-                        else:
-                            # Sleep with exponential backoff
-                            sleep_for = retry_delay
-                            if self.use_jitter:
-                                sleep_for += random.uniform(0, 1)
-                            if verbose:
-                                print(
-                                    f"Sleeping {sleep_for:.1f}s before retry (error backoff)..."
-                                )
-                            await asyncio.sleep(sleep_for)
-                            retry_delay = min(retry_delay * 2.0, self.max_delay)
+                        elif out.summary and len(out.summary) > 0:
+                            reasoning_summary = "\n".join(
+                                item.text
+                                for item in out.summary
+                                if hasattr(item, "text")
+                            )
 
-                        continue  # next attempt
-
-                    # Success: parse the response
-                    response = completion_res.output_text
-                    # Access reasoning traces and message content based on model_type
-                    for out in completion_res.output:
-                        if out.type == "reasoning":
-                            if self.model_type == "openai":
-                                # OpenAI models provide reasoning summaries
-                                if out.summary and len(out.summary) > 0:
-                                    # Concatenate all summary elements in case there are multiple
-                                    reasoning_summary = "\n".join(
-                                        item.text
-                                        for item in out.summary
-                                        if hasattr(item, "text")
-                                    )
-                                else:
-                                    reasoning_summary = None
-                            elif self.model_type == "openrouter":
-                                # OpenRouter reasoning models (e.g., deepseek) provide full traces
-                                # Some models (e.g., grok-4.1-fast) may only provide summaries
-                                if out.content and len(out.content):
-                                    # Concatenate all content elements in case there are multiple
-                                    reasoning = "\n".join(
-                                        item.text
-                                        for item in out.content
-                                        if hasattr(item, "text")
-                                    )
-                                # Fallback to summary if content is not available
-                                elif out.summary and len(out.summary) > 0:
-                                    # Concatenate all summary elements in case there are multiple
-                                    reasoning_summary = "\n".join(
-                                        item.text
-                                        for item in out.summary
-                                        if hasattr(item, "text")
-                                    )
-                    # Success means we don't have to retry again
-                    break
-
-            # For reasoning models, the reasoning is internal (captured in reasoning/reasoning_summary),
-            # but the response text is just the answer. So reasoning_type should be NO_REASONING
-            # for parsing purposes - we don't need to look for "Answer: X" patterns.
-            results[message_idx] = LLMResponse(
+            return LLMResponse(
                 content=response,
                 reasoning=reasoning,
                 reasoning_summary=reasoning_summary,
                 reasoning_type="NO_REASONING",
             )
 
-        # Create actual tasks (not just coroutines) so we can cancel them if needed
-        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
-
-        # Use tqdm_asyncio to track progress as tasks finish
-        # Wrap in try-except to properly clean up tasks on error or cancellation
-        try:
-            for coro in tqdm_asyncio.as_completed(
-                tasks, total=len(tasks), desc="LLM calls"
-            ):
-                await coro
-        except (Exception, asyncio.CancelledError):
-            # Cancel all pending tasks
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            # Wait for all tasks to finish (with cancellation)
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise  # Re-raise the original exception
-
-        return [results[i] for i in range(len(messages))]
+        return await run_batch_completions(
+            messages=messages,
+            make_request=make_request,
+            parse_response=parse_response,
+            concurrency_limit=self.concurrency_limit,
+            max_retries=self.max_retries,
+            base_timeout=self.timeout,
+            base_delay=self.base_delay,
+            max_delay=self.max_delay,
+            use_jitter=self.use_jitter,
+            verbose=verbose,
+        )
 
 
 class LiteLLMAgent:
@@ -579,140 +603,45 @@ class LiteLLMAgent:
 
     async def async_completions(
         self, messages: List[List[Dict]], verbose: bool = True, **kwargs
-    ) -> List[str]:
+    ) -> List[LLMResponse]:
         """
         Returns a list of LLM responses, in order.
         Uses a semaphore to limit concurrency, and tqdm_asyncio for progress.
         """
 
-        semaphore = asyncio.Semaphore(self.concurrency_limit)
-        counts = {"timeouts": 0, "errors": 0}
-        results = {}
+        async def make_request(message: List[Dict], timeout: float) -> Any:
+            completion_kwargs = {
+                "model": self.model,
+                "messages": message,
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "timeout": timeout,
+            }
+            if self.reasoning_effort:
+                completion_kwargs["reasoning"] = self.reasoning_effort
+            if self.text_verbosity:
+                completion_kwargs["text"] = self.text_verbosity
+            if self.extra_body:
+                completion_kwargs["extra_body"] = self.extra_body
+            return await litellm_acompletion(**completion_kwargs)
 
-        async def process_message(message_idx: int):
-            """
-            Attempts to process a single message up to `max_retries` times.
-            On generic exceptions, sleeps with exponential backoff and optional jitter.
-            On timeout, doubles the request timeout without sleeping.
-            """
-            message = messages[message_idx]
+        def parse_response(response: Any) -> LLMResponse:
+            return LLMResponse(content=response.choices[0].message.content.strip())
 
-            current_timeout = self.base_timeout
-            retry_delay = self.base_delay
-            response = None
-
-            for attempt in range(self.max_retries):
-                # Acquire the semaphore before making the LLM call
-                async with semaphore:
-                    # if verbose:
-                    #     print(
-                    #         f"[Attempt {attempt+1}/{self.max_retries}] "
-                    #         f"Message index {message_idx}, timeout={current_timeout:.1f}s"
-                    #     )
-
-                    try:
-                        completion_kwargs = {
-                            "model": self.model,
-                            "messages": message,
-                            "max_tokens": self.max_tokens,
-                            "temperature": self.temperature,
-                            "timeout": current_timeout,
-                        }
-                        # Add reasoning_effort and text_verbosity for OpenAI reasoning models (o1, gpt-5)
-                        if self.reasoning_effort:
-                            completion_kwargs["reasoning"] = self.reasoning_effort
-                        if self.text_verbosity:
-                            completion_kwargs["text"] = self.text_verbosity
-                        # Add extra_body if it exists (for OpenRouter reasoning parameter, etc.)
-                        if self.extra_body:
-                            completion_kwargs["extra_body"] = self.extra_body
-
-                        # Use asyncio.wait_for to enforce hard timeout at asyncio level
-                        # (litellm's internal timeout may not be respected by all providers)
-                        completion_res = await asyncio.wait_for(
-                            litellm_acompletion(**completion_kwargs),
-                            timeout=current_timeout,
-                        )
-                    except asyncio.TimeoutError:
-                        counts["timeouts"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Timeout] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}. Timed out after {current_timeout:.1f}s."
-                            )
-                        if attempt == self.max_retries - 1:
-                            response = None  # no more retries
-                            if verbose:
-                                print(
-                                    f"Max retries (timeouts) reached for message index {message_idx}."
-                                )
-                        else:
-                            current_timeout *= 2.0
-
-                        continue  # next attempt
-
-                    except Exception as e:
-                        counts["errors"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Error] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}: {e}"
-                            )
-                        if attempt == self.max_retries - 1:
-                            response = None
-                            if verbose:
-                                print(
-                                    f"Max retries (errors) reached for message index {message_idx}."
-                                )
-                        else:
-                            # Sleep with exponential backoff
-                            sleep_for = retry_delay
-                            if self.use_jitter:
-                                sleep_for += random.uniform(0, 1)
-                            if verbose:
-                                print(
-                                    f"Sleeping {sleep_for:.1f}s before retry (error backoff)..."
-                                )
-                            await asyncio.sleep(sleep_for)
-                            retry_delay = min(retry_delay * 2.0, self.max_delay)
-
-                        continue  # next attempt
-
-                    # Success: parse the response
-                    response = completion_res.choices[0].message.content.strip()
-                    break  # done with retries
-
-            results[message_idx] = LLMResponse(content=response)
-
-        # Create actual tasks (not just coroutines) so we can cancel them if needed
-        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
-
-        # Use tqdm_asyncio to track progress as tasks finish
-        # Wrap in try-except to properly clean up tasks on error or cancellation
-        try:
-            for coro in tqdm_asyncio.as_completed(
-                tasks, total=len(tasks), desc="LLM calls"
-            ):
-                await coro
-        except (Exception, asyncio.CancelledError):
-            # Cancel all pending tasks
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            # Wait for all tasks to finish (with cancellation)
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise  # Re-raise the original exception
-
-        if verbose:
-            print(f"Number of timeouts: {counts['timeouts']}")
-            print(f"Number of generic errors: {counts['errors']}")
-
-        return [results[i] for i in range(len(messages))]
+        return await run_batch_completions(
+            messages=messages,
+            make_request=make_request,
+            parse_response=parse_response,
+            concurrency_limit=self.concurrency_limit,
+            max_retries=self.max_retries,
+            base_timeout=self.base_timeout,
+            base_delay=self.base_delay,
+            max_delay=self.max_delay,
+            use_jitter=self.use_jitter,
+            verbose=verbose,
+        )
 
 
-# Uses the OpenAI client and makes sure to call completions rather than chat. Mostly a copy of LiteLLMAgent
 class BaseAgent:
     def __init__(
         self,
@@ -769,151 +698,53 @@ class BaseAgent:
 
     async def async_completions(
         self, messages: List[List[Dict]], verbose: bool = True, **kwargs
-    ) -> List[str]:
+    ) -> List[LLMResponse]:
         """
         Returns a list of LLM responses, in order.
         Uses a semaphore to limit concurrency, and tqdm_asyncio for progress.
         """
 
-        semaphore = asyncio.Semaphore(self.concurrency_limit)
-        counts = {"timeouts": 0, "errors": 0}
-        results = {}
-
-        async def process_message(message_idx: int):
-            """
-            Attempts to process a single message up to `max_retries` times.
-            On generic exceptions, sleeps with exponential backoff and optional jitter.
-            On timeout, doubles the request timeout without sleeping.
-            """
-            message = messages[message_idx]
-            # Convert messages to prompt for completions endpoint
+        async def make_request(message: List[Dict], timeout: float) -> Any:
             prompt = self._messages_to_prompt(message)
 
-            current_timeout = self.base_timeout
-            retry_delay = self.base_delay
-            response = None
+            if self.treat_as_chat_model:
+                completion_kwargs = {
+                    "model": self.model,
+                    "messages": prompt,
+                    "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                    "timeout": timeout,
+                }
+                if self.extra_body:
+                    completion_kwargs["extra_body"] = self.extra_body
+                return await self.client.chat.completions.create(**completion_kwargs)
+            else:
+                completion_kwargs = {
+                    "model": self.model,
+                    "prompt": prompt,
+                    "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                    "timeout": timeout,
+                }
+                if self.extra_body:
+                    completion_kwargs["extra_body"] = self.extra_body
+                return await self.client.completions.create(**completion_kwargs)
 
-            for attempt in range(self.max_retries):
-                # Acquire the semaphore before making the LLM call
-                async with semaphore:
-                    # if verbose:
-                    #     print(
-                    #         f"[Attempt {attempt+1}/{self.max_retries}] "
-                    #         f"Message index {message_idx}, timeout={current_timeout:.1f}s"
-                    #     )
+        def parse_response(response: Any) -> LLMResponse:
+            if self.treat_as_chat_model:
+                return LLMResponse(content=response.choices[0].message.content.strip())
+            else:
+                return LLMResponse(content=response.choices[0].text.strip())
 
-                    try:
-                        if self.treat_as_chat_model:
-                            completion_kwargs = {
-                                "model": self.model,
-                                "messages": prompt,
-                                "max_tokens": self.max_tokens,
-                                "temperature": self.temperature,
-                                "timeout": current_timeout,
-                            }
-                            # Add extra_body if it exists (for OpenRouter reasoning parameter, etc.)
-                            if self.extra_body:
-                                completion_kwargs["extra_body"] = self.extra_body
-
-                            # Use asyncio.wait_for to enforce hard timeout at asyncio level
-                            completion_res = await asyncio.wait_for(
-                                self.client.chat.completions.create(
-                                    **completion_kwargs
-                                ),
-                                timeout=current_timeout,
-                            )
-
-                        else:
-                            completion_kwargs = {
-                                "model": self.model,
-                                "prompt": prompt,
-                                "max_tokens": self.max_tokens,
-                                "temperature": self.temperature,
-                                "timeout": current_timeout,
-                            }
-                            # Add extra_body if it exists (for OpenRouter reasoning parameter, etc.)
-                            if self.extra_body:
-                                completion_kwargs["extra_body"] = self.extra_body
-
-                            # Use asyncio.wait_for to enforce hard timeout at asyncio level
-                            completion_res = await asyncio.wait_for(
-                                self.client.completions.create(**completion_kwargs),
-                                timeout=current_timeout,
-                            )
-                    except asyncio.TimeoutError:
-                        counts["timeouts"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Timeout] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}. Timed out after {current_timeout:.1f}s."
-                            )
-                        if attempt == self.max_retries - 1:
-                            response = None  # no more retries
-                            if verbose:
-                                print(
-                                    f"Max retries (timeouts) reached for message index {message_idx}."
-                                )
-                        else:
-                            current_timeout *= 2.0
-
-                        continue  # next attempt
-
-                    except Exception as e:
-                        counts["errors"] += 1
-
-                        if verbose:
-                            print(
-                                f"[Error] Attempt {attempt + 1}/{self.max_retries} "
-                                f"for message index {message_idx}: {e}"
-                            )
-                        if attempt == self.max_retries - 1:
-                            response = None
-                            if verbose:
-                                print(
-                                    f"Max retries (errors) reached for message index {message_idx}."
-                                )
-                        else:
-                            # Sleep with exponential backoff
-                            sleep_for = retry_delay
-                            if self.use_jitter:
-                                sleep_for += random.uniform(0, 1)
-                            if verbose:
-                                print(
-                                    f"Sleeping {sleep_for:.1f}s before retry (error backoff)..."
-                                )
-                            await asyncio.sleep(sleep_for)
-                            retry_delay = min(retry_delay * 2.0, self.max_delay)
-
-                        continue  # next attempt
-
-                    # Success: parse the response (using .text for completions, not .message.content)
-                    response = completion_res.choices[0].text.strip()
-                    break  # done with retries
-
-            results[message_idx] = LLMResponse(content=response)
-
-        # Create actual tasks (not just coroutines) so we can cancel them if needed
-        tasks = [asyncio.create_task(process_message(i)) for i in range(len(messages))]
-
-        # Use tqdm_asyncio to track progress as tasks finish
-        # Wrap in try-except to properly clean up tasks on error or cancellation
-        try:
-            for coro in tqdm_asyncio.as_completed(
-                tasks, total=len(tasks), desc="LLM calls"
-            ):
-                await coro
-        except (Exception, asyncio.CancelledError):
-            # Cancel all pending tasks
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            # Wait for all tasks to finish (with cancellation)
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise  # Re-raise the original exception
-
-        if verbose:
-            print(f"Number of timeouts: {counts['timeouts']}")
-            print(f"Number of generic errors: {counts['errors']}")
-
-        return [results[i] for i in range(len(messages))]
+        return await run_batch_completions(
+            messages=messages,
+            make_request=make_request,
+            parse_response=parse_response,
+            concurrency_limit=self.concurrency_limit,
+            max_retries=self.max_retries,
+            base_timeout=self.base_timeout,
+            base_delay=self.base_delay,
+            max_delay=self.max_delay,
+            use_jitter=self.use_jitter,
+            verbose=verbose,
+        )
