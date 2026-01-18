@@ -21,8 +21,6 @@ from .llm_agent import (
     LLMResponse,
     OpenAIAgent,
     ReasoningAgent,
-    vLLMAgent,
-    vLLMAgentBaseModel,
 )
 from .variable import ReasoningMode
 
@@ -174,7 +172,7 @@ def create_agent(
         temperature: Sampling temperature (default: 0.0)
         max_tokens: Maximum number of tokens to generate
         concurrency_limit: Maximum number of concurrent API calls (for LiteLLM)
-        trust_remote_code: Whether to trust remote code (for HuggingFace/vLLM)
+        trust_remote_code: Whether to trust remote code (for HuggingFace)
         **kwargs: Additional keyword arguments that will be ignored
 
     Returns:
@@ -283,27 +281,9 @@ def create_agent(
             accepts_system_message=accepts_system_message,
             tokenizer_path=model_config.get("tokenizer_path"),
         )
-    elif model_type == "vllm":
-        return vLLMAgent(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
-    elif model_type == "vllm_base_model":
-        return vLLMAgentBaseModel(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
     else:
         raise ValueError(
-            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'vllm', 'vllm_base_model', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
+            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
         )
 
 
@@ -1138,7 +1118,6 @@ async def generate_responses_from_messages(
         LiteLLMAgent,
         HuggingFaceAgent,
         HuggingFaceAgentLogitsPrediction,
-        vLLMAgent,
     ],
     messages=None,
     timeout=5,
