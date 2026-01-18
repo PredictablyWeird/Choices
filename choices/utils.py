@@ -15,8 +15,6 @@ from tqdm import tqdm
 
 from .llm_agent import (
     BaseAgent,
-    HuggingFaceAgent,
-    HuggingFaceAgentLogitsPrediction,
     LiteLLMAgent,
     LLMResponse,
     OpenAIAgent,
@@ -172,7 +170,7 @@ def create_agent(
         temperature: Sampling temperature (default: 0.0)
         max_tokens: Maximum number of tokens to generate
         concurrency_limit: Maximum number of concurrent API calls (for LiteLLM)
-        trust_remote_code: Whether to trust remote code (for HuggingFace)
+        trust_remote_code: Whether to trust remote code (unused, kept for compatibility)
         **kwargs: Additional keyword arguments that will be ignored
 
     Returns:
@@ -272,18 +270,9 @@ def create_agent(
             extra_body=extra_body,
         )
 
-    elif model_type == "huggingface":
-        return HuggingFaceAgent(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
     else:
         raise ValueError(
-            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
+            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
         )
 
 
@@ -1116,8 +1105,6 @@ async def generate_responses_from_messages(
     agent: Union[
         BaseAgent,
         LiteLLMAgent,
-        HuggingFaceAgent,
-        HuggingFaceAgentLogitsPrediction,
     ],
     messages=None,
     timeout=5,
@@ -1141,8 +1128,6 @@ async def generate_responses_from_messages(
         responses = await agent.async_completions(
             messages, timeout=timeout, verbose=verbose
         )
-    elif isinstance(agent, HuggingFaceAgentLogitsPrediction):
-        responses = agent.completions(messages)
     else:
         responses = agent.completions_batch(messages, structured_json=structured_json)
 
