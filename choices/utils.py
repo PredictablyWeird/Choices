@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from .llm_agent import (
+    AnthropicAgent,
     CompletionModelAgent,
     LiteLLMAgent,
     LLMResponse,
@@ -124,7 +125,11 @@ def load_config(
 
 def model_has_active_reasoning(model_key: str) -> bool:
     """
-    Check if a model has active reasoning enabled (reasoning_effort is set and not "none").
+    Check if a model has active reasoning enabled.
+
+    This includes:
+    - reasoning_effort is set and not "none" (OpenAI reasoning models)
+    - extended_thinking.enabled is true (Anthropic extended thinking)
 
     Args:
         model_key: Key of the model in models.yaml
@@ -140,6 +145,12 @@ def model_has_active_reasoning(model_key: str) -> bool:
     if model_config is None:
         return False
 
+    # Check for Anthropic extended thinking
+    extended_thinking = model_config.get("extended_thinking")
+    if extended_thinking and extended_thinking.get("enabled", False):
+        return True
+
+    # Check for OpenAI-style reasoning_effort
     reasoning_effort = model_config.get("reasoning_effort")
     if reasoning_effort is None:
         return False
@@ -199,6 +210,8 @@ def create_agent(
     text_verbosity = model_config.get(
         "text_verbosity", None
     )  # For OpenAI reasoning models (o1, gpt-5)
+    # Override concurrency_limit if specified in model config
+    concurrency_limit = model_config.get("concurrency_limit", concurrency_limit)
 
     # Get API key from environment variables
 
@@ -215,6 +228,23 @@ def create_agent(
         if (api_key := os.getenv(env_var_name)) is None:
             raise ValueError(
                 f"No API key found for {model_type}. Please add {env_var_name} to your .env file."
+            )
+
+        # Use AnthropicAgent for native Anthropic API (avoids LiteLLM connection leaks)
+        if model_type == "anthropic":
+            extended_thinking = model_config.get("extended_thinking", None)
+            # For extended thinking, max_tokens must be > budget_tokens
+            min_max_tokens = model_config.get("min_max_tokens", None)
+            if min_max_tokens and max_tokens < min_max_tokens:
+                max_tokens = min_max_tokens
+            return AnthropicAgent(
+                model=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                concurrency_limit=concurrency_limit,
+                accepts_system_message=accepts_system_message,
+                base_timeout=kwargs.get("base_timeout", 60),
+                extended_thinking=extended_thinking,
             )
 
         # Use ReasoningAgent when reasoning_effort is configured
@@ -932,7 +962,9 @@ async def generate_responses(
     messages_k = messages * K
 
     async def get_responses(msgs):
-        if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
+        if isinstance(
+            agent, (AnthropicAgent, LiteLLMAgent, CompletionModelAgent, ReasoningAgent)
+        ):
             return await agent.async_completions(msgs, verbose=verbose)
         else:
             # Fallback for any other agent types (e.g., OpenAIAgent used directly)
@@ -1119,7 +1151,9 @@ async def generate_responses_from_messages(
         A dictionary mapping prompt indices to their generated responses.
     """
 
-    if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
+    if isinstance(
+        agent, (AnthropicAgent, LiteLLMAgent, CompletionModelAgent, ReasoningAgent)
+    ):
         responses = await agent.async_completions(
             messages, timeout=timeout, verbose=verbose
         )

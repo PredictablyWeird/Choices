@@ -32,6 +32,7 @@ from base64 import b64encode
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 
+import anthropic
 import openai
 from dotenv import load_dotenv
 from litellm import acompletion as litellm_acompletion
@@ -674,6 +675,126 @@ class LiteLLMAgent:
 
         def parse_response(response: Any) -> LLMResponse:
             return LLMResponse(content=response.choices[0].message.content.strip())
+
+        return await run_batch_completions(
+            messages=messages,
+            make_request=make_request,
+            parse_response=parse_response,
+            concurrency_limit=self.concurrency_limit,
+            max_retries=self.max_retries,
+            base_timeout=self.base_timeout,
+            base_delay=self.base_delay,
+            max_delay=self.max_delay,
+            use_jitter=self.use_jitter,
+            verbose=verbose,
+        )
+
+
+class AnthropicAgent:
+    """
+    Agent for Anthropic models using the native anthropic SDK.
+
+    Why not use LiteLLM for Anthropic?
+    LiteLLM has a known bug where it leaks HTTP connections/file descriptors,
+    causing "[Errno 24] Too many open files" errors at moderate concurrency (~50).
+    See: https://github.com/BerriAI/litellm/issues/13220
+
+    The native Anthropic SDK handles 500+ concurrent requests without issues.
+
+    Also supports extended thinking via the `thinking` parameter.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        concurrency_limit: int = 100,
+        accepts_system_message: bool = True,
+        max_retries: int = 5,
+        base_timeout: float = 60.0,
+        base_delay: float = 1.0,
+        max_delay: float = 10.0,
+        use_jitter: bool = True,
+        extended_thinking: Optional[Dict] = None,
+    ):
+        # Strip anthropic/ prefix if present (from models.yaml format)
+        self.model = model.removeprefix("anthropic/")
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.concurrency_limit = concurrency_limit
+        self.accepts_system_message = accepts_system_message
+        self.extended_thinking = extended_thinking
+
+        self.max_retries = max_retries
+        self.base_timeout = base_timeout
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.use_jitter = use_jitter
+
+        # Initialize Anthropic async client
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    async def async_completions(
+        self, messages: List[List[Dict]], verbose: bool = True, **kwargs
+    ) -> List[LLMResponse]:
+        """
+        Returns a list of LLM responses, in order.
+        Uses a semaphore to limit concurrency, and tqdm_asyncio for progress.
+        """
+
+        async def make_request(message: List[Dict], timeout: float) -> Any:
+            # Extract system message if present (Anthropic uses separate system parameter)
+            system_content = None
+            anthropic_messages = []
+
+            for msg in message:
+                if msg["role"] == "system":
+                    system_content = msg["content"]
+                else:
+                    anthropic_messages.append(msg)
+
+            # Build request parameters
+            request_params = {
+                "model": self.model,
+                "messages": anthropic_messages,
+                "max_tokens": self.max_tokens,
+            }
+
+            # Add system message if present
+            if system_content:
+                request_params["system"] = system_content
+
+            # Extended thinking configuration
+            if self.extended_thinking and self.extended_thinking.get("enabled", False):
+                budget_tokens = self.extended_thinking.get("budget_tokens", 10000)
+                request_params["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": budget_tokens,
+                }
+                # Extended thinking requires temperature=1 (omit temperature param)
+            else:
+                request_params["temperature"] = self.temperature
+
+            return await self.client.messages.create(**request_params)
+
+        def parse_response(response: Any) -> LLMResponse:
+            # Extract content and thinking blocks from response
+            content_text = None
+            thinking_text = None
+
+            for block in response.content:
+                if block.type == "text":
+                    content_text = block.text
+                elif block.type == "thinking":
+                    thinking_text = block.thinking
+
+            return LLMResponse(
+                content=content_text.strip() if content_text else None,
+                reasoning_summary=thinking_text,
+                reasoning_type="NO_REASONING",
+            )
 
         return await run_batch_completions(
             messages=messages,
