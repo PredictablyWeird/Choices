@@ -14,15 +14,10 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from .llm_agent import (
-    BaseAgent,
-    HuggingFaceAgent,
-    HuggingFaceAgentLogitsPrediction,
+    CompletionModelAgent,
     LiteLLMAgent,
     LLMResponse,
-    OpenAIAgent,
     ReasoningAgent,
-    vLLMAgent,
-    vLLMAgentBaseModel,
 )
 from .variable import ReasoningMode
 
@@ -174,7 +169,7 @@ def create_agent(
         temperature: Sampling temperature (default: 0.0)
         max_tokens: Maximum number of tokens to generate
         concurrency_limit: Maximum number of concurrent API calls (for LiteLLM)
-        trust_remote_code: Whether to trust remote code (for HuggingFace/vLLM)
+        trust_remote_code: Whether to trust remote code (unused, kept for compatibility)
         **kwargs: Additional keyword arguments that will be ignored
 
     Returns:
@@ -233,7 +228,9 @@ def create_agent(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 concurrency_limit=concurrency_limit,
-                timeout=kwargs.get("base_timeout", 5),
+                accepts_system_message=accepts_system_message,
+                base_timeout=kwargs.get("base_timeout", 5),
+                extra_body=extra_body,
                 reasoning_effort=reasoning_effort,
                 text_verbosity=text_verbosity,
             )
@@ -262,7 +259,7 @@ def create_agent(
             raise ValueError(
                 f"Unknown model type: {model_type}. base model must be one of [base_openrouter', 'base_fireworks']."
             )
-        return BaseAgent(
+        return CompletionModelAgent(
             model=model_name,
             base_url=base_url,
             api_key=api_key,
@@ -274,36 +271,9 @@ def create_agent(
             extra_body=extra_body,
         )
 
-    elif model_type == "huggingface":
-        return HuggingFaceAgent(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
-    elif model_type == "vllm":
-        return vLLMAgent(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
-    elif model_type == "vllm_base_model":
-        return vLLMAgentBaseModel(
-            model=model_config["path"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trust_remote_code=trust_remote_code,
-            accepts_system_message=accepts_system_message,
-            tokenizer_path=model_config.get("tokenizer_path"),
-        )
     else:
         raise ValueError(
-            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'huggingface', 'vllm', 'vllm_base_model', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
+            f"Unknown model type: {model_type}. Must be one of ['openai', 'anthropic', 'gdm', 'xai', 'togetherai', 'openrouter', 'base_openrouter', 'base_fireworks']."
         )
 
 
@@ -962,17 +932,10 @@ async def generate_responses(
     messages_k = messages * K
 
     async def get_responses(msgs):
-        if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
-            return await agent.async_completions(
-                msgs, base_timeout=timeout, verbose=verbose
-            )
-        elif isinstance(agent, ReasoningAgent) or isinstance(agent, OpenAIAgent):
-            if verbose:
-                print(
-                    f"sending messages to openai reasoning agent: len(msgs): {len(msgs)}"
-                )
-            return await agent.async_completions(msgs)
+        if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
+            return await agent.async_completions(msgs, verbose=verbose)
         else:
+            # Fallback for any other agent types (e.g., OpenAIAgent used directly)
             return agent.completions_batch(msgs)
 
     def is_valid_response(resp):
@@ -1134,11 +1097,9 @@ async def evaluate_holdout_set(
 
 async def generate_responses_from_messages(
     agent: Union[
-        BaseAgent,
+        CompletionModelAgent,
         LiteLLMAgent,
-        HuggingFaceAgent,
-        HuggingFaceAgentLogitsPrediction,
-        vLLMAgent,
+        ReasoningAgent,
     ],
     messages=None,
     timeout=5,
@@ -1158,12 +1119,10 @@ async def generate_responses_from_messages(
         A dictionary mapping prompt indices to their generated responses.
     """
 
-    if isinstance(agent, LiteLLMAgent) or isinstance(agent, BaseAgent):
+    if isinstance(agent, (LiteLLMAgent, CompletionModelAgent, ReasoningAgent)):
         responses = await agent.async_completions(
             messages, timeout=timeout, verbose=verbose
         )
-    elif isinstance(agent, HuggingFaceAgentLogitsPrediction):
-        responses = agent.completions(messages)
     else:
         responses = agent.completions_batch(messages, structured_json=structured_json)
 
