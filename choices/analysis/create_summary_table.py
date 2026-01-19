@@ -265,14 +265,29 @@ def format_aggregated_table(
         if has_nudge:
             row.append(r.nudge_type or "ALL")
 
-        steer_str = (
-            f"{r.avg_steerability_bias:+.3f}" if r.avg_steerability_bias else "N/A"
+        # Format values: use signs only for signed values, not for magnitudes
+        if steerability_use_magnitude:
+            steer_str = (
+                f"{r.avg_steerability_bias:.3f}"
+                if r.avg_steerability_bias is not None
+                else "N/A"
+            )
+        else:
+            steer_str = (
+                f"{r.avg_steerability_bias:+.3f}"
+                if r.avg_steerability_bias is not None
+                else "N/A"
+            )
+        baseline_str = (
+            f"{r.avg_baseline_bias:.3f}"
+            if baseline_use_magnitude
+            else f"{r.avg_baseline_bias:+.3f}"
         )
         row.extend(
             [
-                f"{r.avg_baseline_bias:+.3f}",
-                f"{r.avg_effect_size:+.3f}",
-                f"{r.avg_abs_effect_size:.3f}",
+                baseline_str,
+                f"{r.avg_effect_size:+.3f}",  # Signed effect always shows sign
+                f"{r.avg_abs_effect_size:.3f}",  # Absolute effect never shows sign
                 steer_str,
                 str(r.n_results),
             ]
@@ -1335,17 +1350,23 @@ Examples:
         avg_abs_effect = sum(r.abs_effect_size for r in model_results) / len(
             model_results
         )
-        steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         # Get display name from any model in the group
         display_name = (
             get_model_display_name(model_results[0].model)
             if show_display_names
             else base_model
         )
-        bias_label = "|bias|" if use_magnitude else "bias"
-        steer_label = "|steer|" if use_magnitude else "steer"
         print(
-            f"  {display_name}: n={len(model_results)}, {bias_label}={avg_bias:.3f}, "
+            f"  {display_name}: n={len(model_results)}, {bias_label}={bias_str}, "
             f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
@@ -1377,11 +1398,17 @@ Examples:
         avg_abs_effect = sum(r.abs_effect_size for r in cond_results) / len(
             cond_results
         )
-        steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
-        bias_label = "|bias|" if use_magnitude else "bias"
-        steer_label = "|steer|" if use_magnitude else "steer"
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         print(
-            f"  {condition}: n={len(cond_results)}, {bias_label}={avg_bias:.3f}, "
+            f"  {condition}: n={len(cond_results)}, {bias_label}={bias_str}, "
             f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
@@ -1417,11 +1444,17 @@ Examples:
         avg_abs_effect = sum(r.abs_effect_size for r in nudge_results) / len(
             nudge_results
         )
-        steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
-        bias_label = "|bias|" if use_magnitude else "bias"
-        steer_label = "|steer|" if use_magnitude else "steer"
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         print(
-            f"  {nudge_type}: n={len(nudge_results)}, {bias_label}={avg_bias:.3f}, "
+            f"  {nudge_type}: n={len(nudge_results)}, {bias_label}={bias_str}, "
             f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
