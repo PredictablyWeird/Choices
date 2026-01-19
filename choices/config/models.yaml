@@ -2,17 +2,17 @@
 # Reasoning Models
 # ------------------------------
 
-claude-sonnet-4-5:
+claude-sonnet-4-5-openrouter:
   model_name: "openrouter/anthropic/claude-sonnet-4.5"
   model_type: openrouter
-  display_name: "Claude Sonnet 4.5"
+  display_name: "Claude Sonnet 4.5 (OpenRouter)"
   reasoning_effort:
     enabled: false
 
-claude-opus-4-5:
+claude-opus-4-5-openrouter:
   model_name: "openrouter/anthropic/claude-opus-4.5"
   model_type: openrouter
-  display_name: "Claude Opus 4.5"
+  display_name: "Claude Opus 4.5 (OpenRouter)"
   reasoning_effort:
     enabled: false
 
@@ -139,11 +139,40 @@ gpt-5-mini:
 
 
 # ------------------------------
-# Anthropic
+# Anthropic (Native SDK)
 # ------------------------------
 claude-3-5-sonnet:
-  model_name: "claude-3-5-sonnet-20240620"
+  model_name: "anthropic/claude-3-5-sonnet-20240620"
   model_type: anthropic
+  display_name: "Claude 3.5 Sonnet"
+
+claude-sonnet-4-5:
+  model_name: "anthropic/claude-sonnet-4-5-20250929"
+  model_type: anthropic
+  display_name: "Claude Sonnet 4.5"
+
+claude-sonnet-4-5-thinking:
+  model_name: "anthropic/claude-sonnet-4-5-20250929"
+  model_type: anthropic
+  display_name: "Claude Sonnet 4.5 (Thinking)"
+  extended_thinking:
+    enabled: true
+    budget_tokens: 3000
+  min_max_tokens: 3100  # Must be > budget_tokens
+
+claude-haiku-4-5:
+  model_name: "anthropic/claude-haiku-4-5-20251001"
+  model_type: anthropic
+  display_name: "Claude Haiku 4.5"
+
+claude-haiku-4-5-thinking:
+  model_name: "anthropic/claude-haiku-4-5-20251001"
+  model_type: anthropic
+  display_name: "Claude Haiku 4.5 (Thinking)"
+  extended_thinking:
+    enabled: true
+    budget_tokens: 3000
+  min_max_tokens: 3100  # Must be > budget_tokens
 
 
 # ------------------------------
