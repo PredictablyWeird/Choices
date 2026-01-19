@@ -936,7 +936,8 @@ def format_table(
         "Factor",
         "Nudge Type",
         "Baseline Bias",
-        "Effect Size",
+        "Effect",
+        "|Effect|",
         "Steerability Bias",
     ]
 
@@ -944,7 +945,9 @@ def format_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = f"{r.steerability_bias:+.3f}" if r.steerability_bias else "N/A"
+        steer_bias_str = (
+            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        )
         # Show factor with levels so baseline bias can be interpreted
         # Positive bias means biased towards level_B
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
@@ -957,6 +960,7 @@ def format_table(
                 r.nudge_type,
                 f"{r.baseline_bias:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
+                f"{r.abs_effect_size:.3f}",
                 steer_bias_str,
             ]
         )
@@ -1013,6 +1017,7 @@ def format_detailed_table(
         "Eff(A)",
         "Eff(B)",
         "Avg Eff",
+        "|Eff|",
         "Steer Bias",
         "N",
     ]
@@ -1021,7 +1026,9 @@ def format_detailed_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = f"{r.steerability_bias:+.3f}" if r.steerability_bias else "N/A"
+        steer_bias_str = (
+            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        )
         # Show factor with levels so metrics can be interpreted
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
 
@@ -1037,6 +1044,7 @@ def format_detailed_table(
                 f"{r.effect_size_A:+.3f}",
                 f"{r.effect_size_B:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
+                f"{r.abs_effect_size:.3f}",
                 steer_bias_str,
                 str(r.n_baseline),
             ]
