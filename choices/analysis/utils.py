@@ -50,18 +50,24 @@ def is_reasoning_model(model: str) -> bool:
     """
     Check if a model is a "reasoning model" (supports extended thinking/reasoning effort).
 
-    Returns True if the model name ends with "-reasoning"/"-non-reasoning" or has
-    reasoning_effort explicitly configured in models.yaml.
+    Returns True if:
+    - The model name ends with "-reasoning"/"-non-reasoning"
+    - The model has reasoning_effort configured in models.yaml
+    - The model has extended_thinking configured (Anthropic extended thinking)
     """
     # Check model name suffix
     if model.endswith("-reasoning") or model.endswith("-non-reasoning"):
         return True
 
-    # Check config for reasoning_effort - must be explicitly present in config
+    # Check config for reasoning_effort or extended_thinking
     model_config = _get_models_config().get(model, {})
 
-    # Only return True if reasoning_effort key exists in the config
+    # Check for reasoning_effort (non-Anthropic reasoning models)
     if "reasoning_effort" in model_config:
+        return True
+
+    # Check for extended_thinking (Anthropic extended thinking)
+    if "extended_thinking" in model_config:
         return True
 
     return False
@@ -72,11 +78,23 @@ def get_reasoning_effort_from_model(model: str) -> Optional[str]:
     Get the reasoning effort level from model config.
 
     Returns:
-        The effort level ("low", "medium", "high", "off") or None if not configured.
+        For reasoning models: effort level ("low", "medium", "high", "off")
+        For Anthropic extended thinking models: budget_tokens as string (e.g., "3000")
+        None if not configured.
+
         Note: Returns "off" (not "none") for reasoning models with reasoning disabled,
         to distinguish from chat models with reasoning_mode="none".
     """
     model_config = _get_models_config().get(model, {})
+
+    # Check for Anthropic extended_thinking configuration (budget_tokens)
+    if "extended_thinking" in model_config:
+        thinking_config = model_config["extended_thinking"]
+        if isinstance(thinking_config, dict):
+            budget_tokens = thinking_config.get("budget_tokens")
+            if budget_tokens is not None:
+                return str(budget_tokens)
+        return "thinking"  # Fallback if budget_tokens not specified
 
     # Check if reasoning_effort is explicitly in config
     if "reasoning_effort" not in model_config:
@@ -129,7 +147,9 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
     """
     Determine the reasoning condition for display.
 
-    For reasoning models (extended thinking): shows effort level ("low", "medium", "high", "off")
+    For reasoning models (including Anthropic thinking models):
+        - Returns effort level ("low", "medium", "high", "off") for reasoning models
+        - Returns budget_tokens as string (e.g., "10000") for Anthropic thinking models
         - "off" means reasoning is disabled for this reasoning-capable model
     For chat models: shows reasoning_mode from results ("before", "after", "none")
         - "none" means no reasoning instruction was given to this chat model
@@ -141,7 +161,7 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
     Returns:
         The reasoning condition string for display
     """
-    # Check if this is a reasoning model
+    # Check if this is a reasoning model (includes Anthropic thinking models)
     if is_reasoning_model(model):
         effort = get_reasoning_effort_from_model(model)
         if effort is not None:
@@ -187,7 +207,8 @@ def get_model_display_name(model: str, strip_reasoning_suffix: bool = True) -> s
 
     Args:
         model: The model identifier
-        strip_reasoning_suffix: If True, remove "(reasoning)" suffix from display name
+        strip_reasoning_suffix: If True, remove "(reasoning)" and "(Thinking)" suffixes
+            from display name
 
     Returns:
         The display name for the model
@@ -195,9 +216,12 @@ def get_model_display_name(model: str, strip_reasoning_suffix: bool = True) -> s
     model_config = _get_models_config().get(model, {})
     display_name = model_config.get("display_name", model)
 
-    # Strip "(reasoning)" suffix if requested
-    if strip_reasoning_suffix and display_name.endswith(" (reasoning)"):
-        display_name = display_name[:-12]  # len(" (reasoning)") == 12
+    # Strip reasoning-related suffixes if requested
+    if strip_reasoning_suffix:
+        if display_name.endswith(" (reasoning)"):
+            display_name = display_name[:-12]  # len(" (reasoning)") == 12
+        elif display_name.endswith(" (Thinking)"):
+            display_name = display_name[:-11]  # len(" (Thinking)") == 11
 
     return display_name
 
