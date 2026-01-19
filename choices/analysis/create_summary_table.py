@@ -62,7 +62,10 @@ class ExperimentResult:
     # Effect sizes
     effect_size_A: float  # P(A | nudge A) - P(A | baseline)
     effect_size_B: float  # P(B | nudge B) - P(B | baseline)
-    avg_effect_size: float
+    avg_effect_size: float  # (effect_A + effect_B) / 2 - signed, captures net direction
+    abs_effect_size: (
+        float  # (|effect_A| + |effect_B|) / 2 - captures total responsiveness
+    )
     # Steerability
     steerability_A: Optional[float]
     steerability_B: Optional[float]
@@ -84,7 +87,8 @@ class AggregatedResult:
     nudge_type: Optional[str]
     # Aggregated metrics
     avg_baseline_bias: float
-    avg_effect_size: float
+    avg_effect_size: float  # Signed effect size (can be negative if nudges backfire)
+    avg_abs_effect_size: float  # Absolute effect size (total responsiveness)
     avg_steerability_bias: Optional[float]
     # Count
     n_results: int
@@ -94,8 +98,8 @@ class AggregatedResult:
 def aggregate_results(
     results: List[ExperimentResult],
     aggregate_over: List[str],
-    use_magnitude: bool = False,
-) -> Tuple[List[AggregatedResult], bool]:
+    force_signed: bool = False,
+) -> Tuple[List[AggregatedResult], bool, bool]:
     """
     Aggregate results over specified dimensions.
 
@@ -103,10 +107,18 @@ def aggregate_results(
         results: List of ExperimentResult objects
         aggregate_over: List of dimensions to aggregate over.
             Valid values: "model", "factor", "nudge_type", "reasoning"
-        use_magnitude: If True, use absolute values for effect sizes
+        force_signed: If True, use signed values instead of magnitude even when
+            aggregating over factors (for baseline bias and steerability bias)
 
     Returns:
-        Tuple of (List of AggregatedResult objects, bool indicating if baseline uses magnitude)
+        Tuple of (List of AggregatedResult objects,
+                  bool indicating if baseline uses magnitude,
+                  bool indicating if steerability uses magnitude)
+
+    Note:
+        Effect size has two metrics:
+        - avg_effect_size: Always signed, captures net directional effectiveness
+        - avg_abs_effect_size: Always absolute, captures total responsiveness
     """
     from collections import defaultdict
 
@@ -121,9 +133,13 @@ def aggregate_results(
     # Determine which dimensions to keep vs aggregate
     keep_dims = [d for d in dim_to_attr.keys() if d not in aggregate_over]
 
-    # Use magnitude for baseline bias when aggregating over factors
+    # Use magnitude for baseline bias and steerability bias when aggregating over factors
     # (because direction is factor-specific and would cancel out)
-    baseline_use_magnitude = "factor" in aggregate_over
+    # Unless force_signed is set, in which case use signed values
+    # Note: Effect size now has two separate metrics (signed and absolute)
+    use_magnitude = "factor" in aggregate_over and not force_signed
+    baseline_use_magnitude = use_magnitude
+    steerability_use_magnitude = use_magnitude
 
     # Group results by the dimensions we're keeping
     groups: Dict[tuple, List[ExperimentResult]] = defaultdict(list)
@@ -145,19 +161,22 @@ def aggregate_results(
             abs(r.baseline_bias) if baseline_use_magnitude else r.baseline_bias
             for r in group_results
         ]
-        # Use magnitude for effect sizes if requested
-        effect_sizes = [
-            abs(r.avg_effect_size) if use_magnitude else r.avg_effect_size
-            for r in group_results
-        ]
+        # Signed effect size - always keep sign (captures net direction)
+        signed_effect_sizes = [r.avg_effect_size for r in group_results]
+        # Absolute effect size - already computed per-experiment as (|A| + |B|) / 2
+        abs_effect_sizes = [r.abs_effect_size for r in group_results]
+        # Use magnitude for steerability if aggregating over factors
         steerability_biases = [
-            r.steerability_bias
+            abs(r.steerability_bias)
+            if steerability_use_magnitude
+            else r.steerability_bias
             for r in group_results
             if r.steerability_bias is not None
         ]
 
         avg_baseline = sum(baseline_biases) / len(baseline_biases)
-        avg_effect = sum(effect_sizes) / len(effect_sizes)
+        avg_signed_effect = sum(signed_effect_sizes) / len(signed_effect_sizes)
+        avg_abs_effect = sum(abs_effect_sizes) / len(abs_effect_sizes)
         avg_steer = (
             sum(steerability_biases) / len(steerability_biases)
             if steerability_biases
@@ -171,21 +190,26 @@ def aggregate_results(
                 factor=factor_key,
                 nudge_type=nudge_key,
                 avg_baseline_bias=avg_baseline,
-                avg_effect_size=avg_effect,
+                avg_effect_size=avg_signed_effect,
+                avg_abs_effect_size=avg_abs_effect,
                 avg_steerability_bias=avg_steer,
                 n_results=len(group_results),
                 n_steerability=len(steerability_biases),
             )
         )
 
-    return aggregated, baseline_use_magnitude
+    return (
+        aggregated,
+        baseline_use_magnitude,
+        steerability_use_magnitude,
+    )
 
 
 def format_aggregated_table(
     results: List[AggregatedResult],
     show_display_names: bool = True,
-    use_magnitude: bool = False,
     baseline_use_magnitude: bool = False,
+    steerability_use_magnitude: bool = False,
 ) -> str:
     """Format aggregated results as a text table."""
     if not results:
@@ -219,8 +243,11 @@ def format_aggregated_table(
     if has_nudge:
         headers.append("Nudge Type")
     baseline_header = "|Baseline Bias|" if baseline_use_magnitude else "Baseline Bias"
-    effect_header = "|Effect Size|" if use_magnitude else "Effect Size"
-    headers.extend([baseline_header, effect_header, "Steerability Bias", "N"])
+    steer_header = (
+        "|Steerability Bias|" if steerability_use_magnitude else "Steerability Bias"
+    )
+    # Effect size has two columns: signed (net direction) and absolute (responsiveness)
+    headers.extend([baseline_header, "Effect", "|Effect|", steer_header, "N"])
 
     # Build rows
     rows = []
@@ -238,13 +265,29 @@ def format_aggregated_table(
         if has_nudge:
             row.append(r.nudge_type or "ALL")
 
-        steer_str = (
-            f"{r.avg_steerability_bias:+.3f}" if r.avg_steerability_bias else "N/A"
+        # Format values: use signs only for signed values, not for magnitudes
+        if steerability_use_magnitude:
+            steer_str = (
+                f"{r.avg_steerability_bias:.3f}"
+                if r.avg_steerability_bias is not None
+                else "N/A"
+            )
+        else:
+            steer_str = (
+                f"{r.avg_steerability_bias:+.3f}"
+                if r.avg_steerability_bias is not None
+                else "N/A"
+            )
+        baseline_str = (
+            f"{r.avg_baseline_bias:.3f}"
+            if baseline_use_magnitude
+            else f"{r.avg_baseline_bias:+.3f}"
         )
         row.extend(
             [
-                f"{r.avg_baseline_bias:+.3f}",
-                f"{r.avg_effect_size:+.3f}",
+                baseline_str,
+                f"{r.avg_effect_size:+.3f}",  # Signed effect always shows sign
+                f"{r.avg_abs_effect_size:.3f}",  # Absolute effect never shows sign
                 steer_str,
                 str(r.n_results),
             ]
@@ -704,7 +747,10 @@ def compute_experiment_result(
     # Compute effect sizes
     effect_size_A = p_A_nudge_A - p_A_baseline
     effect_size_B = p_B_nudge_B - p_B_baseline
+    # Signed average - captures net directional effectiveness
     avg_effect_size = (effect_size_A + effect_size_B) / 2
+    # Absolute average - captures total responsiveness regardless of direction
+    abs_effect_size = (abs(effect_size_A) + abs(effect_size_B)) / 2
 
     # Compute steerability bias using frequency-based method
     # Need to use frequency measurements for steerability calculation
@@ -749,6 +795,7 @@ def compute_experiment_result(
         effect_size_A=effect_size_A,
         effect_size_B=effect_size_B,
         avg_effect_size=avg_effect_size,
+        abs_effect_size=abs_effect_size,
         steerability_A=steer_A,
         steerability_B=steer_B,
         steerability_bias=steerability_bias,
@@ -889,7 +936,8 @@ def format_table(
         "Factor",
         "Nudge Type",
         "Baseline Bias",
-        "Effect Size",
+        "Effect",
+        "|Effect|",
         "Steerability Bias",
     ]
 
@@ -897,7 +945,9 @@ def format_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = f"{r.steerability_bias:+.3f}" if r.steerability_bias else "N/A"
+        steer_bias_str = (
+            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        )
         # Show factor with levels so baseline bias can be interpreted
         # Positive bias means biased towards level_B
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
@@ -910,6 +960,7 @@ def format_table(
                 r.nudge_type,
                 f"{r.baseline_bias:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
+                f"{r.abs_effect_size:.3f}",
                 steer_bias_str,
             ]
         )
@@ -966,6 +1017,7 @@ def format_detailed_table(
         "Eff(A)",
         "Eff(B)",
         "Avg Eff",
+        "|Eff|",
         "Steer Bias",
         "N",
     ]
@@ -974,7 +1026,9 @@ def format_detailed_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = f"{r.steerability_bias:+.3f}" if r.steerability_bias else "N/A"
+        steer_bias_str = (
+            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        )
         # Show factor with levels so metrics can be interpreted
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
 
@@ -990,6 +1044,7 @@ def format_detailed_table(
                 f"{r.effect_size_A:+.3f}",
                 f"{r.effect_size_B:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
+                f"{r.abs_effect_size:.3f}",
                 steer_bias_str,
                 str(r.n_baseline),
             ]
@@ -1051,6 +1106,7 @@ def write_csv(
         "effect_size_A",
         "effect_size_B",
         "avg_effect_size",
+        "abs_effect_size",
         "steerability_A",
         "steerability_B",
         "steerability_bias",
@@ -1079,6 +1135,7 @@ def write_csv(
                     r.effect_size_A,
                     r.effect_size_B,
                     r.avg_effect_size,
+                    r.abs_effect_size,
                     r.steerability_A if r.steerability_A is not None else "",
                     r.steerability_B if r.steerability_B is not None else "",
                     r.steerability_bias if r.steerability_bias is not None else "",
@@ -1185,9 +1242,10 @@ Examples:
     )
 
     parser.add_argument(
-        "--magnitude",
+        "--force-signed",
         action="store_true",
-        help="Use absolute values for effect sizes (prevents cancellation when aggregating)",
+        help="Force signed values for all metrics instead of using magnitude when "
+        "aggregating over factors (magnitude is used by default to prevent cancellation)",
     )
 
     args = parser.parse_args()
@@ -1224,21 +1282,20 @@ Examples:
 
     # Handle aggregation if requested
     if args.aggregate:
-        aggregated, baseline_use_magnitude = aggregate_results(
-            results, args.aggregate, args.magnitude
+        aggregated, baseline_use_mag, steer_use_mag = aggregate_results(
+            results, args.aggregate, args.force_signed
         )
         agg_info = f"Aggregated over: {', '.join(args.aggregate)}"
-        mag_notes = []
-        if baseline_use_magnitude:
-            mag_notes.append("baseline bias")
-        if args.magnitude:
-            mag_notes.append("effect sizes")
-        if mag_notes:
-            agg_info += f" (using magnitude for {', '.join(mag_notes)})"
+        # Baseline and steerability use magnitude when aggregating over factors
+        if baseline_use_mag:  # baseline and steerability use same setting
+            agg_info += " (using magnitude for baseline bias and steerability bias)"
         print(f"{agg_info}\n")
         print(
             format_aggregated_table(
-                aggregated, show_display_names, args.magnitude, baseline_use_magnitude
+                aggregated,
+                show_display_names,
+                baseline_use_mag,
+                steer_use_mag,
             )
         )
     elif args.output:
@@ -1250,20 +1307,18 @@ Examples:
             print(format_table(results, show_display_names))
 
     # Print summary statistics
+    # Use magnitude for baseline bias and steerability bias when aggregating over factors
+    # Effect size has two metrics: signed (net direction) and absolute (responsiveness)
+    use_magnitude = not args.force_signed
     print("\n" + "=" * 70)
     print("Summary Statistics")
-    if args.magnitude:
-        print("(using magnitude for effect sizes)")
+    if use_magnitude:
+        print("(using magnitude for baseline bias and steerability bias)")
+    else:
+        print("(using signed values for baseline bias and steerability bias)")
     print("=" * 70)
 
-    # Helper to get effect size (magnitude or signed)
-    def get_effect(r):
-        return abs(r.avg_effect_size) if args.magnitude else r.avg_effect_size
-
-    effect_label = "|effect|" if args.magnitude else "avg_effect"
-
     # By model (group by base model name to merge reasoning variants)
-    # Use magnitude for baseline bias since aggregating over factors
     from collections import defaultdict
 
     model_groups: Dict[str, List[ExperimentResult]] = defaultdict(list)
@@ -1274,16 +1329,44 @@ Examples:
     print(f"\nModels ({len(model_groups)}):")
     for base_model in sorted(model_groups.keys()):
         model_results = model_groups[base_model]
-        # Use magnitude for baseline bias (aggregating over factors)
-        avg_bias = sum(abs(r.baseline_bias) for r in model_results) / len(model_results)
-        avg_effect = sum(get_effect(r) for r in model_results) / len(model_results)
-        steer_results = [r for r in model_results if r.steerability_bias is not None]
-        avg_steer = (
-            sum(r.steerability_bias for r in steer_results) / len(steer_results)
-            if steer_results
-            else None
+        # Baseline bias and steerability: use magnitude when aggregating over factors
+        if use_magnitude:
+            avg_bias = sum(abs(r.baseline_bias) for r in model_results) / len(
+                model_results
+            )
+            steer_results = [
+                r for r in model_results if r.steerability_bias is not None
+            ]
+            avg_steer = (
+                sum(abs(r.steerability_bias) for r in steer_results)
+                / len(steer_results)
+                if steer_results
+                else None
+            )
+        else:
+            avg_bias = sum(r.baseline_bias for r in model_results) / len(model_results)
+            steer_results = [
+                r for r in model_results if r.steerability_bias is not None
+            ]
+            avg_steer = (
+                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                if steer_results
+                else None
+            )
+        # Effect size: always show both signed and absolute
+        avg_effect = sum(r.avg_effect_size for r in model_results) / len(model_results)
+        avg_abs_effect = sum(r.abs_effect_size for r in model_results) / len(
+            model_results
         )
-        steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         # Get display name from any model in the group
         display_name = (
             get_model_display_name(model_results[0].model)
@@ -1291,50 +1374,122 @@ Examples:
             else base_model
         )
         print(
-            f"  {display_name}: n={len(model_results)}, |bias|={avg_bias:.3f}, "
-            f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
+            f"  {display_name}: n={len(model_results)}, {bias_label}={bias_str}, "
+            f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
     # By reasoning condition
-    # Use magnitude for baseline bias since aggregating over factors
     reasoning_conditions = set(r.reasoning_condition for r in results)
     print(f"\nReasoning Conditions ({len(reasoning_conditions)}):")
     for condition in sorted(reasoning_conditions):
         cond_results = [r for r in results if r.reasoning_condition == condition]
-        avg_effect = sum(get_effect(r) for r in cond_results) / len(cond_results)
-        avg_bias = sum(abs(r.baseline_bias) for r in cond_results) / len(cond_results)
-        steer_results = [r for r in cond_results if r.steerability_bias is not None]
-        avg_steer = (
-            sum(r.steerability_bias for r in steer_results) / len(steer_results)
-            if steer_results
-            else None
+        if use_magnitude:
+            avg_bias = sum(abs(r.baseline_bias) for r in cond_results) / len(
+                cond_results
+            )
+            steer_results = [r for r in cond_results if r.steerability_bias is not None]
+            avg_steer = (
+                sum(abs(r.steerability_bias) for r in steer_results)
+                / len(steer_results)
+                if steer_results
+                else None
+            )
+        else:
+            avg_bias = sum(r.baseline_bias for r in cond_results) / len(cond_results)
+            steer_results = [r for r in cond_results if r.steerability_bias is not None]
+            avg_steer = (
+                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                if steer_results
+                else None
+            )
+        avg_effect = sum(r.avg_effect_size for r in cond_results) / len(cond_results)
+        avg_abs_effect = sum(r.abs_effect_size for r in cond_results) / len(
+            cond_results
         )
-        steer_str = f"{avg_steer:+.3f}" if avg_steer else "N/A"
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         print(
-            f"  {condition}: n={len(cond_results)}, |bias|={avg_bias:.3f}, "
-            f"{effect_label}={avg_effect:+.3f}, avg_steer={steer_str}"
+            f"  {condition}: n={len(cond_results)}, {bias_label}={bias_str}, "
+            f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
     # By nudge type
-    # Use magnitude for baseline bias since aggregating over factors
     nudge_types = set(r.nudge_type for r in results)
     print(f"\nNudge Types ({len(nudge_types)}):")
     for nudge_type in sorted(nudge_types):
         nudge_results = [r for r in results if r.nudge_type == nudge_type]
-        avg_bias = sum(abs(r.baseline_bias) for r in nudge_results) / len(nudge_results)
-        avg_effect = sum(get_effect(r) for r in nudge_results) / len(nudge_results)
+        if use_magnitude:
+            avg_bias = sum(abs(r.baseline_bias) for r in nudge_results) / len(
+                nudge_results
+            )
+            steer_results = [
+                r for r in nudge_results if r.steerability_bias is not None
+            ]
+            avg_steer = (
+                sum(abs(r.steerability_bias) for r in steer_results)
+                / len(steer_results)
+                if steer_results
+                else None
+            )
+        else:
+            avg_bias = sum(r.baseline_bias for r in nudge_results) / len(nudge_results)
+            steer_results = [
+                r for r in nudge_results if r.steerability_bias is not None
+            ]
+            avg_steer = (
+                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                if steer_results
+                else None
+            )
+        avg_effect = sum(r.avg_effect_size for r in nudge_results) / len(nudge_results)
+        avg_abs_effect = sum(r.abs_effect_size for r in nudge_results) / len(
+            nudge_results
+        )
+        # Format with signs only for signed values
+        if use_magnitude:
+            bias_str = f"{avg_bias:.3f}"
+            steer_str = f"{avg_steer:.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "|bias|", "|steer|"
+        else:
+            bias_str = f"{avg_bias:+.3f}"
+            steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+            bias_label, steer_label = "bias", "steer"
         print(
-            f"  {nudge_type}: n={len(nudge_results)}, |bias|={avg_bias:.3f}, "
-            f"{effect_label}={avg_effect:+.3f}"
+            f"  {nudge_type}: n={len(nudge_results)}, {bias_label}={bias_str}, "
+            f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, {steer_label}={steer_str}"
         )
 
     # By factor
+    # Don't use magnitude here - we're looking at individual factors, not aggregating over them
     factors = set(r.factor for r in results)
     print(f"\nFactors ({len(factors)}):")
     for factor in sorted(factors):
         factor_results = [r for r in results if r.factor == factor]
         avg_bias = sum(r.baseline_bias for r in factor_results) / len(factor_results)
-        print(f"  {factor}: n={len(factor_results)}, avg_baseline_bias={avg_bias:+.3f}")
+        avg_effect = sum(r.avg_effect_size for r in factor_results) / len(
+            factor_results
+        )
+        avg_abs_effect = sum(r.abs_effect_size for r in factor_results) / len(
+            factor_results
+        )
+        steer_results = [r for r in factor_results if r.steerability_bias is not None]
+        avg_steer = (
+            sum(r.steerability_bias for r in steer_results) / len(steer_results)
+            if steer_results
+            else None
+        )
+        steer_str = f"{avg_steer:+.3f}" if avg_steer is not None else "N/A"
+        print(
+            f"  {factor}: n={len(factor_results)}, bias={avg_bias:+.3f}, "
+            f"effect={avg_effect:+.3f}, |effect|={avg_abs_effect:.3f}, steer={steer_str}"
+        )
 
 
 if __name__ == "__main__":
