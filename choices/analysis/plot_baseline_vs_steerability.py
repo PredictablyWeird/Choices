@@ -26,10 +26,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import matplotlib.pyplot as plt
-import yaml
 
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
+)
+from choices.analysis.utils import (
+    compute_factor_frequencies,
+    get_factor_levels,
+    get_model_color,
+    get_model_display_name,
+    get_nudge_marker,
+    get_reasoning_condition,
 )
 
 
@@ -112,97 +119,6 @@ def get_available_models_and_nudges(
     return models, nudge_types
 
 
-def load_models_config() -> Dict[str, Any]:
-    """Load the models configuration from models.yaml."""
-    config_path = Path(__file__).parent.parent / "config" / "models.yaml"
-    if not config_path.exists():
-        return {}
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f) or {}
-
-
-# Color palettes for different groupings
-MODEL_COLORS = {
-    "grok-41-fast-non-reasoning": "#E63946",  # red
-    "deepseek-v3-2-non-reasoning": "#457B9D",  # blue
-    "llama-33-70b": "#2A9D8F",  # teal
-    "gpt-4o-mini": "#E9C46A",  # yellow/gold
-    "gpt-4o": "#F4A261",  # orange
-    "claude-3-5-sonnet-latest": "#9B5DE5",  # purple
-    "claude-3-opus": "#00BBF9",  # cyan
-    "o1-mini": "#F15BB5",  # pink
-}
-
-# Extended color palette for models not in MODEL_COLORS
-_EXTRA_COLORS = [
-    "#264653",  # dark teal
-    "#e76f51",  # burnt sienna
-    "#8338ec",  # purple
-    "#ff006e",  # pink
-    "#3a86ff",  # blue
-    "#fb5607",  # orange
-    "#ffbe0b",  # yellow
-    "#06d6a0",  # mint
-    "#118ab2",  # ocean blue
-    "#ef476f",  # red-pink
-]
-
-# Cache for dynamically assigned model colors
-_dynamic_model_colors: Dict[str, str] = {}
-
-
-def get_model_color(model: str) -> str:
-    """Get color for a model, auto-assigning from palette if not predefined."""
-    if model in MODEL_COLORS:
-        return MODEL_COLORS[model]
-
-    if model not in _dynamic_model_colors:
-        # Assign next available color from palette
-        idx = len(_dynamic_model_colors) % len(_EXTRA_COLORS)
-        _dynamic_model_colors[model] = _EXTRA_COLORS[idx]
-
-    return _dynamic_model_colors[model]
-
-
-CATEGORY_MARKERS = {
-    "gender": "o",  # circle
-    "wealth": "s",  # square
-    "age_group": "^",  # triangle up
-    "social_status": "D",  # diamond
-    "ethnicity": "v",  # triangle down
-}
-
-NUDGE_MARKERS = {
-    "survey_preference": "o",  # circle
-    "always_save": "s",  # square
-    "utilitarian": "^",  # triangle up
-    "deontological": "D",  # diamond
-    "weak_evidence": "v",  # triangle down
-    "emotional": "P",  # plus (filled)
-    "expert_opinion": "X",  # x (filled)
-    "social_proof": "*",  # star
-}
-
-# Extended marker palette for nudge types not in NUDGE_MARKERS
-_EXTRA_MARKERS = ["h", "p", "H", "8", "d", "<", ">", "1", "2", "3", "4"]
-
-# Cache for dynamically assigned nudge markers
-_dynamic_nudge_markers: Dict[str, str] = {}
-
-
-def get_nudge_marker(nudge_type: str) -> str:
-    """Get marker for a nudge type, auto-assigning from palette if not predefined."""
-    if nudge_type in NUDGE_MARKERS:
-        return NUDGE_MARKERS[nudge_type]
-
-    if nudge_type not in _dynamic_nudge_markers:
-        # Assign next available marker from palette
-        idx = len(_dynamic_nudge_markers) % len(_EXTRA_MARKERS)
-        _dynamic_nudge_markers[nudge_type] = _EXTRA_MARKERS[idx]
-
-    return _dynamic_nudge_markers[nudge_type]
-
-
 def load_results(results_dir: str) -> Dict[str, Any]:
     """Load results from a simple_nudging experiment directory."""
     results_path = Path(results_dir)
@@ -282,93 +198,6 @@ def find_nudge_result_directory(
             return str(result_dir)
 
     return None
-
-
-def compute_factor_frequencies(
-    graph_data: Dict[str, Any],
-    factor_name: str,
-    target_levels: List[str],
-) -> Dict[str, float]:
-    """Compute win frequencies for each factor level."""
-    options = graph_data.get("options", [])
-    edges = graph_data.get("edges", {})
-    options_by_id = {opt["id"]: opt for opt in options}
-
-    level_stats = {level: {"wins": 0.0, "total": 0} for level in target_levels}
-
-    for edge_key, edge_data in edges.items():
-        try:
-            ids = eval(edge_key)
-            opt_a = options_by_id.get(ids[0])
-            opt_b = options_by_id.get(ids[1])
-
-            if not opt_a or not opt_b:
-                continue
-
-            level_a = opt_a.get(factor_name)
-            level_b = opt_b.get(factor_name)
-
-            # Skip intra-group comparisons
-            if level_a == level_b:
-                continue
-
-            if level_a not in target_levels or level_b not in target_levels:
-                continue
-
-            aux_data = edge_data.get("aux_data", {})
-            original_parsed = aux_data.get("original_parsed", [])
-            flipped_parsed = aux_data.get("flipped_parsed", [])
-
-            # Process original responses
-            for resp in original_parsed:
-                if resp == "A" and level_a in level_stats:
-                    level_stats[level_a]["wins"] += 1
-                    level_stats[level_a]["total"] += 1
-                    if level_b in level_stats:
-                        level_stats[level_b]["total"] += 1
-                elif resp == "B" and level_b in level_stats:
-                    level_stats[level_b]["wins"] += 1
-                    level_stats[level_b]["total"] += 1
-                    if level_a in level_stats:
-                        level_stats[level_a]["total"] += 1
-
-            # Process flipped responses (A in flipped = original B)
-            for resp in flipped_parsed:
-                if resp == "A" and level_b in level_stats:
-                    level_stats[level_b]["wins"] += 1
-                    level_stats[level_b]["total"] += 1
-                    if level_a in level_stats:
-                        level_stats[level_a]["total"] += 1
-                elif resp == "B" and level_a in level_stats:
-                    level_stats[level_a]["wins"] += 1
-                    level_stats[level_a]["total"] += 1
-                    if level_b in level_stats:
-                        level_stats[level_b]["total"] += 1
-
-        except Exception:
-            continue
-
-    # Compute frequencies
-    frequencies = {}
-    for level, stats in level_stats.items():
-        if stats["total"] > 0:
-            frequencies[level] = stats["wins"] / stats["total"]
-        else:
-            frequencies[level] = 0.5
-
-    return frequencies
-
-
-def get_factor_levels(category: str) -> Tuple[str, str]:
-    """Get the two factor levels for a category."""
-    level_mapping = {
-        "gender": ("male", "female"),
-        "wealth": ("poor", "rich"),
-        "age_group": ("young", "old"),
-        "social_status": ("low", "high"),
-        "ethnicity": ("white", "black"),
-    }
-    return level_mapping.get(category, (None, None))
 
 
 def compute_baseline_and_steerability_bias(
@@ -488,20 +317,6 @@ def compute_baseline_and_steerability_bias(
     }
 
 
-# Cache for models config
-_models_config: Optional[Dict[str, Any]] = None
-
-
-def get_model_display_name(model: str) -> str:
-    """Get the display name for a model from models.yaml config."""
-    global _models_config
-    if _models_config is None:
-        _models_config = load_models_config()
-
-    model_config = _models_config.get(model, {})
-    return model_config.get("display_name", model)
-
-
 def create_scatter_plot(
     category: str,
     experiments: List[Tuple[str, str, str]],
@@ -539,12 +354,20 @@ def create_scatter_plot(
         )
 
         if result:
+            # Find the base result directory to get reasoning condition
+            base_dir = find_base_result_directory(
+                category, model, nudge_type, results_base_dir
+            )
+            base_dir_path = Path(base_dir) if base_dir else None
+            reasoning_condition = get_reasoning_condition(model, base_dir_path)
+
             data_points.append(
                 {
                     "model": model,
                     "category": category,
                     "nudge_type": nudge_type,
                     "results_dir": results_base_dir,
+                    "reasoning_condition": reasoning_condition,
                     **result,
                 }
             )
@@ -606,10 +429,15 @@ def create_scatter_plot(
         legend_handles = []
         legend_labels = []
 
-        # Add model entries (colors)
-        unique_models = list(dict.fromkeys(p["model"] for p in data_points))
-        for model in unique_models:
+        # Add model entries (colors) - include reasoning condition
+        # Group by model to get unique (model, reasoning) pairs
+        unique_model_reasoning = list(
+            dict.fromkeys((p["model"], p["reasoning_condition"]) for p in data_points)
+        )
+        for model, reasoning in unique_model_reasoning:
             color = get_model_color(model)
+            display_name = get_model_display_name(model)
+            label = f"{display_name} ({reasoning})"
             handle = Line2D(
                 [0],
                 [0],
@@ -617,10 +445,10 @@ def create_scatter_plot(
                 color="w",
                 markerfacecolor=color,
                 markersize=10,
-                label=get_model_display_name(model),
+                label=label,
             )
             legend_handles.append(handle)
-            legend_labels.append(get_model_display_name(model))
+            legend_labels.append(label)
 
         # Add separator
         legend_handles.append(Line2D([0], [0], color="none"))
@@ -822,11 +650,14 @@ Examples:
         print("\n" + "=" * 70)
         print("Data Summary")
         print("=" * 70)
-        print(f"{'Model':<30} {'Nudge Type':<20} {'Base Bias':>12} {'Steer Bias':>12}")
-        print("-" * 80)
+        print(
+            f"{'Model':<30} {'Reasoning':<10} {'Nudge Type':<20} {'Base Bias':>12} {'Steer Bias':>12}"
+        )
+        print("-" * 90)
         for dp in sorted(data_points, key=lambda x: (x["model"], x["nudge_type"])):
             print(
                 f"{get_model_display_name(dp['model']):<30} "
+                f"{dp['reasoning_condition']:<10} "
                 f"{dp['nudge_type']:<20} "
                 f"{dp['baseline_bias']:>+12.3f} "
                 f"{dp['steerability_bias']:>+12.3f}"

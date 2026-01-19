@@ -27,12 +27,9 @@ Usage:
 
 import argparse
 import csv
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import yaml
+from typing import Dict, List, Optional, Tuple
 
 from choices.analysis.nudge_effect_size import (
     compute_factor_preference_from_graph,
@@ -42,6 +39,12 @@ from choices.analysis.nudge_effect_size import (
 )
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
+)
+from choices.analysis.utils import (
+    compute_factor_frequencies,
+    get_base_model_name,
+    get_model_display_name,
+    get_reasoning_condition,
 )
 
 
@@ -314,157 +317,6 @@ def format_aggregated_table(
     return "\n".join([header_line, separator] + row_lines)
 
 
-def load_models_config() -> Dict[str, Any]:
-    """Load the models configuration from models.yaml."""
-    config_path = Path(__file__).parent.parent / "config" / "models.yaml"
-    if not config_path.exists():
-        return {}
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f) or {}
-
-
-# Cache for models config
-_models_config: Optional[Dict[str, Any]] = None
-
-
-def is_reasoning_model(model: str) -> bool:
-    """
-    Check if a model is a "reasoning model" (supports extended thinking/reasoning effort).
-
-    Returns True if the model name ends with "-reasoning"/"-non-reasoning" or has
-    reasoning_effort explicitly configured in models.yaml.
-    """
-    global _models_config
-    if _models_config is None:
-        _models_config = load_models_config()
-
-    # Check model name suffix
-    if model.endswith("-reasoning") or model.endswith("-non-reasoning"):
-        return True
-
-    # Check config for reasoning_effort - must be explicitly present in config
-    model_config = _models_config.get(model, {})
-
-    # Only return True if reasoning_effort key exists in the config
-    if "reasoning_effort" in model_config:
-        return True
-
-    return False
-
-
-def get_reasoning_effort_from_model(model: str) -> Optional[str]:
-    """
-    Get the reasoning effort level from model config.
-
-    Returns:
-        The effort level ("low", "medium", "high", "off") or None if not configured.
-        Note: Returns "off" (not "none") for reasoning models with reasoning disabled,
-        to distinguish from chat models with reasoning_mode="none".
-    """
-    global _models_config
-    if _models_config is None:
-        _models_config = load_models_config()
-
-    model_config = _models_config.get(model, {})
-
-    # Check if reasoning_effort is explicitly in config
-    if "reasoning_effort" not in model_config:
-        return None
-
-    reasoning_effort = model_config["reasoning_effort"]
-
-    if isinstance(reasoning_effort, dict):
-        enabled = reasoning_effort.get("enabled", None)
-        effort = reasoning_effort.get("effort", None)
-
-        # If effort is explicitly set, return it (but map "none" to "off")
-        if effort is not None:
-            return "off" if effort == "none" else effort
-
-        # If enabled is explicitly False, return "off"
-        if enabled is False:
-            return "off"
-
-        # If enabled is True but no effort specified, assume "low"
-        if enabled is True:
-            return "low"
-
-    return None
-
-
-def get_reasoning_mode_from_results(result_dir: Path) -> Optional[str]:
-    """
-    Get the reasoning mode from the utility model JSON in a result directory.
-
-    Returns:
-        The reasoning_mode value (e.g., "before", "none", "after") or None if not found.
-    """
-    utility_files = list(result_dir.glob("utility_model_*.json"))
-    if not utility_files:
-        return None
-
-    try:
-        with open(utility_files[0], "r") as f:
-            utility_data = json.load(f)
-
-        # reasoning_mode is in utility_model_arguments
-        args = utility_data.get("utility_model_arguments", {})
-        return args.get("reasoning_mode")
-    except Exception:
-        return None
-
-
-def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> str:
-    """
-    Determine the reasoning condition for display.
-
-    For reasoning models (extended thinking): shows effort level ("low", "medium", "high", "off")
-        - "off" means reasoning is disabled for this reasoning-capable model
-    For chat models: shows reasoning_mode from results ("before", "after", "none")
-        - "none" means no reasoning instruction was given to this chat model
-
-    Args:
-        model: The model identifier
-        result_dir: Optional path to result directory to check reasoning_mode
-
-    Returns:
-        The reasoning condition string for display
-    """
-    # Check if this is a reasoning model
-    if is_reasoning_model(model):
-        effort = get_reasoning_effort_from_model(model)
-        if effort is not None:
-            return effort
-        # Reasoning model but no effort configured - check model name
-        if model.endswith("-non-reasoning"):
-            return "off"
-        return "low"  # Default for reasoning models
-
-    # For chat models, check the reasoning_mode from results
-    if result_dir is not None:
-        reasoning_mode = get_reasoning_mode_from_results(result_dir)
-        if reasoning_mode is not None:
-            return reasoning_mode
-
-    return "unknown"
-
-
-def get_base_model_name(model: str) -> str:
-    """
-    Get the base model name by stripping reasoning-related suffixes.
-
-    E.g., "deepseek-v3-2-reasoning" -> "deepseek-v3-2"
-          "deepseek-v3-2-non-reasoning" -> "deepseek-v3-2"
-          "llama-33-70b" -> "llama-33-70b"
-    """
-    # Check -non-reasoning FIRST (it also ends with -reasoning)
-    if model.endswith("-non-reasoning"):
-        return model[:-14]  # len("-non-reasoning") == 14
-    elif model.endswith("-reasoning"):
-        return model[:-10]  # len("-reasoning") == 10
-    return model
-
-
 def filter_complete_reasoning_pairs(
     results: List["ExperimentResult"],
 ) -> List["ExperimentResult"]:
@@ -507,106 +359,6 @@ def filter_complete_reasoning_pairs(
             filtered.extend(group_results)
 
     return filtered
-
-
-def get_model_display_name(model: str, strip_reasoning_suffix: bool = True) -> str:
-    """
-    Get the display name for a model from models.yaml config.
-
-    Args:
-        model: The model identifier
-        strip_reasoning_suffix: If True, remove "(reasoning)" suffix from display name
-
-    Returns:
-        The display name for the model
-    """
-    global _models_config
-    if _models_config is None:
-        _models_config = load_models_config()
-
-    model_config = _models_config.get(model, {})
-    display_name = model_config.get("display_name", model)
-
-    # Strip "(reasoning)" suffix if requested
-    if strip_reasoning_suffix and display_name.endswith(" (reasoning)"):
-        display_name = display_name[:-12]  # len(" (reasoning)") == 12
-
-    return display_name
-
-
-def compute_factor_frequencies(
-    graph_data: Dict[str, Any],
-    factor_name: str,
-    target_levels: List[str],
-) -> Dict[str, float]:
-    """Compute win frequencies for each factor level."""
-    options = graph_data.get("options", [])
-    edges = graph_data.get("edges", {})
-    options_by_id = {opt["id"]: opt for opt in options}
-
-    level_stats = {level: {"wins": 0.0, "total": 0} for level in target_levels}
-
-    for edge_key, edge_data in edges.items():
-        try:
-            ids = eval(edge_key)
-            opt_a = options_by_id.get(ids[0])
-            opt_b = options_by_id.get(ids[1])
-
-            if not opt_a or not opt_b:
-                continue
-
-            level_a = opt_a.get(factor_name)
-            level_b = opt_b.get(factor_name)
-
-            # Skip intra-group comparisons
-            if level_a == level_b:
-                continue
-
-            if level_a not in target_levels or level_b not in target_levels:
-                continue
-
-            aux_data = edge_data.get("aux_data", {})
-            original_parsed = aux_data.get("original_parsed", [])
-            flipped_parsed = aux_data.get("flipped_parsed", [])
-
-            # Process original responses
-            for resp in original_parsed:
-                if resp == "A" and level_a in level_stats:
-                    level_stats[level_a]["wins"] += 1
-                    level_stats[level_a]["total"] += 1
-                    if level_b in level_stats:
-                        level_stats[level_b]["total"] += 1
-                elif resp == "B" and level_b in level_stats:
-                    level_stats[level_b]["wins"] += 1
-                    level_stats[level_b]["total"] += 1
-                    if level_a in level_stats:
-                        level_stats[level_a]["total"] += 1
-
-            # Process flipped responses (A in flipped = original B)
-            for resp in flipped_parsed:
-                if resp == "A" and level_b in level_stats:
-                    level_stats[level_b]["wins"] += 1
-                    level_stats[level_b]["total"] += 1
-                    if level_a in level_stats:
-                        level_stats[level_a]["total"] += 1
-                elif resp == "B" and level_a in level_stats:
-                    level_stats[level_a]["wins"] += 1
-                    level_stats[level_a]["total"] += 1
-                    if level_b in level_stats:
-                        level_stats[level_b]["total"] += 1
-
-        except Exception:
-            continue
-
-    # Compute frequencies
-    frequencies = {}
-    for level, stats in level_stats.items():
-        if stats["total"] > 0:
-            frequencies[level] = stats["wins"] / stats["total"]
-        else:
-            frequencies[level] = 0.5
-
-    return frequencies
 
 
 def get_nudge_target_group(result_dir: Path) -> Optional[str]:
