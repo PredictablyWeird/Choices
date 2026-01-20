@@ -63,10 +63,13 @@ class FrequencyResult:
     f_A_B: float  # P(B) when nudged towards A
     f_B_B: float  # P(B) when nudged towards B
     avg_f_B: float  # Average of f_A_B and f_B_B
+    # Effect size metric
+    abs_effect: float  # (|f_A(A) - f_0(A)| + |f_B(B) - f_0(B)|) / 2
     # Steerability metrics
     steerability_A: Optional[float]  # Steerability towards A
     steerability_B: Optional[float]  # Steerability towards B
     avg_steerability: Optional[float]  # Average of steerability_A and steerability_B
+    abs_steerability: Optional[float]  # (|Steer(A)| + |Steer(B)|) / 2
     steerability_bias: Optional[float]  # steerability_B - steerability_A
     # Sample info
     n_comparisons: int  # Number of pairwise comparisons
@@ -227,7 +230,7 @@ def compute_frequency_result(
         nudge_B_graph, factor_var_name, target_levels
     )
 
-    # Get frequencies for level B
+    # Get frequencies for both levels
     f_0_A = base_freqs.get(level_A, 0.5)
     f_0_B = base_freqs.get(level_B, 0.5)
     f_A_A = nudge_A_freqs.get(level_A, 0.5)
@@ -238,6 +241,9 @@ def compute_frequency_result(
     # Average of f_A(B) and f_B(B)
     avg_f_B = (f_A_B + f_B_B) / 2
 
+    # Compute absolute effect size: (|f_A(A) - f_0(A)| + |f_B(B) - f_0(B)|) / 2
+    abs_effect = (abs(f_A_A - f_0_A) + abs(f_B_B - f_0_B)) / 2
+
     # Compute steerability metrics
     steerability_A, steerability_B, steerability_bias = (
         compute_steerability_bias_from_frequencies(
@@ -245,10 +251,15 @@ def compute_frequency_result(
         )
     )
 
-    # Compute average steerability
+    # Compute average steerability (signed)
     avg_steerability = None
     if steerability_A is not None and steerability_B is not None:
         avg_steerability = (steerability_A + steerability_B) / 2
+
+    # Compute absolute steerability: (|Steer(A)| + |Steer(B)|) / 2
+    abs_steerability = None
+    if steerability_A is not None and steerability_B is not None:
+        abs_steerability = (abs(steerability_A) + abs(steerability_B)) / 2
 
     # Get sample info
     n_comparisons = len(base_graph.get("edges", {}))
@@ -282,9 +293,11 @@ def compute_frequency_result(
         f_A_B=f_A_B,
         f_B_B=f_B_B,
         avg_f_B=avg_f_B,
+        abs_effect=abs_effect,
         steerability_A=steerability_A,
         steerability_B=steerability_B,
         avg_steerability=avg_steerability,
+        abs_steerability=abs_steerability,
         steerability_bias=steerability_bias,
         n_comparisons=n_comparisons,
         invalid_pct=invalid_pct,
@@ -413,9 +426,11 @@ def format_table(
         "f_A(B)",
         "f_B(B)",
         "Avg f(B)",
+        "|Effect|",
         "Steer(A)",
         "Steer(B)",
         "Avg Steer",
+        "|Steer|",
         "Steer Bias",
     ]
 
@@ -431,6 +446,9 @@ def format_table(
         )
         avg_steer_str = (
             f"{r.avg_steerability:.3f}" if r.avg_steerability is not None else "N/A"
+        )
+        abs_steer_str = (
+            f"{r.abs_steerability:.3f}" if r.abs_steerability is not None else "N/A"
         )
         steer_bias_str = (
             f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
@@ -448,9 +466,11 @@ def format_table(
                 f"{r.f_A_B:.3f}",
                 f"{r.f_B_B:.3f}",
                 f"{r.avg_f_B:.3f}",
+                f"{r.abs_effect:.3f}",
                 steer_A_str,
                 steer_B_str,
                 avg_steer_str,
+                abs_steer_str,
                 steer_bias_str,
             ]
         )
@@ -510,9 +530,11 @@ def write_csv(
         "f_A_B",
         "f_B_B",
         "avg_f_B",
+        "abs_effect",
         "steerability_A",
         "steerability_B",
         "avg_steerability",
+        "abs_steerability",
         "steerability_bias",
     ]
 
@@ -536,9 +558,11 @@ def write_csv(
                     r.f_A_B,
                     r.f_B_B,
                     r.avg_f_B,
+                    r.abs_effect,
                     r.steerability_A if r.steerability_A is not None else "",
                     r.steerability_B if r.steerability_B is not None else "",
                     r.avg_steerability if r.avg_steerability is not None else "",
+                    r.abs_steerability if r.abs_steerability is not None else "",
                     r.steerability_bias if r.steerability_bias is not None else "",
                 ]
             )
@@ -657,9 +681,11 @@ Examples:
     # Helper to compute steerability stats
     def get_steer_stats(
         result_list: List[FrequencyResult],
-    ) -> Tuple[Optional[float], Optional[float]]:
+    ) -> Tuple[Optional[float], Optional[float], float, Optional[float]]:
+        """Returns (avg_steer, avg_bias, avg_effect, avg_abs_steer)."""
         steer_results = [r for r in result_list if r.avg_steerability is not None]
         bias_results = [r for r in result_list if r.steerability_bias is not None]
+        abs_steer_results = [r for r in result_list if r.abs_steerability is not None]
         avg_steer = (
             sum(r.avg_steerability for r in steer_results) / len(steer_results)
             if steer_results
@@ -670,7 +696,17 @@ Examples:
             if bias_results
             else None
         )
-        return avg_steer, avg_bias
+        avg_effect = (
+            sum(r.abs_effect for r in result_list) / len(result_list)
+            if result_list
+            else 0.0
+        )
+        avg_abs_steer = (
+            sum(r.abs_steerability for r in abs_steer_results) / len(abs_steer_results)
+            if abs_steer_results
+            else None
+        )
+        return avg_steer, avg_bias, avg_effect, avg_abs_steer
 
     # By model
     model_groups: Dict[str, List[FrequencyResult]] = defaultdict(list)
@@ -682,12 +718,19 @@ Examples:
     for base_model in sorted(model_groups.keys()):
         model_results = model_groups[base_model]
         n_factors = len(set(r.factor for r in model_results))
-        avg_steer, avg_bias = get_steer_stats(model_results)
+        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(model_results)
 
         display_name = (
             get_model_display_name(model_results[0].model)
             if show_display_names
             else base_model
+        )
+
+        effect_str = f"|effect|={avg_effect:.3f}"
+        abs_steer_str = (
+            f"|steer|={avg_abs_steer:.3f}"
+            if avg_abs_steer is not None
+            else "|steer|=N/A"
         )
 
         if n_factors > 1:
@@ -702,7 +745,10 @@ Examples:
                 if avg_bias is not None
                 else "|steer_bias|=N/A"
             )
-            print(f"  {display_name}: n={len(model_results)}, {steer_str}, {bias_str}")
+            print(
+                f"  {display_name}: n={len(model_results)}, {effect_str}, "
+                f"{abs_steer_str}, {steer_str}, {bias_str}"
+            )
         else:
             # Single factor: show frequency metrics and steerability
             avg_f_0_B = sum(r.f_0_B for r in model_results) / len(model_results)
@@ -721,7 +767,7 @@ Examples:
             print(
                 f"  {display_name}: n={len(model_results)}, "
                 f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-                f"f_B(B)={avg_f_B_B:.3f}, {steer_str}, {bias_str}"
+                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
             )
 
     # By factor (single factor by definition)
@@ -732,9 +778,15 @@ Examples:
         avg_f_0_B = sum(r.f_0_B for r in factor_results) / len(factor_results)
         avg_f_A_B = sum(r.f_A_B for r in factor_results) / len(factor_results)
         avg_f_B_B = sum(r.f_B_B for r in factor_results) / len(factor_results)
-        avg_steer, avg_bias = get_steer_stats(factor_results)
+        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(factor_results)
         # Get level info
         level_B = factor_results[0].level_B if factor_results else "?"
+        effect_str = f"|effect|={avg_effect:.3f}"
+        abs_steer_str = (
+            f"|steer|={avg_abs_steer:.3f}"
+            if avg_abs_steer is not None
+            else "|steer|=N/A"
+        )
         steer_str = (
             f"avg_steer={avg_steer:.3f}" if avg_steer is not None else "avg_steer=N/A"
         )
@@ -746,7 +798,7 @@ Examples:
         print(
             f"  {factor} (B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-            f"f_B(B)={avg_f_B_B:.3f}, {steer_str}, {bias_str}"
+            f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
         )
 
     # By nudge type
@@ -755,7 +807,14 @@ Examples:
     for nudge_type in sorted(nudge_types):
         nudge_results = [r for r in results if r.nudge_type == nudge_type]
         n_factors = len(set(r.factor for r in nudge_results))
-        avg_steer, avg_bias = get_steer_stats(nudge_results)
+        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(nudge_results)
+
+        effect_str = f"|effect|={avg_effect:.3f}"
+        abs_steer_str = (
+            f"|steer|={avg_abs_steer:.3f}"
+            if avg_abs_steer is not None
+            else "|steer|=N/A"
+        )
 
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
@@ -769,7 +828,10 @@ Examples:
                 if avg_bias is not None
                 else "|steer_bias|=N/A"
             )
-            print(f"  {nudge_type}: n={len(nudge_results)}, {steer_str}, {bias_str}")
+            print(
+                f"  {nudge_type}: n={len(nudge_results)}, {effect_str}, "
+                f"{abs_steer_str}, {steer_str}, {bias_str}"
+            )
         else:
             # Single factor: show frequency metrics and steerability
             avg_f_0_B = sum(r.f_0_B for r in nudge_results) / len(nudge_results)
@@ -788,7 +850,7 @@ Examples:
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, "
                 f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-                f"f_B(B)={avg_f_B_B:.3f}, {steer_str}, {bias_str}"
+                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
             )
 
 
