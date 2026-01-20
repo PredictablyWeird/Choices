@@ -20,7 +20,6 @@ import itertools
 import os
 import random
 import re
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -53,7 +52,7 @@ from choices.experiments.simple_rates import (
 )
 
 # Import shared nudge templates
-from choices.experiments.nudging.templates import NUDGE_TEMPLATES
+from choices.experiments.nudging.templates import NUDGE_TEMPLATES, get_nudge_defaults
 
 
 def parse_nudge_type(nudge_type: str) -> Tuple[str, Optional[int]]:
@@ -117,6 +116,23 @@ def format_target_group_for_path(target_group: str) -> str:
     return re.sub(r"[^\w\-]", "_", target_group.lower())
 
 
+def get_other_group(factor_name: str, target_group: str) -> Optional[str]:
+    """
+    Get the other group value for a binary factor.
+
+    Args:
+        factor_name: Name of the factor (e.g., 'gender', 'ethnicity')
+        target_group: The group value we're nudging towards
+
+    Returns:
+        The other group value, or None if factor is not binary or not found
+    """
+    factor = BINARY_FACTORS.get(factor_name)
+    if not factor or len(factor.values) != 2:
+        return None
+    return [v for v in factor.values if v != target_group][0]
+
+
 def generate_nudge_text(
     nudge_type: str,
     factor_name: str,
@@ -135,35 +151,38 @@ def generate_nudge_text(
     Returns:
         Formatted nudge text
     """
+    group_label = format_group_label(factor_name, target_group)
+
+    # Get the other group label for binary factors
+    other_group = get_other_group(factor_name, target_group)
+    other_group_label = (
+        format_group_label(factor_name, other_group) if other_group else "others"
+    )
+
     if nudge_type == "custom":
         if not custom_text:
             raise ValueError("custom_text must be provided when nudge_type is 'custom'")
-        # Replace {group} placeholder if present
-        return custom_text.replace(
-            "{group}", format_group_label(factor_name, target_group)
-        )
+        # Replace placeholders if present
+        result = custom_text.replace("{group}", group_label)
+        result = result.replace("{other_group}", other_group_label)
+        return result
 
     base_nudge_type, num_examples = parse_nudge_type(nudge_type)
     if base_nudge_type == "few_shot":
         # For few_shot, return a description (actual examples are generated separately)
-        return f"Few-shot examples ({num_examples}) biased towards {format_group_label(factor_name, target_group)}"
+        return f"Few-shot examples ({num_examples}) biased towards {group_label}"
 
-    template = NUDGE_TEMPLATES.get(base_nudge_type)
-    if not template:
+    nudge = NUDGE_TEMPLATES.get(base_nudge_type)
+    if not nudge or not nudge.template:
         raise ValueError(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
 
-    group_label = format_group_label(factor_name, target_group)
-
-    # For survey_preference, we need example numbers
-    if nudge_type == "survey_preference":
-        return template.format(
-            group_label=group_label,
-            other_group_label="others",
-        )
-    else:
-        return template.format(group_label=group_label)
+    # Format template with both group labels (works whether template uses them or not)
+    return nudge.template.format(
+        group_label=group_label,
+        other_group_label=other_group_label,
+    )
 
 
 def generate_few_shot_examples(
@@ -238,13 +257,20 @@ def generate_few_shot_examples(
 # ============= Nudged Simple Experiment =============
 
 
-@dataclass
 class NudgedPromptConfig(PromptConfig):
     """Prompt config with nudge support for simple nudging experiments."""
 
-    nudge_type: str = "base"
-    target_group: Optional[str] = None
-    nudge_text: Optional[str] = None
+    def __init__(
+        self,
+        # Metadata fields (for logging/saving)
+        nudge_type_name: str = "base",
+        target_group: Optional[str] = None,
+        # Parent fields
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.nudge_type_name = nudge_type_name
+        self.target_group = target_group
 
 
 async def run_nudged_simple_experiment(
@@ -297,7 +323,7 @@ async def run_nudged_simple_experiment(
     else:
         target_group_path = format_target_group_for_path(target_group)
         run_id = f"{timestamp}_{target_group_path}"
-        nudge_dir = nudge_type
+        nudge_dir = save_nudge_dir if save_nudge_dir else nudge_type
 
     # Generate options from variables
     var_names = [var.name for var in variables]
@@ -412,6 +438,8 @@ async def run_nudged_simple_experiment(
                 f.write(f"\nNudge type: {nudge_type}\n")
                 f.write(f"Target group: {target_group}\n")
                 f.write(f"Nudge text: {nudge_text}\n")
+                f.write(f"Nudge position: {prompt_config.nudge_position}\n")
+                f.write(f"Nudge brackets: {prompt_config.nudge_brackets}\n")
 
     # Send all prompts
     if verbose:
@@ -493,6 +521,8 @@ async def run_nudged_simple_experiment(
             "nudge_type": nudge_type,
             "target_group": target_group,
             "nudge_text": nudge_text,
+            "nudge_position": prompt_config.nudge_position,
+            "nudge_brackets": prompt_config.nudge_brackets,
         }
 
     graph_results = PreferenceGraphResults(
@@ -540,7 +570,9 @@ async def run_nudged_simple_experiment(
             f.write("Nudge Configuration:\n")
             f.write(f"  Type: {nudge_type}\n")
             f.write(f"  Target group: {target_group}\n")
-            f.write(f"  Nudge text: {nudge_text}\n\n")
+            f.write(f"  Nudge text: {nudge_text}\n")
+            f.write(f"  Position: {prompt_config.nudge_position}\n")
+            f.write(f"  Brackets: {prompt_config.nudge_brackets}\n\n")
         else:
             f.write("Condition: BASE (no nudge)\n\n")
 
@@ -584,6 +616,8 @@ def create_nudged_simple_config(
     n_values_key: str = "binary",
     reasoning: str = "none",
     setup: str = "original",
+    nudge_position: Optional[str] = None,
+    nudge_brackets: Optional[str] = None,
 ) -> Tuple[List[Variable], NudgedPromptConfig, AnalysisConfig]:
     """
     Create experiment configuration with nudge support.
@@ -596,6 +630,8 @@ def create_nudged_simple_config(
         n_values_key: N values key
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
+        nudge_position: Where to insert nudge (None = use nudge type default)
+        nudge_brackets: Bracket style (None = use nudge type default)
 
     Returns:
         Tuple of (variables, prompt_config, analysis_config)
@@ -607,6 +643,15 @@ def create_nudged_simple_config(
 
     # Parse nudge type (handles few_shot_N format)
     base_nudge_type, num_examples = parse_nudge_type(nudge_type)
+
+    # Get position/brackets from nudge defaults if not overridden
+    default_position, default_brackets = get_nudge_defaults(nudge_type)
+    effective_position = (
+        nudge_position if nudge_position is not None else default_position
+    )
+    effective_brackets = (
+        nudge_brackets if nudge_brackets is not None else default_brackets
+    )
 
     # Create variables
     variables = [
@@ -625,9 +670,9 @@ def create_nudged_simple_config(
     # Get the option text function first (needed for few_shot examples)
     option_text_fn = create_option_text_fn(factor_name)
 
-    # Handle different nudge types
-    setup_with_nudge = base_setup
+    # Handle few_shot specially (uses ending, not nudge_text)
     ending_text = None
+    effective_nudge_text = None
 
     if base_nudge_type == "few_shot" and target_group:
         # Generate few-shot examples and add to ending
@@ -639,17 +684,19 @@ def create_nudged_simple_config(
             num_examples=num_examples,
         )
     elif nudge_type != "base" and nudge_text:
-        # Add nudge text to setup for other nudge types
-        setup_with_nudge = f"{base_setup}\n({nudge_text})"
+        # Use PromptConfig's nudge support for positioning
+        effective_nudge_text = nudge_text
 
-    # Create prompt config (uses defaults, just override setup and generate_option_text)
+    # Create prompt config - nudge is now handled by PromptConfig.template
     reasoning_mode = ReasoningMode(reasoning)
     prompt_config = NudgedPromptConfig(
-        setup=setup_with_nudge,
+        setup=base_setup,
         reasoning_mode=reasoning_mode,
-        nudge_type=nudge_type,
+        nudge_type_name=nudge_type,
         target_group=target_group,
-        nudge_text=nudge_text,
+        nudge_text=effective_nudge_text,
+        nudge_position=effective_position,
+        nudge_brackets=effective_brackets,
         ending=ending_text,
     )
     prompt_config.generate_option_text = option_text_fn
@@ -672,6 +719,9 @@ async def run_nudging_experiments(
     reasoning: str = "none",
     setup: str = "original",
     max_retries: int = 10,
+    nudge_position: Optional[str] = None,
+    nudge_brackets: Optional[str] = None,
+    nudge_name: Optional[str] = None,
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -688,6 +738,9 @@ async def run_nudging_experiments(
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
         max_retries: Maximum number of retries for empty/invalid API responses
+        nudge_position: Where to insert nudge (None = use nudge type default)
+        nudge_brackets: Bracket style (None = use nudge type default)
+        nudge_name: Override directory name for results (defaults to nudge_type)
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -700,8 +753,12 @@ async def run_nudging_experiments(
     factor = BINARY_FACTORS[factor_name]
     group_values = factor.values
 
+    # Use nudge_name for directory, default to nudge_type
+    effective_nudge_name = nudge_name if nudge_name else nudge_type
+
     print(f"\nRunning nudging experiments for factor '{factor_name}'")
     print(f"Nudge type: {nudge_type}")
+    print(f"Results directory name: {effective_nudge_name}")
     print(f"Groups to test: {group_values}")
     print("=" * 80)
 
@@ -718,6 +775,8 @@ async def run_nudging_experiments(
         n_values_key=n_values,
         reasoning=reasoning,
         setup=setup,
+        nudge_position=nudge_position,
+        nudge_brackets=nudge_brackets,
     )
 
     base_results = await run_nudged_simple_experiment(
@@ -732,7 +791,7 @@ async def run_nudging_experiments(
         seed=seed,
         verbose=True,
         reasoning=reasoning,
-        save_nudge_dir=nudge_type,  # Save base in the nudge directory
+        save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
         max_retries=max_retries,
     )
     results["base"] = base_results
@@ -757,6 +816,8 @@ async def run_nudging_experiments(
             n_values_key=n_values,
             reasoning=reasoning,
             setup=setup,
+            nudge_position=nudge_position,
+            nudge_brackets=nudge_brackets,
         )
 
         experiment_results = await run_nudged_simple_experiment(
@@ -773,6 +834,7 @@ async def run_nudging_experiments(
             seed=seed,
             verbose=True,
             reasoning=reasoning,
+            save_nudge_dir=effective_nudge_name,
             max_retries=max_retries,
         )
         results[target_group] = experiment_results
@@ -790,13 +852,17 @@ def list_nudge_types():
     """List all available nudge types."""
     print("\nAvailable nudge types:")
     print("=" * 80)
-    for nudge_type, template in NUDGE_TEMPLATES.items():
-        if template:
+    for nudge_type, nudge in NUDGE_TEMPLATES.items():
+        if nudge.template:
             print(f"\n{nudge_type}:")
-            print(f"  Template: {template}")
+            print(f"  Template: {nudge.template}")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
         else:
             print(f"\n{nudge_type}:")
             print("  Custom nudge (requires --nudge_text)")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
 
     # Document few_shot separately since it's pattern-based
     print("\nfew_shot / few_shot_N:")
@@ -938,6 +1004,29 @@ Examples:
         help="Maximum number of retries for empty/invalid API responses (default: 10)",
     )
 
+    parser.add_argument(
+        "--nudge-position",
+        type=str,
+        choices=["system", "start", "after_setup", "after_options", "end"],
+        default=None,
+        help="Where to insert the nudge in the prompt (default: use nudge type default)",
+    )
+
+    parser.add_argument(
+        "--nudge-brackets",
+        type=str,
+        choices=["parentheses", "quotes", "none", "italic"],
+        default=None,
+        help='Bracket style for nudge: parentheses (), quotes "", none, or italic * (default: use nudge type default)',
+    )
+
+    parser.add_argument(
+        "--override-nudge-save-name",
+        type=str,
+        default=None,
+        help="Override the directory name for results (defaults to --nudge value)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -963,6 +1052,9 @@ Examples:
                 reasoning=args.reasoning,
                 setup=args.setup,
                 max_retries=args.max_retries,
+                nudge_position=args.nudge_position,
+                nudge_brackets=args.nudge_brackets,
+                nudge_name=args.override_nudge_save_name,
             )
         )
     else:

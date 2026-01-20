@@ -18,13 +18,20 @@ Quick usage:
     uv run python -m choices.experiments.nudging.batch run --models gpt-4o-mini --factors gender --nudges emotional --dry-run
 """
 
-from choices.experiments.nudging.templates import NUDGE_TEMPLATES, get_nudge_names
+from choices.experiments.nudging.templates import (
+    NUDGE_TEMPLATES,
+    Nudge,
+    get_nudge_names,
+    get_nudge_defaults,
+)
 from choices.experiments.simple_rates import BINARY_FACTORS
 from choices.experiments.nudging.simple import run_nudging_experiments
 
 __all__ = [
     "NUDGE_TEMPLATES",
+    "Nudge",
     "get_nudge_names",
+    "get_nudge_defaults",
     "BINARY_FACTORS",
     "run_nudging_experiments",
 ]
