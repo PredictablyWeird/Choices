@@ -68,8 +68,9 @@ class FrequencyResult:
     steerability_B: Optional[float]  # Steerability towards B
     avg_steerability: Optional[float]  # Average of steerability_A and steerability_B
     steerability_bias: Optional[float]  # steerability_B - steerability_A
-    # Sample size
-    n_comparisons: int
+    # Sample info
+    n_comparisons: int  # Number of pairwise comparisons
+    invalid_pct: float  # Percentage of invalid responses
 
 
 def get_nudge_target_group(result_dir: Path) -> Optional[str]:
@@ -82,6 +83,36 @@ def get_nudge_target_group(result_dir: Path) -> Optional[str]:
     if nudge_config:
         return nudge_config.get("target_group")
     return None
+
+
+def count_responses(graph_data: Dict) -> tuple[int, int]:
+    """
+    Count valid and total responses in a preference graph.
+
+    Returns:
+        Tuple of (valid_count, total_count)
+    """
+    edges = graph_data.get("edges", {})
+    valid_count = 0
+    total_count = 0
+
+    for edge_data in edges.values():
+        aux_data = edge_data.get("aux_data", {})
+        original_parsed = aux_data.get("original_parsed", [])
+        flipped_parsed = aux_data.get("flipped_parsed", [])
+
+        # Count all responses
+        total_count += len(original_parsed) + len(flipped_parsed)
+
+        # Count valid responses (A or B, not None or other)
+        for resp in original_parsed:
+            if resp in ("A", "B"):
+                valid_count += 1
+        for resp in flipped_parsed:
+            if resp in ("A", "B"):
+                valid_count += 1
+
+    return valid_count, total_count
 
 
 def find_condition_directories(
@@ -219,8 +250,23 @@ def compute_frequency_result(
     if steerability_A is not None and steerability_B is not None:
         avg_steerability = (steerability_A + steerability_B) / 2
 
-    # Get sample size from edges
+    # Get sample info
     n_comparisons = len(base_graph.get("edges", {}))
+
+    # Count valid and total responses across all conditions
+    valid_base, total_base = count_responses(base_graph)
+    valid_A, total_A = count_responses(nudge_A_graph)
+    valid_B, total_B = count_responses(nudge_B_graph)
+
+    total_valid = valid_base + valid_A + valid_B
+    total_responses = total_base + total_A + total_B
+
+    # Compute invalid percentage
+    invalid_pct = (
+        ((total_responses - total_valid) / total_responses * 100)
+        if total_responses > 0
+        else 0.0
+    )
 
     # Determine reasoning condition
     reasoning_condition = get_reasoning_condition(model, condition_dirs["base"])
@@ -241,6 +287,7 @@ def compute_frequency_result(
         avg_steerability=avg_steerability,
         steerability_bias=steerability_bias,
         n_comparisons=n_comparisons,
+        invalid_pct=invalid_pct,
     )
 
 
@@ -361,6 +408,7 @@ def format_table(
         "Reasoning",
         "Factor (A/B)",
         "Nudge Type",
+        "Invalid%",
         "f_0(B)",
         "f_A(B)",
         "f_B(B)",
@@ -395,6 +443,7 @@ def format_table(
                 r.reasoning_condition,
                 factor_with_levels,
                 r.nudge_type,
+                f"{r.invalid_pct:.1f}%",
                 f"{r.f_0_B:.3f}",
                 f"{r.f_A_B:.3f}",
                 f"{r.f_B_B:.3f}",
@@ -455,6 +504,8 @@ def write_csv(
         "level_A",
         "level_B",
         "nudge_type",
+        "invalid_pct",
+        "n_comparisons",
         "f_0_B",
         "f_A_B",
         "f_B_B",
@@ -463,7 +514,6 @@ def write_csv(
         "steerability_B",
         "avg_steerability",
         "steerability_bias",
-        "n_comparisons",
     ]
 
     with open(output_path, "w", newline="") as f:
@@ -480,6 +530,8 @@ def write_csv(
                     r.level_A,
                     r.level_B,
                     r.nudge_type,
+                    r.invalid_pct,
+                    r.n_comparisons,
                     r.f_0_B,
                     r.f_A_B,
                     r.f_B_B,
@@ -488,7 +540,6 @@ def write_csv(
                     r.steerability_B if r.steerability_B is not None else "",
                     r.avg_steerability if r.avg_steerability is not None else "",
                     r.steerability_bias if r.steerability_bias is not None else "",
-                    r.n_comparisons,
                 ]
             )
 
