@@ -32,6 +32,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from choices.analysis.analyze_simple_nudging_results import (
+    two_proportion_z_test,
+)
 from choices.analysis.nudge_effect_size import (
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
@@ -41,11 +44,13 @@ from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_frequencies,
 )
 from choices.analysis.utils import (
-    compute_factor_frequencies,
     get_base_model_name,
     get_model_display_name,
     get_reasoning_condition,
 )
+
+# Default significance level (95% confidence)
+DEFAULT_ALPHA = 0.05
 
 
 @dataclass
@@ -71,9 +76,98 @@ class FrequencyResult:
     avg_steerability: Optional[float]  # Average of steerability_A and steerability_B
     abs_steerability: Optional[float]  # (|Steer(A)| + |Steer(B)|) / 2
     steerability_bias: Optional[float]  # steerability_B - steerability_A
+    # Backfire metrics (nudge decreases frequency of target option)
+    backfire_A: bool  # True if f_A(A) < f_0(A) (nudging towards A decreased A)
+    backfire_B: bool  # True if f_B(B) < f_0(B) (nudging towards B decreased B)
+    # Significance metrics (z-test comparing nudge to baseline)
+    sig_A: bool  # True if f_A(A) differs significantly from f_0(A)
+    sig_B: bool  # True if f_B(B) differs significantly from f_0(B)
     # Sample info
     n_comparisons: int  # Number of pairwise comparisons
     invalid_pct: float  # Percentage of invalid responses
+
+
+def compute_factor_frequencies_with_counts(
+    graph_data: Dict,
+    factor_name: str,
+    target_levels: List[str],
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute win frequencies and sample counts for each factor level.
+
+    Returns:
+        Dictionary mapping level -> {"freq": float, "n": int}
+    """
+    options = graph_data.get("options", [])
+    edges = graph_data.get("edges", {})
+    options_by_id = {opt["id"]: opt for opt in options}
+
+    level_stats = {level: {"wins": 0.0, "total": 0} for level in target_levels}
+
+    for edge_key, edge_data in edges.items():
+        try:
+            ids = eval(edge_key)
+            opt_a = options_by_id.get(ids[0])
+            opt_b = options_by_id.get(ids[1])
+
+            if not opt_a or not opt_b:
+                continue
+
+            level_a = opt_a.get(factor_name)
+            level_b = opt_b.get(factor_name)
+
+            # Skip intra-group comparisons
+            if level_a == level_b:
+                continue
+
+            if level_a not in target_levels or level_b not in target_levels:
+                continue
+
+            aux_data = edge_data.get("aux_data", {})
+            original_parsed = aux_data.get("original_parsed", [])
+            flipped_parsed = aux_data.get("flipped_parsed", [])
+
+            # Process original responses
+            for resp in original_parsed:
+                if resp == "A" and level_a in level_stats:
+                    level_stats[level_a]["wins"] += 1
+                    level_stats[level_a]["total"] += 1
+                    if level_b in level_stats:
+                        level_stats[level_b]["total"] += 1
+                elif resp == "B" and level_b in level_stats:
+                    level_stats[level_b]["wins"] += 1
+                    level_stats[level_b]["total"] += 1
+                    if level_a in level_stats:
+                        level_stats[level_a]["total"] += 1
+
+            # Process flipped responses (A in flipped = original B)
+            for resp in flipped_parsed:
+                if resp == "A" and level_b in level_stats:
+                    level_stats[level_b]["wins"] += 1
+                    level_stats[level_b]["total"] += 1
+                    if level_a in level_stats:
+                        level_stats[level_a]["total"] += 1
+                elif resp == "B" and level_a in level_stats:
+                    level_stats[level_a]["wins"] += 1
+                    level_stats[level_a]["total"] += 1
+                    if level_b in level_stats:
+                        level_stats[level_b]["total"] += 1
+
+        except Exception:
+            continue
+
+    # Compute frequencies with counts
+    result = {}
+    for level, stats in level_stats.items():
+        if stats["total"] > 0:
+            result[level] = {
+                "freq": stats["wins"] / stats["total"],
+                "n": stats["total"],
+            }
+        else:
+            result[level] = {"freq": 0.5, "n": 0}
+
+    return result
 
 
 def get_nudge_target_group(result_dir: Path) -> Optional[str]:
@@ -219,30 +313,53 @@ def compute_frequency_result(
     if not nudge_A_graph or not nudge_B_graph:
         return None
 
-    # Compute frequencies for level B under each condition
+    # Compute frequencies for level B under each condition (with sample counts)
     target_levels = [level_A, level_B]
 
-    base_freqs = compute_factor_frequencies(base_graph, factor_var_name, target_levels)
-    nudge_A_freqs = compute_factor_frequencies(
+    base_stats = compute_factor_frequencies_with_counts(
+        base_graph, factor_var_name, target_levels
+    )
+    nudge_A_stats = compute_factor_frequencies_with_counts(
         nudge_A_graph, factor_var_name, target_levels
     )
-    nudge_B_freqs = compute_factor_frequencies(
+    nudge_B_stats = compute_factor_frequencies_with_counts(
         nudge_B_graph, factor_var_name, target_levels
     )
 
-    # Get frequencies for both levels
-    f_0_A = base_freqs.get(level_A, 0.5)
-    f_0_B = base_freqs.get(level_B, 0.5)
-    f_A_A = nudge_A_freqs.get(level_A, 0.5)
-    f_A_B = nudge_A_freqs.get(level_B, 0.5)
-    f_B_A = nudge_B_freqs.get(level_A, 0.5)
-    f_B_B = nudge_B_freqs.get(level_B, 0.5)
+    # Get frequencies and sample sizes for both levels
+    f_0_A = base_stats.get(level_A, {}).get("freq", 0.5)
+    f_0_B = base_stats.get(level_B, {}).get("freq", 0.5)
+    n_0_A = base_stats.get(level_A, {}).get("n", 0)
+    n_0_B = base_stats.get(level_B, {}).get("n", 0)
+
+    f_A_A = nudge_A_stats.get(level_A, {}).get("freq", 0.5)
+    f_A_B = nudge_A_stats.get(level_B, {}).get("freq", 0.5)
+    n_A_A = nudge_A_stats.get(level_A, {}).get("n", 0)
+    # n_A_B = nudge_A_stats.get(level_B, {}).get("n", 0)
+
+    f_B_A = nudge_B_stats.get(level_A, {}).get("freq", 0.5)
+    f_B_B = nudge_B_stats.get(level_B, {}).get("freq", 0.5)
+    # n_B_A = nudge_B_stats.get(level_A, {}).get("n", 0)
+    n_B_B = nudge_B_stats.get(level_B, {}).get("n", 0)
 
     # Average of f_A(B) and f_B(B)
     avg_f_B = (f_A_B + f_B_B) / 2
 
     # Compute absolute effect size: (|f_A(A) - f_0(A)| + |f_B(B) - f_0(B)|) / 2
     abs_effect = (abs(f_A_A - f_0_A) + abs(f_B_B - f_0_B)) / 2
+
+    # Compute backfire metrics (nudge decreases frequency of target option)
+    backfire_A = f_A_A < f_0_A  # Nudging towards A decreased frequency of A
+    backfire_B = f_B_B < f_0_B  # Nudging towards B decreased frequency of B
+
+    # Compute significance using two-proportion z-test
+    # Test if nudge towards A significantly changed frequency of A
+    test_A = two_proportion_z_test(f_0_A, n_0_A, f_A_A, n_A_A, DEFAULT_ALPHA)
+    sig_A = test_A["is_significant"]
+
+    # Test if nudge towards B significantly changed frequency of B
+    test_B = two_proportion_z_test(f_0_B, n_0_B, f_B_B, n_B_B, DEFAULT_ALPHA)
+    sig_B = test_B["is_significant"]
 
     # Compute steerability metrics
     steerability_A, steerability_B, steerability_bias = (
@@ -299,6 +416,10 @@ def compute_frequency_result(
         avg_steerability=avg_steerability,
         abs_steerability=abs_steerability,
         steerability_bias=steerability_bias,
+        backfire_A=backfire_A,
+        backfire_B=backfire_B,
+        sig_A=sig_A,
+        sig_B=sig_B,
         n_comparisons=n_comparisons,
         invalid_pct=invalid_pct,
     )
@@ -432,6 +553,7 @@ def format_table(
         "Avg Steer",
         "|Steer|",
         "Steer Bias",
+        "Backfire",
     ]
 
     # Build rows
@@ -455,6 +577,18 @@ def format_table(
         )
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
 
+        # Format frequency columns with asterisks for significant changes
+        f_A_B_str = f"{r.f_A_B:.3f}{'*' if r.sig_A else ''}"
+        f_B_B_str = f"{r.f_B_B:.3f}{'*' if r.sig_B else ''}"
+
+        # Backfire column: show which nudges backfired (no significance markers here)
+        backfire_parts = []
+        if r.backfire_A:
+            backfire_parts.append("A")
+        if r.backfire_B:
+            backfire_parts.append("B")
+        backfire_str = ",".join(backfire_parts) if backfire_parts else "None"
+
         rows.append(
             [
                 model_name,
@@ -463,8 +597,8 @@ def format_table(
                 r.nudge_type,
                 f"{r.invalid_pct:.1f}%",
                 f"{r.f_0_B:.3f}",
-                f"{r.f_A_B:.3f}",
-                f"{r.f_B_B:.3f}",
+                f_A_B_str,
+                f_B_B_str,
                 f"{r.avg_f_B:.3f}",
                 f"{r.abs_effect:.3f}",
                 steer_A_str,
@@ -472,6 +606,7 @@ def format_table(
                 avg_steer_str,
                 abs_steer_str,
                 steer_bias_str,
+                backfire_str,
             ]
         )
 
@@ -536,6 +671,10 @@ def write_csv(
         "avg_steerability",
         "abs_steerability",
         "steerability_bias",
+        "backfire_A",
+        "backfire_B",
+        "sig_A",
+        "sig_B",
     ]
 
     with open(output_path, "w", newline="") as f:
@@ -564,6 +703,10 @@ def write_csv(
                     r.avg_steerability if r.avg_steerability is not None else "",
                     r.abs_steerability if r.abs_steerability is not None else "",
                     r.steerability_bias if r.steerability_bias is not None else "",
+                    r.backfire_A,
+                    r.backfire_B,
+                    r.sig_A,
+                    r.sig_B,
                 ]
             )
 
@@ -681,8 +824,22 @@ Examples:
     # Helper to compute steerability stats
     def get_steer_stats(
         result_list: List[FrequencyResult],
-    ) -> Tuple[Optional[float], Optional[float], float, Optional[float]]:
-        """Returns (avg_steer, avg_bias, avg_effect, avg_abs_steer)."""
+    ) -> Tuple[
+        Optional[float],
+        Optional[float],
+        float,
+        Optional[float],
+        float,
+        float,
+        float,
+    ]:
+        """
+        Returns (avg_steer, avg_bias, avg_effect, avg_abs_steer,
+                 sig_rate, sig_backfire_rate, backfire_rate).
+        - sig_rate: fraction of nudges with significant change
+        - sig_backfire_rate: fraction of nudges that backfired significantly
+        - backfire_rate: fraction of nudges that backfired (regardless of significance)
+        """
         steer_results = [r for r in result_list if r.avg_steerability is not None]
         bias_results = [r for r in result_list if r.steerability_bias is not None]
         abs_steer_results = [r for r in result_list if r.abs_steerability is not None]
@@ -706,7 +863,35 @@ Examples:
             if abs_steer_results
             else None
         )
-        return avg_steer, avg_bias, avg_effect, avg_abs_steer
+        # Each result has 2 nudges (towards A and towards B), so total nudges = 2 * n
+        total_nudges = 2 * len(result_list)
+
+        # Compute significance rate: fraction of nudges with significant change
+        sig_count = sum(r.sig_A + r.sig_B for r in result_list)
+        sig_rate = sig_count / total_nudges if total_nudges > 0 else 0.0
+
+        # Compute significant backfire rate: fraction of nudges that backfired significantly
+        # Only count backfires that are also statistically significant
+        sig_backfire_count = sum(
+            (r.backfire_A and r.sig_A) + (r.backfire_B and r.sig_B) for r in result_list
+        )
+        sig_backfire_rate = (
+            sig_backfire_count / total_nudges if total_nudges > 0 else 0.0
+        )
+
+        # Compute backfire rate: fraction of nudges that backfired (regardless of significance)
+        backfire_count = sum(r.backfire_A + r.backfire_B for r in result_list)
+        backfire_rate = backfire_count / total_nudges if total_nudges > 0 else 0.0
+
+        return (
+            avg_steer,
+            avg_bias,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+        )
 
     # By model
     model_groups: Dict[str, List[FrequencyResult]] = defaultdict(list)
@@ -718,7 +903,15 @@ Examples:
     for base_model in sorted(model_groups.keys()):
         model_results = model_groups[base_model]
         n_factors = len(set(r.factor for r in model_results))
-        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(model_results)
+        (
+            avg_steer,
+            avg_bias,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+        ) = get_steer_stats(model_results)
 
         display_name = (
             get_model_display_name(model_results[0].model)
@@ -732,6 +925,8 @@ Examples:
             if avg_abs_steer is not None
             else "|steer|=N/A"
         )
+        sig_str = f"sig={sig_rate:.1%}"
+        backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
@@ -747,7 +942,7 @@ Examples:
             )
             print(
                 f"  {display_name}: n={len(model_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}"
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -767,7 +962,7 @@ Examples:
             print(
                 f"  {display_name}: n={len(model_results)}, "
                 f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
+                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
 
     # By factor (single factor by definition)
@@ -778,7 +973,15 @@ Examples:
         avg_f_0_B = sum(r.f_0_B for r in factor_results) / len(factor_results)
         avg_f_A_B = sum(r.f_A_B for r in factor_results) / len(factor_results)
         avg_f_B_B = sum(r.f_B_B for r in factor_results) / len(factor_results)
-        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(factor_results)
+        (
+            avg_steer,
+            avg_bias,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+        ) = get_steer_stats(factor_results)
         # Get level info
         level_B = factor_results[0].level_B if factor_results else "?"
         effect_str = f"|effect|={avg_effect:.3f}"
@@ -795,10 +998,12 @@ Examples:
             if avg_bias is not None
             else "|steer_bias|=N/A"
         )
+        sig_str = f"sig={sig_rate:.1%}"
+        backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
         print(
             f"  {factor} (B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-            f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
+            f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
         )
 
     # By nudge type
@@ -807,7 +1012,15 @@ Examples:
     for nudge_type in sorted(nudge_types):
         nudge_results = [r for r in results if r.nudge_type == nudge_type]
         n_factors = len(set(r.factor for r in nudge_results))
-        avg_steer, avg_bias, avg_effect, avg_abs_steer = get_steer_stats(nudge_results)
+        (
+            avg_steer,
+            avg_bias,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+        ) = get_steer_stats(nudge_results)
 
         effect_str = f"|effect|={avg_effect:.3f}"
         abs_steer_str = (
@@ -815,6 +1028,8 @@ Examples:
             if avg_abs_steer is not None
             else "|steer|=N/A"
         )
+        sig_str = f"sig={sig_rate:.1%}"
+        backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
@@ -830,7 +1045,7 @@ Examples:
             )
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}"
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -850,8 +1065,46 @@ Examples:
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, "
                 f"f_0(B)={avg_f_0_B:.3f}, f_A(B)={avg_f_A_B:.3f}, "
-                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}"
+                f"f_B(B)={avg_f_B_B:.3f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
+
+    # Overall statistics
+    (
+        _,
+        _,
+        _,
+        _,
+        overall_sig_rate,
+        overall_sig_backfire_rate,
+        overall_backfire_rate,
+    ) = get_steer_stats(results)
+    total_nudges = 2 * len(results)
+
+    # Significance statistics
+    sig_A_count = sum(r.sig_A for r in results)
+    sig_B_count = sum(r.sig_B for r in results)
+    total_sig = sig_A_count + sig_B_count
+    print(f"\nOverall Significant Change Rate: {overall_sig_rate:.1%}")
+    print(
+        f"  Significant changes towards A: {sig_A_count}/{len(results)} ({sig_A_count/len(results):.1%})"
+    )
+    print(
+        f"  Significant changes towards B: {sig_B_count}/{len(results)} ({sig_B_count/len(results):.1%})"
+    )
+    print(f"  Total significant changes: {total_sig}/{total_nudges}")
+
+    # Significant backfire statistics (only counting statistically significant backfires)
+    sig_backfire_A_count = sum(r.backfire_A and r.sig_A for r in results)
+    sig_backfire_B_count = sum(r.backfire_B and r.sig_B for r in results)
+    total_sig_backfire = sig_backfire_A_count + sig_backfire_B_count
+    print(f"\nOverall Significant Backfire Rate: {overall_sig_backfire_rate:.1%}")
+    print(
+        f"  Significant backfires towards A: {sig_backfire_A_count}/{len(results)} ({sig_backfire_A_count/len(results):.1%})"
+    )
+    print(
+        f"  Significant backfires towards B: {sig_backfire_B_count}/{len(results)} ({sig_backfire_B_count/len(results):.1%})"
+    )
+    print(f"  Total significant backfires: {total_sig_backfire}/{total_nudges}")
 
 
 if __name__ == "__main__":
