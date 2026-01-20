@@ -43,14 +43,17 @@ from choices.experiments.exchange_rates import (
 # Import shared nudge templates
 from choices.experiments.nudging.templates import (
     NUDGE_TEMPLATES as BASE_NUDGE_TEMPLATES,
+    Nudge,
 )
 
 # ============= Nudge Definitions =============
 # Override survey_preference to include {n} and {other_n} placeholders for exchange rate experiments
 NUDGE_TEMPLATES = {
     **BASE_NUDGE_TEMPLATES,
-    "survey_preference": (
-        "In a recent survey, people preferred saving {n} {group_label} over {other_n} {other_group_label}."
+    "survey_preference": Nudge(
+        "In a recent survey, people preferred saving {n} {group_label} over {other_n} {other_group_label}.",
+        position=BASE_NUDGE_TEMPLATES["survey_preference"].position,
+        brackets=BASE_NUDGE_TEMPLATES["survey_preference"].brackets,
     ),
 }
 
@@ -112,8 +115,8 @@ def generate_nudge_text(
             "{group}", format_group_label(factor_name, target_group, "terminal_illness")
         )
 
-    template = NUDGE_TEMPLATES.get(nudge_type)
-    if not template:
+    nudge = NUDGE_TEMPLATES.get(nudge_type)
+    if not nudge or not nudge.template:
         raise ValueError(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
@@ -123,14 +126,14 @@ def generate_nudge_text(
     # For survey_preference, we need example numbers
     if nudge_type == "survey_preference":
         # Use placeholder values - these are just examples in the nudge
-        return template.format(
+        return nudge.template.format(
             n=2,
             group_label=group_label,
             other_n=4,
             other_group_label="others",  # Generic placeholder
         )
     else:
-        return template.format(group_label=group_label)
+        return nudge.template.format(group_label=group_label)
 
 
 # ============= Custom Experiment Class with Custom Save Directory =============
@@ -462,13 +465,17 @@ def list_nudge_types():
     """List all available nudge types."""
     print("\nAvailable nudge types:")
     print("=" * 80)
-    for nudge_type, template in NUDGE_TEMPLATES.items():
-        if template:
+    for nudge_type, nudge in NUDGE_TEMPLATES.items():
+        if nudge.template:
             print(f"\n{nudge_type}:")
-            print(f"  Template: {template}")
+            print(f"  Template: {nudge.template}")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
         else:
             print(f"\n{nudge_type}:")
             print("  Custom nudge (requires --nudge_text)")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
     print("\n" + "=" * 80)
 
 

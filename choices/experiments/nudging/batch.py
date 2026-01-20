@@ -58,6 +58,9 @@ class BatchConfig:
     setup: str = "preference"
     seed: int = 42
     max_retries: int = 10
+    # Global overrides for nudge formatting (None = use nudge type defaults)
+    nudge_position: Optional[str] = None
+    nudge_brackets: Optional[str] = None
 
     @classmethod
     def from_yaml(cls, path: str) -> "BatchConfig":
@@ -79,6 +82,8 @@ class BatchConfig:
             setup=settings.get("setup", "preference"),
             seed=settings.get("seed", 42),
             max_retries=settings.get("max_retries", 10),
+            nudge_position=settings.get("nudge_position"),  # None = use nudge defaults
+            nudge_brackets=settings.get("nudge_brackets"),  # None = use nudge defaults
         )
 
     def validate(self) -> list[str]:
@@ -112,6 +117,24 @@ class BatchConfig:
         if self.reasoning not in ["none", "before", "after"]:
             errors.append(
                 f"Unknown reasoning: {self.reasoning}. Available: none, before, after"
+            )
+
+        valid_positions = ["system", "start", "after_setup", "after_options", "end"]
+        if (
+            self.nudge_position is not None
+            and self.nudge_position not in valid_positions
+        ):
+            errors.append(
+                f"Unknown nudge_position: {self.nudge_position}. Available: {valid_positions}"
+            )
+
+        valid_brackets = ["parentheses", "quotes", "none", "italic"]
+        if (
+            self.nudge_brackets is not None
+            and self.nudge_brackets not in valid_brackets
+        ):
+            errors.append(
+                f"Unknown nudge_brackets: {self.nudge_brackets}. Available: {valid_brackets}"
             )
 
         return errors
@@ -152,6 +175,14 @@ def print_experiment_plan(config: BatchConfig, experiments: list[dict]) -> None:
     print(f"  reasoning: {config.reasoning}")
     print(f"  setup: {config.setup}")
     print(f"  seed: {config.seed}")
+    position_str = (
+        config.nudge_position if config.nudge_position else "(use nudge defaults)"
+    )
+    brackets_str = (
+        config.nudge_brackets if config.nudge_brackets else "(use nudge defaults)"
+    )
+    print(f"  nudge_position: {position_str}")
+    print(f"  nudge_brackets: {brackets_str}")
 
     print(f"\nTotal experiments: {len(experiments)}")
 
@@ -202,6 +233,8 @@ async def run_batch_async(
                 reasoning=config.reasoning,
                 setup=config.setup,
                 max_retries=config.max_retries,
+                nudge_position=config.nudge_position,
+                nudge_brackets=config.nudge_brackets,
             )
             results[exp_key] = exp_results
             print(f"\nExperiment {i}/{len(experiments)} completed successfully")
@@ -266,6 +299,9 @@ settings:
   setup: preference      # Options: original, decision, preference, or custom text
   seed: 42
   max_retries: 10
+  # Nudge formatting (omit or set to null to use each nudge type's default)
+  # nudge_position: after_setup  # Options: system, start, after_setup, after_options, end
+  # nudge_brackets: parentheses  # Options: parentheses, quotes, none, italic
 """
     print(sample_config)
 
@@ -308,6 +344,18 @@ def run(
         Optional[str], typer.Option(help="Setup text key or custom text")
     ] = None,
     seed: Annotated[Optional[int], typer.Option(help="Random seed")] = None,
+    nudge_position: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Global nudge position override (default: use nudge type defaults)"
+        ),
+    ] = None,
+    nudge_brackets: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Global nudge brackets override (default: use nudge type defaults)"
+        ),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print what would run without executing")
     ] = False,
@@ -347,6 +395,10 @@ def run(
         batch_config.setup = setup
     if seed is not None:
         batch_config.seed = seed
+    if nudge_position is not None:
+        batch_config.nudge_position = nudge_position
+    if nudge_brackets is not None:
+        batch_config.nudge_brackets = nudge_brackets
 
     # Validate configuration
     errors = batch_config.validate()
@@ -374,12 +426,15 @@ def list_options():
         print(f"  {name}: {var.values}")
 
     print("\nAvailable nudges:")
-    for name, template in NUDGE_TEMPLATES.items():
-        if template is None:
+    for name, nudge in NUDGE_TEMPLATES.items():
+        if nudge.template is None:
             continue
         # Truncate long templates for display
-        display = template[:60] + "..." if len(template) > 60 else template
-        print(f'  {name:20} - "{display}"')
+        template_display = (
+            nudge.template[:50] + "..." if len(nudge.template) > 50 else nudge.template
+        )
+        print(f'  {name:20} - "{template_display}"')
+        print(f"    {'':20}   position: {nudge.position}, brackets: {nudge.brackets}")
     print(f"  {'few_shot_N':20} - Biased examples (e.g., few_shot_3, few_shot_5)")
 
     print("\nSee models.yaml for available models. Common ones:")

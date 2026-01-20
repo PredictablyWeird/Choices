@@ -52,7 +52,7 @@ from choices.experiments.simple_rates import (
 )
 
 # Import shared nudge templates
-from choices.experiments.nudging.templates import NUDGE_TEMPLATES
+from choices.experiments.nudging.templates import NUDGE_TEMPLATES, get_nudge_defaults
 
 
 def parse_nudge_type(nudge_type: str) -> Tuple[str, Optional[int]]:
@@ -147,8 +147,8 @@ def generate_nudge_text(
         # For few_shot, return a description (actual examples are generated separately)
         return f"Few-shot examples ({num_examples}) biased towards {format_group_label(factor_name, target_group)}"
 
-    template = NUDGE_TEMPLATES.get(base_nudge_type)
-    if not template:
+    nudge = NUDGE_TEMPLATES.get(base_nudge_type)
+    if not nudge or not nudge.template:
         raise ValueError(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
@@ -157,12 +157,12 @@ def generate_nudge_text(
 
     # For survey_preference, we need example numbers
     if nudge_type == "survey_preference":
-        return template.format(
+        return nudge.template.format(
             group_label=group_label,
             other_group_label="others",
         )
     else:
-        return template.format(group_label=group_label)
+        return nudge.template.format(group_label=group_label)
 
 
 def generate_few_shot_examples(
@@ -590,8 +590,8 @@ def create_nudged_simple_config(
     n_values_key: str = "binary",
     reasoning: str = "none",
     setup: str = "original",
-    nudge_position: str = "after_setup",
-    nudge_brackets: str = "parentheses",
+    nudge_position: Optional[str] = None,
+    nudge_brackets: Optional[str] = None,
 ) -> Tuple[List[Variable], NudgedPromptConfig, AnalysisConfig]:
     """
     Create experiment configuration with nudge support.
@@ -604,8 +604,8 @@ def create_nudged_simple_config(
         n_values_key: N values key
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
-        nudge_position: Where to insert nudge ("start", "after_setup", "after_options", "end")
-        nudge_brackets: Bracket style ("parentheses", "quotes", "none")
+        nudge_position: Where to insert nudge (None = use nudge type default)
+        nudge_brackets: Bracket style (None = use nudge type default)
 
     Returns:
         Tuple of (variables, prompt_config, analysis_config)
@@ -617,6 +617,15 @@ def create_nudged_simple_config(
 
     # Parse nudge type (handles few_shot_N format)
     base_nudge_type, num_examples = parse_nudge_type(nudge_type)
+
+    # Get position/brackets from nudge defaults if not overridden
+    default_position, default_brackets = get_nudge_defaults(nudge_type)
+    effective_position = (
+        nudge_position if nudge_position is not None else default_position
+    )
+    effective_brackets = (
+        nudge_brackets if nudge_brackets is not None else default_brackets
+    )
 
     # Create variables
     variables = [
@@ -660,8 +669,8 @@ def create_nudged_simple_config(
         nudge_type_name=nudge_type,
         target_group=target_group,
         nudge_text=effective_nudge_text,
-        nudge_position=nudge_position,
-        nudge_brackets=nudge_brackets,
+        nudge_position=effective_position,
+        nudge_brackets=effective_brackets,
         ending=ending_text,
     )
     prompt_config.generate_option_text = option_text_fn
@@ -684,8 +693,8 @@ async def run_nudging_experiments(
     reasoning: str = "none",
     setup: str = "original",
     max_retries: int = 10,
-    nudge_position: str = "after_setup",
-    nudge_brackets: str = "parentheses",
+    nudge_position: Optional[str] = None,
+    nudge_brackets: Optional[str] = None,
     nudge_name: Optional[str] = None,
 ) -> Dict[str, ExperimentResults]:
     """
@@ -703,8 +712,8 @@ async def run_nudging_experiments(
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
         max_retries: Maximum number of retries for empty/invalid API responses
-        nudge_position: Where to insert nudge ("start", "after_setup", "after_options", "end")
-        nudge_brackets: Bracket style ("parentheses", "quotes", "none")
+        nudge_position: Where to insert nudge (None = use nudge type default)
+        nudge_brackets: Bracket style (None = use nudge type default)
         nudge_name: Override directory name for results (defaults to nudge_type)
 
     Returns:
@@ -817,13 +826,17 @@ def list_nudge_types():
     """List all available nudge types."""
     print("\nAvailable nudge types:")
     print("=" * 80)
-    for nudge_type, template in NUDGE_TEMPLATES.items():
-        if template:
+    for nudge_type, nudge in NUDGE_TEMPLATES.items():
+        if nudge.template:
             print(f"\n{nudge_type}:")
-            print(f"  Template: {template}")
+            print(f"  Template: {nudge.template}")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
         else:
             print(f"\n{nudge_type}:")
             print("  Custom nudge (requires --nudge_text)")
+            print(f"  Default position: {nudge.position}")
+            print(f"  Default brackets: {nudge.brackets}")
 
     # Document few_shot separately since it's pattern-based
     print("\nfew_shot / few_shot_N:")
@@ -969,16 +982,16 @@ Examples:
         "--nudge-position",
         type=str,
         choices=["system", "start", "after_setup", "after_options", "end"],
-        default="after_setup",
-        help="Where to insert the nudge in the prompt (default: after_setup)",
+        default=None,
+        help="Where to insert the nudge in the prompt (default: use nudge type default)",
     )
 
     parser.add_argument(
         "--nudge-brackets",
         type=str,
         choices=["parentheses", "quotes", "none", "italic"],
-        default="parentheses",
-        help='Bracket style for nudge: parentheses (), quotes "", none, or italic * (default: parentheses)',
+        default=None,
+        help='Bracket style for nudge: parentheses (), quotes "", none, or italic * (default: use nudge type default)',
     )
 
     parser.add_argument(
