@@ -20,7 +20,6 @@ import itertools
 import os
 import random
 import re
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -238,13 +237,20 @@ def generate_few_shot_examples(
 # ============= Nudged Simple Experiment =============
 
 
-@dataclass
 class NudgedPromptConfig(PromptConfig):
     """Prompt config with nudge support for simple nudging experiments."""
 
-    nudge_type: str = "base"
-    target_group: Optional[str] = None
-    nudge_text: Optional[str] = None
+    def __init__(
+        self,
+        # Metadata fields (for logging/saving)
+        nudge_type_name: str = "base",
+        target_group: Optional[str] = None,
+        # Parent fields
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.nudge_type_name = nudge_type_name
+        self.target_group = target_group
 
 
 async def run_nudged_simple_experiment(
@@ -297,7 +303,7 @@ async def run_nudged_simple_experiment(
     else:
         target_group_path = format_target_group_for_path(target_group)
         run_id = f"{timestamp}_{target_group_path}"
-        nudge_dir = nudge_type
+        nudge_dir = save_nudge_dir if save_nudge_dir else nudge_type
 
     # Generate options from variables
     var_names = [var.name for var in variables]
@@ -584,6 +590,8 @@ def create_nudged_simple_config(
     n_values_key: str = "binary",
     reasoning: str = "none",
     setup: str = "original",
+    nudge_position: str = "after_setup",
+    nudge_brackets: str = "parentheses",
 ) -> Tuple[List[Variable], NudgedPromptConfig, AnalysisConfig]:
     """
     Create experiment configuration with nudge support.
@@ -596,6 +604,8 @@ def create_nudged_simple_config(
         n_values_key: N values key
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
+        nudge_position: Where to insert nudge ("start", "after_setup", "after_options", "end")
+        nudge_brackets: Bracket style ("parentheses", "quotes", "none")
 
     Returns:
         Tuple of (variables, prompt_config, analysis_config)
@@ -625,9 +635,9 @@ def create_nudged_simple_config(
     # Get the option text function first (needed for few_shot examples)
     option_text_fn = create_option_text_fn(factor_name)
 
-    # Handle different nudge types
-    setup_with_nudge = base_setup
+    # Handle few_shot specially (uses ending, not nudge_text)
     ending_text = None
+    effective_nudge_text = None
 
     if base_nudge_type == "few_shot" and target_group:
         # Generate few-shot examples and add to ending
@@ -639,17 +649,19 @@ def create_nudged_simple_config(
             num_examples=num_examples,
         )
     elif nudge_type != "base" and nudge_text:
-        # Add nudge text to setup for other nudge types
-        setup_with_nudge = f"{base_setup}\n({nudge_text})"
+        # Use PromptConfig's nudge support for positioning
+        effective_nudge_text = nudge_text
 
-    # Create prompt config (uses defaults, just override setup and generate_option_text)
+    # Create prompt config - nudge is now handled by PromptConfig.template
     reasoning_mode = ReasoningMode(reasoning)
     prompt_config = NudgedPromptConfig(
-        setup=setup_with_nudge,
+        setup=base_setup,
         reasoning_mode=reasoning_mode,
-        nudge_type=nudge_type,
+        nudge_type_name=nudge_type,
         target_group=target_group,
-        nudge_text=nudge_text,
+        nudge_text=effective_nudge_text,
+        nudge_position=nudge_position,
+        nudge_brackets=nudge_brackets,
         ending=ending_text,
     )
     prompt_config.generate_option_text = option_text_fn
@@ -672,6 +684,9 @@ async def run_nudging_experiments(
     reasoning: str = "none",
     setup: str = "original",
     max_retries: int = 10,
+    nudge_position: str = "after_setup",
+    nudge_brackets: str = "parentheses",
+    nudge_name: Optional[str] = None,
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -688,6 +703,9 @@ async def run_nudging_experiments(
         reasoning: Reasoning mode ("none", "before", or "after")
         setup: Setup text key (from SETUPS dict) or custom setup text
         max_retries: Maximum number of retries for empty/invalid API responses
+        nudge_position: Where to insert nudge ("start", "after_setup", "after_options", "end")
+        nudge_brackets: Bracket style ("parentheses", "quotes", "none")
+        nudge_name: Override directory name for results (defaults to nudge_type)
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -700,8 +718,12 @@ async def run_nudging_experiments(
     factor = BINARY_FACTORS[factor_name]
     group_values = factor.values
 
+    # Use nudge_name for directory, default to nudge_type
+    effective_nudge_name = nudge_name if nudge_name else nudge_type
+
     print(f"\nRunning nudging experiments for factor '{factor_name}'")
     print(f"Nudge type: {nudge_type}")
+    print(f"Results directory name: {effective_nudge_name}")
     print(f"Groups to test: {group_values}")
     print("=" * 80)
 
@@ -718,6 +740,8 @@ async def run_nudging_experiments(
         n_values_key=n_values,
         reasoning=reasoning,
         setup=setup,
+        nudge_position=nudge_position,
+        nudge_brackets=nudge_brackets,
     )
 
     base_results = await run_nudged_simple_experiment(
@@ -732,7 +756,7 @@ async def run_nudging_experiments(
         seed=seed,
         verbose=True,
         reasoning=reasoning,
-        save_nudge_dir=nudge_type,  # Save base in the nudge directory
+        save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
         max_retries=max_retries,
     )
     results["base"] = base_results
@@ -757,6 +781,8 @@ async def run_nudging_experiments(
             n_values_key=n_values,
             reasoning=reasoning,
             setup=setup,
+            nudge_position=nudge_position,
+            nudge_brackets=nudge_brackets,
         )
 
         experiment_results = await run_nudged_simple_experiment(
@@ -773,6 +799,7 @@ async def run_nudging_experiments(
             seed=seed,
             verbose=True,
             reasoning=reasoning,
+            save_nudge_dir=effective_nudge_name,
             max_retries=max_retries,
         )
         results[target_group] = experiment_results
@@ -938,6 +965,29 @@ Examples:
         help="Maximum number of retries for empty/invalid API responses (default: 10)",
     )
 
+    parser.add_argument(
+        "--nudge-position",
+        type=str,
+        choices=["system", "start", "after_setup", "after_options", "end"],
+        default="after_setup",
+        help="Where to insert the nudge in the prompt (default: after_setup)",
+    )
+
+    parser.add_argument(
+        "--nudge-brackets",
+        type=str,
+        choices=["parentheses", "quotes", "none", "italic"],
+        default="parentheses",
+        help='Bracket style for nudge: parentheses (), quotes "", none, or italic * (default: parentheses)',
+    )
+
+    parser.add_argument(
+        "--override-nudge-save-name",
+        type=str,
+        default=None,
+        help="Override the directory name for results (defaults to --nudge value)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -963,6 +1013,9 @@ Examples:
                 reasoning=args.reasoning,
                 setup=args.setup,
                 max_retries=args.max_retries,
+                nudge_position=args.nudge_position,
+                nudge_brackets=args.nudge_brackets,
+                nudge_name=args.override_nudge_save_name,
             )
         )
     else:
