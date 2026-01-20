@@ -89,6 +89,30 @@ def format_target_group_for_path(target_group: str) -> str:
     return re.sub(r"[^\w\-]", "_", target_group.lower())
 
 
+def get_other_group_label(factor_name: str, target_group: str, measure: str) -> str:
+    """
+    Get the other group label for a factor.
+
+    For binary factors, returns the formatted label of the other group.
+    For non-binary factors, returns "others" since there are multiple other groups.
+
+    Args:
+        factor_name: Name of the factor (e.g., 'gender', 'ethnicity')
+        target_group: The group value we're nudging towards
+        measure: Measure context for formatting
+
+    Returns:
+        The other group label
+    """
+    factor = ALL_FACTORS.get(factor_name)
+    if factor and len(factor.values) == 2:
+        # Binary factor - return the actual other group
+        other_group = [v for v in factor.values if v != target_group][0]
+        return format_group_label(factor_name, other_group, measure)
+    # Non-binary factor - use generic "others"
+    return "others"
+
+
 def generate_nudge_text(
     nudge_type: str,
     factor_name: str,
@@ -107,13 +131,18 @@ def generate_nudge_text(
     Returns:
         Formatted nudge text
     """
+    group_label = format_group_label(factor_name, target_group, "terminal_illness")
+    other_group_label = get_other_group_label(
+        factor_name, target_group, "terminal_illness"
+    )
+
     if nudge_type == "custom":
         if not custom_text:
             raise ValueError("custom_text must be provided when nudge_type is 'custom'")
-        # Replace {group} placeholder if present
-        return custom_text.replace(
-            "{group}", format_group_label(factor_name, target_group, "terminal_illness")
-        )
+        # Replace placeholders if present
+        result = custom_text.replace("{group}", group_label)
+        result = result.replace("{other_group}", other_group_label)
+        return result
 
     nudge = NUDGE_TEMPLATES.get(nudge_type)
     if not nudge or not nudge.template:
@@ -121,19 +150,21 @@ def generate_nudge_text(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
 
-    group_label = format_group_label(factor_name, target_group, "terminal_illness")
-
-    # For survey_preference, we need example numbers
+    # For survey_preference, we need example numbers (exchange rate specific)
     if nudge_type == "survey_preference":
         # Use placeholder values - these are just examples in the nudge
         return nudge.template.format(
             n=2,
             group_label=group_label,
             other_n=4,
-            other_group_label="others",  # Generic placeholder
+            other_group_label=other_group_label,
         )
     else:
-        return nudge.template.format(group_label=group_label)
+        # Format template with both group labels (works whether template uses them or not)
+        return nudge.template.format(
+            group_label=group_label,
+            other_group_label=other_group_label,
+        )
 
 
 # ============= Custom Experiment Class with Custom Save Directory =============
@@ -229,6 +260,8 @@ class NudgedExperiment(Experiment):
                 "nudge_type": self.nudge_type,
                 "target_group": self.target_group,
                 "nudge_text": self.nudge_text,
+                "nudge_position": self.prompt_config.nudge_position,
+                "nudge_brackets": self.prompt_config.nudge_brackets,
             }
             results.graph.config["nudge_config"] = nudge_config
 

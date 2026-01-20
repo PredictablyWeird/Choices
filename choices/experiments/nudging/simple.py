@@ -116,6 +116,23 @@ def format_target_group_for_path(target_group: str) -> str:
     return re.sub(r"[^\w\-]", "_", target_group.lower())
 
 
+def get_other_group(factor_name: str, target_group: str) -> Optional[str]:
+    """
+    Get the other group value for a binary factor.
+
+    Args:
+        factor_name: Name of the factor (e.g., 'gender', 'ethnicity')
+        target_group: The group value we're nudging towards
+
+    Returns:
+        The other group value, or None if factor is not binary or not found
+    """
+    factor = BINARY_FACTORS.get(factor_name)
+    if not factor or len(factor.values) != 2:
+        return None
+    return [v for v in factor.values if v != target_group][0]
+
+
 def generate_nudge_text(
     nudge_type: str,
     factor_name: str,
@@ -134,18 +151,26 @@ def generate_nudge_text(
     Returns:
         Formatted nudge text
     """
+    group_label = format_group_label(factor_name, target_group)
+
+    # Get the other group label for binary factors
+    other_group = get_other_group(factor_name, target_group)
+    other_group_label = (
+        format_group_label(factor_name, other_group) if other_group else "others"
+    )
+
     if nudge_type == "custom":
         if not custom_text:
             raise ValueError("custom_text must be provided when nudge_type is 'custom'")
-        # Replace {group} placeholder if present
-        return custom_text.replace(
-            "{group}", format_group_label(factor_name, target_group)
-        )
+        # Replace placeholders if present
+        result = custom_text.replace("{group}", group_label)
+        result = result.replace("{other_group}", other_group_label)
+        return result
 
     base_nudge_type, num_examples = parse_nudge_type(nudge_type)
     if base_nudge_type == "few_shot":
         # For few_shot, return a description (actual examples are generated separately)
-        return f"Few-shot examples ({num_examples}) biased towards {format_group_label(factor_name, target_group)}"
+        return f"Few-shot examples ({num_examples}) biased towards {group_label}"
 
     nudge = NUDGE_TEMPLATES.get(base_nudge_type)
     if not nudge or not nudge.template:
@@ -153,16 +178,11 @@ def generate_nudge_text(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
 
-    group_label = format_group_label(factor_name, target_group)
-
-    # For survey_preference, we need example numbers
-    if nudge_type == "survey_preference":
-        return nudge.template.format(
-            group_label=group_label,
-            other_group_label="others",
-        )
-    else:
-        return nudge.template.format(group_label=group_label)
+    # Format template with both group labels (works whether template uses them or not)
+    return nudge.template.format(
+        group_label=group_label,
+        other_group_label=other_group_label,
+    )
 
 
 def generate_few_shot_examples(
@@ -418,6 +438,8 @@ async def run_nudged_simple_experiment(
                 f.write(f"\nNudge type: {nudge_type}\n")
                 f.write(f"Target group: {target_group}\n")
                 f.write(f"Nudge text: {nudge_text}\n")
+                f.write(f"Nudge position: {prompt_config.nudge_position}\n")
+                f.write(f"Nudge brackets: {prompt_config.nudge_brackets}\n")
 
     # Send all prompts
     if verbose:
@@ -499,6 +521,8 @@ async def run_nudged_simple_experiment(
             "nudge_type": nudge_type,
             "target_group": target_group,
             "nudge_text": nudge_text,
+            "nudge_position": prompt_config.nudge_position,
+            "nudge_brackets": prompt_config.nudge_brackets,
         }
 
     graph_results = PreferenceGraphResults(
@@ -546,7 +570,9 @@ async def run_nudged_simple_experiment(
             f.write("Nudge Configuration:\n")
             f.write(f"  Type: {nudge_type}\n")
             f.write(f"  Target group: {target_group}\n")
-            f.write(f"  Nudge text: {nudge_text}\n\n")
+            f.write(f"  Nudge text: {nudge_text}\n")
+            f.write(f"  Position: {prompt_config.nudge_position}\n")
+            f.write(f"  Brackets: {prompt_config.nudge_brackets}\n\n")
         else:
             f.write("Condition: BASE (no nudge)\n\n")
 
