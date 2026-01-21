@@ -1084,7 +1084,19 @@ Examples:
             if avg_steer is not None
             else "avg_steer=N/A"
         )
-        bias_str = (
+        # Compute raw (non-absolute) steerability bias for factors
+        bias_results = [r for r in factor_results if r.steerability_bias is not None]
+        raw_avg_bias = (
+            sum(r.steerability_bias for r in bias_results) / len(bias_results)
+            if bias_results
+            else None
+        )
+        raw_bias_str = (
+            f"steer_bias={raw_avg_bias:.{decimals}f}"
+            if raw_avg_bias is not None
+            else "steer_bias=N/A"
+        )
+        abs_bias_str = (
             f"|steer_bias|={avg_bias:.{decimals}f}"
             if avg_bias is not None
             else "|steer_bias|=N/A"
@@ -1117,7 +1129,7 @@ Examples:
         print(
             f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
+            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_bias_str}, {abs_bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
         )
 
     # By nudge type
