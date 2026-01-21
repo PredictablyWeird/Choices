@@ -978,9 +978,9 @@ Examples:
     parser.add_argument(
         "--n-values",
         type=str,
-        choices=["binary", "small", "original"],
-        default="original",
-        help="N values to use (default: original)",
+        choices=["binary", "small", "paper", "original"],
+        default="paper",
+        help="N values to use (default: paper)",
     )
 
     parser.add_argument(

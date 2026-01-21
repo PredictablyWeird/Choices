@@ -71,6 +71,7 @@ BINARY_FACTORS = {
 N_VALUES = {
     "small": [1, 2, 3, 4, 5],
     "binary": [1, 10],
+    "paper": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     "original": [
         1,
         2,
@@ -104,7 +105,7 @@ N_VALUES = {
 }
 
 # Default max requests for experiments
-MAX_REQUESTS = 1000
+MAX_REQUESTS = 10000
 
 # ============= Option Text Generation =============
 
@@ -722,9 +723,9 @@ Examples:
     parser.add_argument(
         "--n-values",
         type=str,
-        choices=["binary", "small", "original"],
-        default="original",
-        help="N values to use (default: original)",
+        choices=["binary", "small", "paper", "original"],
+        default="paper",
+        help="N values to use (default: paper)",
     )
 
     parser.add_argument(

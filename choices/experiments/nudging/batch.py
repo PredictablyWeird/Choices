@@ -53,7 +53,7 @@ class BatchConfig:
     )
     max_requests: int = MAX_REQUESTS
     requests_per_edge: int = 4
-    n_values: str = "original"
+    n_values: str = "paper"
     reasoning: str = "none"
     setup: str = "preference"
     seed: int = 42
@@ -77,7 +77,7 @@ class BatchConfig:
             ),
             max_requests=settings.get("max_requests", MAX_REQUESTS),
             requests_per_edge=settings.get("requests_per_edge", 4),
-            n_values=settings.get("n_values", "original"),
+            n_values=settings.get("n_values", "paper"),
             reasoning=settings.get("reasoning", "none"),
             setup=settings.get("setup", "preference"),
             seed=settings.get("seed", 42),
@@ -109,9 +109,9 @@ class BatchConfig:
                     f"Unknown nudge: {nudge}. Available: {list(NUDGE_TEMPLATES.keys())} + few_shot_N"
                 )
 
-        if self.n_values not in ["binary", "small", "original"]:
+        if self.n_values not in ["binary", "small", "paper", "original"]:
             errors.append(
-                f"Unknown n_values: {self.n_values}. Available: binary, small, original"
+                f"Unknown n_values: {self.n_values}. Available: binary, small, paper, original"
             )
 
         if self.reasoning not in ["none", "before", "after"]:
@@ -303,7 +303,7 @@ nudges:
 settings:
   max_requests: 20       # API requests per experiment condition (use {MAX_REQUESTS} for real runs)
   requests_per_edge: 4   # Repeats per comparison
-  n_values: original     # Options: binary, small, original
+  n_values: paper        # Options: binary, small, paper, original
   reasoning: none        # Options: none, before, after
   setup: preference      # Options: original, decision, preference, or custom text
   seed: 42
@@ -344,7 +344,7 @@ def run(
         Optional[int], typer.Option(help="Requests per edge")
     ] = None,
     n_values: Annotated[
-        Optional[str], typer.Option(help="N values: binary, small, original")
+        Optional[str], typer.Option(help="N values: binary, small, paper, original")
     ] = None,
     reasoning: Annotated[
         Optional[str], typer.Option(help="Reasoning mode: none, before, after")
