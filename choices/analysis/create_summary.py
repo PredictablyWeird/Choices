@@ -27,6 +27,13 @@ Usage:
     uv run python -m choices.analysis.create_summary --reasoning low medium high
     uv run python -m choices.analysis.create_summary --reasoning none before after
 
+    # Sort by a specific column (ascending by default)
+    uv run python -m choices.analysis.create_summary --sort steer_bias
+    uv run python -m choices.analysis.create_summary --sort abs_effect --reverse
+
+    # Sort by absolute value (prefix column with "abs-")
+    uv run python -m choices.analysis.create_summary --sort abs-steer_bias --reverse
+
     # Output to CSV
     uv run python -m choices.analysis.create_summary --output summary.csv
 
@@ -59,6 +66,97 @@ from choices.analysis.utils import (
 
 # Default significance level (95% confidence)
 DEFAULT_ALPHA = 0.05
+
+# Mapping from display column names to FrequencyResult attributes
+# Keys are lowercase for case-insensitive matching
+COLUMN_TO_ATTR = {
+    "model": "model",
+    "reasoning": "reasoning_condition",
+    "factor": "factor",
+    "nudge_type": "nudge_type",
+    "nudge type": "nudge_type",
+    "invalid%": "invalid_pct",
+    "invalid_pct": "invalid_pct",
+    "f_0(b)": "f_0_B",
+    "f_0_b": "f_0_B",
+    "f_a(b)": "f_A_B",
+    "f_a_b": "f_A_B",
+    "f_b(b)": "f_B_B",
+    "f_b_b": "f_B_B",
+    "avg f(b)": "avg_f_B",
+    "avg_f_b": "avg_f_B",
+    "|effect|": "abs_effect",
+    "abs_effect": "abs_effect",
+    "effect": "abs_effect",
+    "steer(a)": "steerability_A",
+    "steerability_a": "steerability_A",
+    "steer_a": "steerability_A",
+    "steer(b)": "steerability_B",
+    "steerability_b": "steerability_B",
+    "steer_b": "steerability_B",
+    "avg steer": "avg_steerability",
+    "avg_steer": "avg_steerability",
+    "avg_steerability": "avg_steerability",
+    "|steer|": "abs_steerability",
+    "abs_steer": "abs_steerability",
+    "abs_steerability": "abs_steerability",
+    "steer bias": "steerability_bias",
+    "steer_bias": "steerability_bias",
+    "steerability_bias": "steerability_bias",
+    "n_comparisons": "n_comparisons",
+}
+
+
+def sort_results(
+    results: List["FrequencyResult"],
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
+) -> List["FrequencyResult"]:
+    """
+    Sort results by the specified column.
+
+    Args:
+        results: List of FrequencyResult objects
+        sort_column: Column name to sort by. Prefix with "abs-" to sort by absolute value.
+        reverse: If True, sort in descending order
+
+    Returns:
+        Sorted list of results
+    """
+    if not sort_column:
+        # Default sort: by base_model, factor, nudge_type, reasoning_condition
+        return sorted(
+            results,
+            key=lambda r: (
+                get_base_model_name(r.model),
+                r.factor,
+                r.nudge_type,
+                r.reasoning_condition,
+            ),
+        )
+
+    # Check for abs- prefix
+    use_abs = sort_column.lower().startswith("abs-")
+    if use_abs:
+        sort_column = sort_column[4:]  # Remove "abs-" prefix
+
+    # Look up the attribute name
+    attr_name = COLUMN_TO_ATTR.get(sort_column.lower())
+    if not attr_name:
+        print(f"Warning: Unknown sort column '{sort_column}'. Using default sort.")
+        print(f"Valid columns: {', '.join(sorted(set(COLUMN_TO_ATTR.values())))}")
+        return sort_results(results, None, reverse)
+
+    def sort_key(r: "FrequencyResult"):
+        val = getattr(r, attr_name)
+        # Handle None values - put them at the end
+        if val is None:
+            return (1, 0)  # (is_none, value) - None values sort last
+        if use_abs:
+            return (0, abs(val))
+        return (0, val)
+
+    return sorted(results, key=sort_key, reverse=reverse)
 
 
 @dataclass
@@ -529,21 +627,15 @@ def format_table(
     results: List[FrequencyResult],
     show_display_names: bool = True,
     decimals: int = 2,
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
 ) -> str:
     """Format results as a text table."""
     if not results:
         return "No results found."
 
-    # Sort by base_model, factor, nudge_type, reasoning_condition
-    results = sorted(
-        results,
-        key=lambda r: (
-            get_base_model_name(r.model),
-            r.factor,
-            r.nudge_type,
-            r.reasoning_condition,
-        ),
-    )
+    # Sort results
+    results = sort_results(results, sort_column, reverse)
 
     # Build header
     headers = [
@@ -653,22 +745,16 @@ def write_csv(
     results: List[FrequencyResult],
     output_path: str,
     show_display_names: bool = True,
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
 ) -> None:
     """Write results to a CSV file."""
     if not results:
         print("No results to write.")
         return
 
-    # Sort by base_model, factor, nudge_type, reasoning_condition
-    results = sorted(
-        results,
-        key=lambda r: (
-            get_base_model_name(r.model),
-            r.factor,
-            r.nudge_type,
-            r.reasoning_condition,
-        ),
-    )
+    # Sort results
+    results = sort_results(results, sort_column, reverse)
 
     headers = [
         "model",
@@ -754,6 +840,10 @@ Examples:
     python create_frequency_table.py --reasoning low medium high
     python create_frequency_table.py --reasoning none before after
 
+    # Sort by a column (use abs- prefix for absolute value sorting)
+    python create_frequency_table.py --sort steer_bias
+    python create_frequency_table.py --sort abs-steer_bias --reverse
+
     # Output to CSV
     python create_frequency_table.py --output frequencies.csv
         """,
@@ -810,6 +900,25 @@ Examples:
     )
 
     parser.add_argument(
+        "--sort",
+        "-s",
+        type=str,
+        default=None,
+        help="Column to sort by. Prefix with 'abs-' to sort by absolute value "
+        "(e.g., 'steer_bias', 'abs-steer_bias', 'abs_effect'). "
+        "Valid columns: model, reasoning, factor, nudge_type, invalid_pct, "
+        "f_0_B, f_A_B, f_B_B, avg_f_B, abs_effect, steerability_A, steerability_B, "
+        "avg_steerability, abs_steerability, steerability_bias",
+    )
+
+    parser.add_argument(
+        "--reverse",
+        "-r",
+        action="store_true",
+        help="Sort in descending order (default: ascending)",
+    )
+
+    parser.add_argument(
         "--decimals",
         "-d",
         type=int,
@@ -831,6 +940,11 @@ Examples:
         print(f"Nudge type filter: {args.nudge_types}")
     if args.reasoning:
         print(f"Reasoning condition filter: {args.reasoning}")
+    if args.sort:
+        sort_desc = f"Sort by: {args.sort}"
+        if args.reverse:
+            sort_desc += " (descending)"
+        print(sort_desc)
     print("=" * 80)
     print()
 
@@ -854,11 +968,13 @@ Examples:
 
     show_display_names = not args.no_display_names
     decimals = args.decimals
+    sort_column = args.sort
+    reverse = args.reverse
 
     if args.output:
-        write_csv(results, args.output, show_display_names)
+        write_csv(results, args.output, show_display_names, sort_column, reverse)
     else:
-        print(format_table(results, show_display_names, decimals))
+        print(format_table(results, show_display_names, decimals, sort_column, reverse))
 
     # Print summary statistics
     print("\n" + "=" * 80)
