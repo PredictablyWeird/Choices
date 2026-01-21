@@ -88,6 +88,16 @@ qwen-turbo:
   model_type: openrouter
   display_name: "Qwen Turbo"
 
+qwen3-8b:
+  model_name: "openrouter/qwen/qwen3-8b"
+  model_type: openrouter
+  display_name: "Qwen 3.1 8B"
+
+qwen3-14b:
+  model_name: "openrouter/qwen/qwen3-14b"
+  model_type: openrouter
+  display_name: "Qwen 3.1 14B"
+
 qwen3-32b:
   model_name: "openrouter/qwen/qwen3-32b"
   model_type: openrouter
@@ -102,6 +112,16 @@ llama-33-70b:
   model_name: "openrouter/meta-llama/llama-3.3-70b-instruct"
   model_type: openrouter
   display_name: "Llama 3.3 70B"
+
+gemma-3-12b:
+  model_name: "openrouter/google/gemma-3-12b-it"
+  model_type: openrouter
+  display_name: "Gemma 3 12B"
+
+gemma-3-27b:
+  model_name: "openrouter/google/gemma-3-27b-it"
+  model_type: openrouter
+  display_name: "Gemma 3 27B"
 
 
 # ------------------------------
