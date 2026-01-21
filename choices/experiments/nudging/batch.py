@@ -274,8 +274,7 @@ def generate_config():
 
 models:
   # Non-reasoning models:
-  - gemma-3-27b
-  # - llama-33-70b
+  - llama-33-70b
   # - qwen3-235b-a22b-2507
   # Reasoning models:
   # - deepseek-v3-2-non-reasoning
