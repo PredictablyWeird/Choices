@@ -269,27 +269,37 @@ async def run_batch_async(
 @app.command()
 def generate_config():
     """Print a sample configuration file to stdout."""
-    # Generate nudges list dynamically from NUDGE_TEMPLATES
-    nudges_yaml = "\n".join(
-        f"  - {name}" for name in NUDGE_TEMPLATES.keys() if name != "custom"
-    )
-    nudges_yaml += "\n  - few_shot_3  # Biased examples"
-
-    factors_yaml = "\n".join(f"  - {name}" for name in BINARY_FACTORS.keys())
-
     sample_config = f"""# Batch Nudging Experiments Configuration
 # Run with: uv run python -m choices.experiments.nudging.batch run --config this_file.yaml
 
 models:
-  - gpt-4o-mini
-  - deepseek-v3-2-non-reasoning
-  - grok-41-fast-non-reasoning
+  # Non-reasoning models:
+  - gemma-3-27b
+  # - llama-33-70b
+  # - qwen3-235b-a22b-2507
+  # Reasoning models:
+  # - deepseek-v3-2-non-reasoning
+  # - grok-41-fast-non-reasoning
+  # - gpt-5-2-non-reasoning
+  # - deepseek-v3-2-reasoning
+  # - grok-41-fast-reasoning
+  # - gpt-5-2-reasoning
 
 factors:
-{factors_yaml}
+  - gender
+  - age_group
+  - wealth
+  - social_status
 
 nudges:
-{nudges_yaml}
+  # Information-based nudges:
+  - survey_preference
+  - weak_evidence
+  # Pressure-based nudges:
+  - emotional
+  - user_preference
+  # Other nudges:
+  - few_shot_3
 
 settings:
   max_requests: 20       # API requests per experiment condition (use {MAX_REQUESTS} for real runs)
