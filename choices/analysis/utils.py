@@ -191,11 +191,14 @@ def get_base_model_name(model: str) -> str:
 
     E.g., "deepseek-v3-2-reasoning" -> "deepseek-v3-2"
           "deepseek-v3-2-non-reasoning" -> "deepseek-v3-2"
+          "claude-haiku-4-5-thinking" -> "claude-haiku-4-5"
           "llama-33-70b" -> "llama-33-70b"
     """
     # Check -non-reasoning FIRST (it also ends with -reasoning)
     if model.endswith("-non-reasoning"):
         return model[:-14]  # len("-non-reasoning") == 14
+    elif model.endswith("-thinking"):
+        return model[:-9]  # len("-thinking") == 9
     elif model.endswith("-reasoning"):
         return model[:-10]  # len("-reasoning") == 10
     return model
