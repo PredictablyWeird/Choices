@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
 """
-Create a frequency-based summary table of nudge experiment results.
+Create a summary table of nudge experiment results with frequency-based metrics.
 
 This script creates a table showing frequency metrics:
 - f_0(B): Baseline frequency of choosing B
 - f_A(B): Frequency of choosing B when nudged towards A
 - f_B(B): Frequency of choosing B when nudged towards B
 - Avg f(B): Average of f_A(B) and f_B(B)
-- Steerability bias
+- Steerability metrics and bias
+- Statistical significance markers
 
 Usage:
     # Discover all results from default results directory
-    python create_frequency_table.py
+    uv run python -m choices.analysis.create_summary
 
     # Specify results directories
-    python create_frequency_table.py --results-dirs results results_anthropic
+    uv run python -m choices.analysis.create_summary --results-dirs results results_anthropic
 
     # Filter by models, factors, nudge types
-    python create_frequency_table.py \
+    uv run python -m choices.analysis.create_summary \
         --models claude-haiku-4-5 claude-haiku-4-5-thinking \
         --factors age_group social_status \
         --nudge-types user_preference
 
     # Output to CSV
-    python create_frequency_table.py --output frequencies.csv
+    uv run python -m choices.analysis.create_summary --output summary.csv
+
+    # Set decimal places for displayed values
+    uv run python -m choices.analysis.create_summary --decimals 3
 """
 
 import argparse
