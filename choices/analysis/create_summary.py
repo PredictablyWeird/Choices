@@ -23,6 +23,10 @@ Usage:
         --factors age_group social_status \
         --nudge-types user_preference
 
+    # Filter by reasoning condition (as displayed in the Reasoning column)
+    uv run python -m choices.analysis.create_summary --reasoning low medium high
+    uv run python -m choices.analysis.create_summary --reasoning none before after
+
     # Output to CSV
     uv run python -m choices.analysis.create_summary --output summary.csv
 
@@ -746,6 +750,10 @@ Examples:
         --factors age_group social_status \\
         --nudge-types user_preference
 
+    # Filter by reasoning condition (as shown in the table)
+    python create_frequency_table.py --reasoning low medium high
+    python create_frequency_table.py --reasoning none before after
+
     # Output to CSV
     python create_frequency_table.py --output frequencies.csv
         """,
@@ -777,6 +785,14 @@ Examples:
         nargs="+",
         default=None,
         help="List of nudge types to include (default: all)",
+    )
+
+    parser.add_argument(
+        "--reasoning",
+        nargs="+",
+        default=None,
+        help="List of reasoning conditions to include, as they appear in the table "
+        "(e.g., 'low', 'medium', 'high', 'off', 'before', 'after', 'none', '10000')",
     )
 
     parser.add_argument(
@@ -813,6 +829,8 @@ Examples:
         print(f"Factor filter: {args.factors}")
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
+    if args.reasoning:
+        print(f"Reasoning condition filter: {args.reasoning}")
     print("=" * 80)
     print()
 
@@ -823,6 +841,10 @@ Examples:
         factor_filter=args.factors,
         nudge_type_filter=args.nudge_types,
     )
+
+    # Apply reasoning condition filter (post-computation since it's derived from results)
+    if args.reasoning:
+        results = [r for r in results if r.reasoning_condition in args.reasoning]
 
     print(f"Found {len(results)} complete experiments\n")
 
