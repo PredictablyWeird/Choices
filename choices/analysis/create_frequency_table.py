@@ -916,15 +916,15 @@ Examples:
             backfire_rate,
         )
 
-    # By model
-    model_groups: Dict[str, List[FrequencyResult]] = defaultdict(list)
+    # By model and reasoning condition
+    model_groups: Dict[Tuple[str, str], List[FrequencyResult]] = defaultdict(list)
     for r in results:
         base_model = get_base_model_name(r.model)
-        model_groups[base_model].append(r)
+        model_groups[(base_model, r.reasoning_condition)].append(r)
 
     print(f"\nModels ({len(model_groups)}):")
-    for base_model in sorted(model_groups.keys()):
-        model_results = model_groups[base_model]
+    for base_model, reasoning_condition in sorted(model_groups.keys()):
+        model_results = model_groups[(base_model, reasoning_condition)]
         n_factors = len(set(r.factor for r in model_results))
         (
             avg_steer,
@@ -964,7 +964,7 @@ Examples:
                 else "|steer_bias|=N/A"
             )
             print(
-                f"  {display_name}: n={len(model_results)}, {effect_str}, "
+                f"  {display_name} ({reasoning_condition}): n={len(model_results)}, {effect_str}, "
                 f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
         else:
@@ -983,7 +983,72 @@ Examples:
                 else "|steer_bias|=N/A"
             )
             print(
-                f"  {display_name}: n={len(model_results)}, "
+                f"  {display_name} ({reasoning_condition}): n={len(model_results)}, "
+                f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+            )
+
+    # By reasoning condition
+    reasoning_groups: Dict[str, List[FrequencyResult]] = defaultdict(list)
+    for r in results:
+        reasoning_groups[r.reasoning_condition].append(r)
+
+    print(f"\nReasoning Conditions ({len(reasoning_groups)}):")
+    for reasoning_condition in sorted(reasoning_groups.keys()):
+        reasoning_results = reasoning_groups[reasoning_condition]
+        n_factors = len(set(r.factor for r in reasoning_results))
+        (
+            avg_steer,
+            avg_bias,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+        ) = get_steer_stats(reasoning_results)
+
+        effect_str = f"|effect|={avg_effect:.{decimals}f}"
+        abs_steer_str = (
+            f"|steer|={avg_abs_steer:.{decimals}f}"
+            if avg_abs_steer is not None
+            else "|steer|=N/A"
+        )
+        sig_str = f"sig={sig_rate:.1%}"
+        backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
+
+        if n_factors > 1:
+            # Multiple factors: only show steerability metrics
+            steer_str = (
+                f"avg_steer={avg_steer:.{decimals}f}"
+                if avg_steer is not None
+                else "avg_steer=N/A"
+            )
+            bias_str = (
+                f"|steer_bias|={avg_bias:.{decimals}f}"
+                if avg_bias is not None
+                else "|steer_bias|=N/A"
+            )
+            print(
+                f"  {reasoning_condition}: n={len(reasoning_results)}, {effect_str}, "
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+            )
+        else:
+            # Single factor: show frequency metrics and steerability
+            avg_f_0_B = sum(r.f_0_B for r in reasoning_results) / len(reasoning_results)
+            avg_f_A_B = sum(r.f_A_B for r in reasoning_results) / len(reasoning_results)
+            avg_f_B_B = sum(r.f_B_B for r in reasoning_results) / len(reasoning_results)
+            steer_str = (
+                f"avg_steer={avg_steer:.{decimals}f}"
+                if avg_steer is not None
+                else "avg_steer=N/A"
+            )
+            bias_str = (
+                f"|steer_bias|={avg_bias:.{decimals}f}"
+                if avg_bias is not None
+                else "|steer_bias|=N/A"
+            )
+            print(
+                f"  {reasoning_condition}: n={len(reasoning_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
                 f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
             )
