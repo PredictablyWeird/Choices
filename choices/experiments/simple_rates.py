@@ -103,6 +103,9 @@ N_VALUES = {
     ],
 }
 
+# Default max requests for experiments
+MAX_REQUESTS = 1000
+
 # ============= Option Text Generation =============
 
 
@@ -705,8 +708,8 @@ Examples:
     parser.add_argument(
         "--max-requests",
         type=int,
-        default=100,
-        help="Maximum number of API requests (default: 100)",
+        default=MAX_REQUESTS,
+        help=f"Maximum number of API requests (default: {MAX_REQUESTS})",
     )
 
     parser.add_argument(
@@ -720,8 +723,8 @@ Examples:
         "--n-values",
         type=str,
         choices=["binary", "small", "original"],
-        default="small",
-        help="N values to use (default: small = [1, 2, 3, 4, 5])",
+        default="original",
+        help="N values to use (default: original)",
     )
 
     parser.add_argument(

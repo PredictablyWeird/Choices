@@ -45,6 +45,7 @@ from choices.variable import AnalysisConfig, AnalysisType
 # Import from simple_rates
 from choices.experiments.simple_rates import (
     BINARY_FACTORS,
+    MAX_REQUESTS,
     N_VALUES,
     create_option_text_fn,
     sample_balanced_edges,
@@ -963,8 +964,8 @@ Examples:
     parser.add_argument(
         "--max-requests",
         type=int,
-        default=200,
-        help="Maximum number of API requests per experiment (default: 200)",
+        default=MAX_REQUESTS,
+        help=f"Maximum number of API requests per experiment (default: {MAX_REQUESTS})",
     )
 
     parser.add_argument(
@@ -978,8 +979,8 @@ Examples:
         "--n-values",
         type=str,
         choices=["binary", "small", "original"],
-        default="small",
-        help="N values to use (default: small = [1, 2, 3, 4, 5])",
+        default="original",
+        help="N values to use (default: original)",
     )
 
     parser.add_argument(

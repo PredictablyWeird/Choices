@@ -35,7 +35,7 @@ from typing import Annotated, Optional
 import typer
 import yaml
 
-from choices.experiments.simple_rates import BINARY_FACTORS
+from choices.experiments.simple_rates import BINARY_FACTORS, MAX_REQUESTS
 from choices.experiments.nudging.templates import NUDGE_TEMPLATES
 from choices.experiments.nudging.simple import run_nudging_experiments
 
@@ -51,9 +51,9 @@ class BatchConfig:
     nudges: list[str] = field(
         default_factory=lambda: [k for k in NUDGE_TEMPLATES.keys() if k != "custom"]
     )
-    max_requests: int = 200
+    max_requests: int = MAX_REQUESTS
     requests_per_edge: int = 4
-    n_values: str = "small"
+    n_values: str = "original"
     reasoning: str = "none"
     setup: str = "preference"
     seed: int = 42
@@ -75,9 +75,9 @@ class BatchConfig:
             nudges=data.get(
                 "nudges", [k for k in NUDGE_TEMPLATES.keys() if k != "custom"]
             ),
-            max_requests=settings.get("max_requests", 200),
+            max_requests=settings.get("max_requests", MAX_REQUESTS),
             requests_per_edge=settings.get("requests_per_edge", 4),
-            n_values=settings.get("n_values", "small"),
+            n_values=settings.get("n_values", "original"),
             reasoning=settings.get("reasoning", "none"),
             setup=settings.get("setup", "preference"),
             seed=settings.get("seed", 42),
@@ -292,9 +292,9 @@ nudges:
 {nudges_yaml}
 
 settings:
-  max_requests: 200      # API requests per experiment condition
+  max_requests: 20       # API requests per experiment condition (use {MAX_REQUESTS} for real runs)
   requests_per_edge: 4   # Repeats per comparison
-  n_values: small        # Options: binary, small, original
+  n_values: original     # Options: binary, small, original
   reasoning: none        # Options: none, before, after
   setup: preference      # Options: original, decision, preference, or custom text
   seed: 42
