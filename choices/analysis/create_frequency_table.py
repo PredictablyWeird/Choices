@@ -887,20 +887,23 @@ Examples:
         total_nudges = 2 * len(result_list)
 
         # Compute significance rate: fraction of nudges with significant change
-        sig_count = sum(r.sig_A + r.sig_B for r in result_list)
+        # Note: sig_A and sig_B may be numpy bool_ which doesn't add correctly,
+        # so we convert to int explicitly
+        sig_count = sum(int(r.sig_A) + int(r.sig_B) for r in result_list)
         sig_rate = sig_count / total_nudges if total_nudges > 0 else 0.0
 
         # Compute significant backfire rate: fraction of nudges that backfired significantly
         # Only count backfires that are also statistically significant
         sig_backfire_count = sum(
-            (r.backfire_A and r.sig_A) + (r.backfire_B and r.sig_B) for r in result_list
+            int(r.backfire_A and r.sig_A) + int(r.backfire_B and r.sig_B)
+            for r in result_list
         )
         sig_backfire_rate = (
             sig_backfire_count / total_nudges if total_nudges > 0 else 0.0
         )
 
         # Compute backfire rate: fraction of nudges that backfired (regardless of significance)
-        backfire_count = sum(r.backfire_A + r.backfire_B for r in result_list)
+        backfire_count = sum(int(r.backfire_A) + int(r.backfire_B) for r in result_list)
         backfire_rate = backfire_count / total_nudges if total_nudges > 0 else 0.0
 
         return (
@@ -1003,6 +1006,7 @@ Examples:
             backfire_rate,
         ) = get_steer_stats(factor_results)
         # Get level info
+        level_A = factor_results[0].level_A if factor_results else "?"
         level_B = factor_results[0].level_B if factor_results else "?"
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
         abs_steer_str = (
@@ -1022,10 +1026,33 @@ Examples:
         )
         sig_str = f"sig={sig_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
+        # Compute sig rates towards each level (considering all nudges)
+        # sig_towards_A = nudge towards A worked + nudge towards B backfired
+        # sig_towards_B = nudge towards B worked + nudge towards A backfired
+        total_nudges_factor = 2 * len(factor_results)
+        sig_towards_A = 0
+        sig_towards_B = 0
+        for r in factor_results:
+            # Nudge towards A
+            if r.sig_A:
+                if r.backfire_A:
+                    sig_towards_B += 1  # Backfired: shifted towards B
+                else:
+                    sig_towards_A += 1  # Worked: shifted towards A
+            # Nudge towards B
+            if r.sig_B:
+                if r.backfire_B:
+                    sig_towards_A += 1  # Backfired: shifted towards A
+                else:
+                    sig_towards_B += 1  # Worked: shifted towards B
+        sig_A_rate = sig_towards_A / total_nudges_factor
+        sig_B_rate = sig_towards_B / total_nudges_factor
+        sig_A_str = f"sig({level_A})={sig_A_rate:.1%}"
+        sig_B_str = f"sig({level_B})={sig_B_rate:.1%}"
         print(
-            f"  {factor} (B={level_B}): n={len(factor_results)}, "
+            f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
         )
 
     # By nudge type
@@ -1103,30 +1130,18 @@ Examples:
     total_nudges = 2 * len(results)
 
     # Significance statistics
-    sig_A_count = sum(r.sig_A for r in results)
-    sig_B_count = sum(r.sig_B for r in results)
-    total_sig = sig_A_count + sig_B_count
-    print(f"\nOverall Significant Change Rate: {overall_sig_rate:.1%}")
+    total_sig = sum(int(r.sig_A) + int(r.sig_B) for r in results)
     print(
-        f"  Significant changes towards A: {sig_A_count}/{len(results)} ({sig_A_count/len(results):.1%})"
+        f"\nOverall Significant Change Rate: {overall_sig_rate:.1%} ({total_sig}/{total_nudges})"
     )
-    print(
-        f"  Significant changes towards B: {sig_B_count}/{len(results)} ({sig_B_count/len(results):.1%})"
-    )
-    print(f"  Total significant changes: {total_sig}/{total_nudges}")
 
     # Significant backfire statistics (only counting statistically significant backfires)
-    sig_backfire_A_count = sum(r.backfire_A and r.sig_A for r in results)
-    sig_backfire_B_count = sum(r.backfire_B and r.sig_B for r in results)
-    total_sig_backfire = sig_backfire_A_count + sig_backfire_B_count
-    print(f"\nOverall Significant Backfire Rate: {overall_sig_backfire_rate:.1%}")
-    print(
-        f"  Significant backfires towards A: {sig_backfire_A_count}/{len(results)} ({sig_backfire_A_count/len(results):.1%})"
+    total_sig_backfire = sum(
+        int(r.backfire_A and r.sig_A) + int(r.backfire_B and r.sig_B) for r in results
     )
     print(
-        f"  Significant backfires towards B: {sig_backfire_B_count}/{len(results)} ({sig_backfire_B_count/len(results):.1%})"
+        f"Overall Significant Backfire Rate: {overall_sig_backfire_rate:.1%} ({total_sig_backfire}/{total_nudges})"
     )
-    print(f"  Total significant backfires: {total_sig_backfire}/{total_nudges}")
 
 
 if __name__ == "__main__":
