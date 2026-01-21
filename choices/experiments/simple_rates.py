@@ -168,18 +168,28 @@ def sample_balanced_edges(
     options: List[Dict],
     factor_name: str,
     seed: int = 42,
+    include_same_group: bool = False,
 ) -> List[Tuple[Any, Any]]:
     """
     Sample edges ensuring balance: each N value is paired equally with each factor level.
 
-    For each pair of N values (n1, n2), includes ALL cross-factor edges to ensure
+    For each pair of N values (n1, n2), includes cross-factor edges to ensure
     that n1 is paired with each factor level the same number of times.
+
+    By default, excludes edges where both options belong to the same group
+    (e.g., "2 males vs 3 males") since these are not informative for comparing
+    factor preferences. Set include_same_group=True to include these edges.
 
     Example with factor=gender (male, female) and N=(1,2):
     - (male,1) vs (female,2)  -> n1 paired with male, n2 paired with female
     - (female,1) vs (male,2)  -> n1 paired with female, n2 paired with male
-    - (male,1) vs (male,2)    -> n1 paired with male, n2 paired with male
-    - (female,1) vs (female,2)-> n1 paired with female, n2 paired with female
+
+    With include_same_group=True, also includes:
+    - (male,1) vs (male,2)    -> same factor, different N
+    - (female,1) vs (female,2)-> same factor, different N
+
+    Same-N cross-factor edges are also included:
+    - (male,1) vs (female,1)  -> compare factor values at same N
 
     This ensures each factor level appears equally at each N level.
 
@@ -189,6 +199,8 @@ def sample_balanced_edges(
         options: List of option dictionaries
         factor_name: Name of the factor variable (e.g., "gender")
         seed: Random seed
+        include_same_group: If True, include edges where both options have the
+            same factor value (e.g., "2 males vs 3 males"). Default False.
 
     Returns:
         List of (option_A_id, option_B_id) tuples
@@ -216,6 +228,11 @@ def sample_balanced_edges(
 
             for f1 in factor_values:
                 for f2 in factor_values:
+                    # Skip edges where both options have the same factor value
+                    # (e.g., "2 males vs 3 males") unless include_same_group is True
+                    if f1 == f2 and not include_same_group:
+                        continue
+
                     # Edge: (factor=f1, N=n1) vs (factor=f2, N=n2)
                     opt1_id = options_by_factor_n.get((f1, n1))
                     opt2_id = options_by_factor_n.get((f2, n2))
@@ -286,6 +303,7 @@ async def run_simple_experiment(
     seed: int = 42,
     save_dir: str = "results",
     verbose: bool = True,
+    include_same_group: bool = False,
 ) -> ExperimentResults:
     """
     Run a simple preference experiment with random edge selection.
@@ -301,6 +319,8 @@ async def run_simple_experiment(
         seed: Random seed for reproducibility
         save_dir: Base directory for saving results
         verbose: Whether to print progress
+        include_same_group: If True, include edges where both options have the
+            same factor value (e.g., "2 males vs 3 males"). Default False.
 
     Returns:
         ExperimentResults object
@@ -360,7 +380,12 @@ async def run_simple_experiment(
 
     # Sample balanced edges (ensures each N is paired equally with each factor level)
     edge_indices = sample_balanced_edges(
-        graph, num_edges, options, factor_name, seed=seed
+        graph,
+        num_edges,
+        options,
+        factor_name,
+        seed=seed,
+        include_same_group=include_same_group,
     )
 
     if verbose:
@@ -621,6 +646,7 @@ async def run_from_cli(
     n_values: str = "binary",
     seed: int = 42,
     reasoning: str = "none",
+    include_same_group: bool = False,
 ):
     """Run experiment from CLI arguments."""
     variables, prompt_config, analysis_config = create_simple_experiment_config(
@@ -639,6 +665,7 @@ async def run_from_cli(
         requests_per_edge=requests_per_edge,
         seed=seed,
         verbose=True,
+        include_same_group=include_same_group,
     )
 
     return results
@@ -712,6 +739,12 @@ Examples:
         help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
     )
 
+    parser.add_argument(
+        "--include-same-group",
+        action="store_true",
+        help="Include edges where both options have the same factor value (e.g., '2 males vs 3 males')",
+    )
+
     args = parser.parse_args()
 
     if args.list:
@@ -726,6 +759,7 @@ Examples:
                 n_values=args.n_values,
                 seed=args.seed,
                 reasoning=args.reasoning,
+                include_same_group=args.include_same_group,
             )
         )
     else:
