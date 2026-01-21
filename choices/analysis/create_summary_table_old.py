@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Create a summary table of nudge experiment results.
+[DEPRECATED] Old summary table script - use create_summary.py instead.
 
 This script takes results directories and creates a table showing:
 - Model name, reasoning condition, factor, nudge type
@@ -10,19 +10,19 @@ This script takes results directories and creates a table showing:
 
 Usage:
     # Discover all results from default results directory
-    python create_summary_table.py
+    uv run python -m choices.analysis.create_summary_table_old
 
     # Specify results directories
-    python create_summary_table.py --results-dirs results results2
+    uv run python -m choices.analysis.create_summary_table_old --results-dirs results results2
 
     # Filter by models, factors, nudge types
-    python create_summary_table.py \
+    uv run python -m choices.analysis.create_summary_table_old \
         --models llama-33-70b deepseek-v3-2-reasoning \
         --factors age_group social_status \
         --nudge-types weak_evidence emotional
 
     # Output to CSV
-    python create_summary_table.py --output summary.csv
+    uv run python -m choices.analysis.create_summary_table_old --output summary.csv
 """
 
 import argparse
