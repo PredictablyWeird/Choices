@@ -272,11 +272,28 @@ def compute_factor_frequencies(
     target_levels: List[str],
 ) -> Dict[str, float]:
     """Compute win frequencies for each factor level."""
+    stats = compute_factor_frequencies_with_counts(
+        graph_data, factor_name, target_levels
+    )
+    return {level: data["freq"] for level, data in stats.items()}
+
+
+def compute_factor_frequencies_with_counts(
+    graph_data: Dict[str, Any],
+    factor_name: str,
+    target_levels: List[str],
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute win frequencies and sample counts for each factor level.
+
+    Returns:
+        Dictionary mapping level -> {"freq": float, "n": int, "wins": int}
+    """
     options = graph_data.get("options", [])
     edges = graph_data.get("edges", {})
     options_by_id = {opt["id"]: opt for opt in options}
 
-    level_stats = {level: {"wins": 0.0, "total": 0} for level in target_levels}
+    level_stats = {level: {"wins": 0, "total": 0} for level in target_levels}
 
     for edge_key, edge_data in edges.items():
         try:
@@ -330,15 +347,19 @@ def compute_factor_frequencies(
         except Exception:
             continue
 
-    # Compute frequencies
-    frequencies = {}
+    # Compute frequencies with counts
+    result = {}
     for level, stats in level_stats.items():
         if stats["total"] > 0:
-            frequencies[level] = stats["wins"] / stats["total"]
+            result[level] = {
+                "freq": stats["wins"] / stats["total"],
+                "n": stats["total"],
+                "wins": stats["wins"],
+            }
         else:
-            frequencies[level] = 0.5
+            result[level] = {"freq": 0.5, "n": 0, "wins": 0}
 
-    return frequencies
+    return result
 
 
 # =============================================================================

@@ -38,10 +38,10 @@ from choices.analysis.nudge_effect_size import (
     load_preference_graph,
 )
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_frequencies,
+    compute_steerability_bias_from_counts,
 )
 from choices.analysis.utils import (
-    compute_factor_frequencies,
+    compute_factor_frequencies_with_counts,
     get_base_model_name,
     get_model_display_name,
     get_reasoning_condition,
@@ -504,31 +504,28 @@ def compute_experiment_result(
     # Absolute average - captures total responsiveness regardless of direction
     abs_effect_size = (abs(effect_size_A) + abs(effect_size_B)) / 2
 
-    # Compute steerability bias using frequency-based method
-    # Need to use frequency measurements for steerability calculation
+    # Compute steerability bias using count-based method with Haldane-Anscombe correction
     target_levels = [level_A, level_B]
 
-    f_0_A = compute_factor_frequencies(base_graph, factor_var_name, target_levels).get(
-        level_A, 0.5
+    base_stats = compute_factor_frequencies_with_counts(
+        base_graph, factor_var_name, target_levels
     )
-    f_0_B = compute_factor_frequencies(base_graph, factor_var_name, target_levels).get(
-        level_B, 0.5
+    nudge_A_stats = compute_factor_frequencies_with_counts(
+        nudge_A_graph, factor_var_name, target_levels
     )
-    f_A_A = compute_factor_frequencies(
-        nudge_A_graph, factor_var_name, target_levels
-    ).get(level_A, 0.5)
-    f_A_B = compute_factor_frequencies(
-        nudge_A_graph, factor_var_name, target_levels
-    ).get(level_B, 0.5)
-    f_B_A = compute_factor_frequencies(
+    nudge_B_stats = compute_factor_frequencies_with_counts(
         nudge_B_graph, factor_var_name, target_levels
-    ).get(level_A, 0.5)
-    f_B_B = compute_factor_frequencies(
-        nudge_B_graph, factor_var_name, target_levels
-    ).get(level_B, 0.5)
+    )
 
-    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_frequencies(
-        f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+    c_0_A = base_stats.get(level_A, {}).get("wins", 0)
+    c_0_B = base_stats.get(level_B, {}).get("wins", 0)
+    c_A_A = nudge_A_stats.get(level_A, {}).get("wins", 0)
+    c_A_B = nudge_A_stats.get(level_B, {}).get("wins", 0)
+    c_B_A = nudge_B_stats.get(level_A, {}).get("wins", 0)
+    c_B_B = nudge_B_stats.get(level_B, {}).get("wins", 0)
+
+    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_counts(
+        c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
     )
 
     # Determine reasoning condition from model name/config, with fallback to results

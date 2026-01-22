@@ -28,10 +28,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import matplotlib.pyplot as plt
 
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_frequencies,
+    compute_steerability_bias_from_counts,
 )
 from choices.analysis.utils import (
-    compute_factor_frequencies,
+    compute_factor_frequencies_with_counts,
     get_factor_levels,
     get_model_color,
     get_model_display_name,
@@ -256,26 +256,40 @@ def compute_baseline_and_steerability_bias(
         )
         return None
 
-    # Compute frequencies
-    base_freqs = compute_factor_frequencies(base_data, category, target_levels)
-    nudge_A_freqs = compute_factor_frequencies(nudge_A_data, category, target_levels)
-    nudge_B_freqs = compute_factor_frequencies(nudge_B_data, category, target_levels)
+    # Compute frequencies and counts
+    base_stats = compute_factor_frequencies_with_counts(
+        base_data, category, target_levels
+    )
+    nudge_A_stats = compute_factor_frequencies_with_counts(
+        nudge_A_data, category, target_levels
+    )
+    nudge_B_stats = compute_factor_frequencies_with_counts(
+        nudge_B_data, category, target_levels
+    )
 
-    f_0_A = base_freqs.get(level_A, 0.5)
-    f_0_B = base_freqs.get(level_B, 0.5)
-    f_A_A = nudge_A_freqs.get(level_A, 0.5)
-    f_A_B = nudge_A_freqs.get(level_B, 0.5)
-    f_B_A = nudge_B_freqs.get(level_A, 0.5)
-    f_B_B = nudge_B_freqs.get(level_B, 0.5)
+    f_0_A = base_stats.get(level_A, {}).get("freq", 0.5)
+    f_0_B = base_stats.get(level_B, {}).get("freq", 0.5)
+    c_0_A = base_stats.get(level_A, {}).get("wins", 0)
+    c_0_B = base_stats.get(level_B, {}).get("wins", 0)
+
+    f_A_A = nudge_A_stats.get(level_A, {}).get("freq", 0.5)
+    f_A_B = nudge_A_stats.get(level_B, {}).get("freq", 0.5)
+    c_A_A = nudge_A_stats.get(level_A, {}).get("wins", 0)
+    c_A_B = nudge_A_stats.get(level_B, {}).get("wins", 0)
+
+    f_B_A = nudge_B_stats.get(level_A, {}).get("freq", 0.5)
+    f_B_B = nudge_B_stats.get(level_B, {}).get("freq", 0.5)
+    c_B_A = nudge_B_stats.get(level_A, {}).get("wins", 0)
+    c_B_B = nudge_B_stats.get(level_B, {}).get("wins", 0)
 
     # Compute baseline bias: deviation from 50% for level_B
     # Positive means biased towards level_B (consistent with steerability_bias)
     baseline_bias = f_0_B - 0.5
 
-    # Compute steerability bias
+    # Compute steerability bias using counts with Haldane-Anscombe correction
     # Positive steerability_bias means more steerable towards B
-    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_frequencies(
-        f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_counts(
+        c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
     )
 
     if steerability_bias is None:
