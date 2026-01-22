@@ -738,6 +738,7 @@ async def run_nudging_experiments(
     nudge_position: Optional[str] = None,
     nudge_brackets: Optional[str] = None,
     nudge_name: Optional[str] = None,
+    save_dir: str = "results",
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -757,6 +758,7 @@ async def run_nudging_experiments(
         nudge_position: Where to insert nudge (None = use nudge type default)
         nudge_brackets: Bracket style (None = use nudge type default)
         nudge_name: Override directory name for results (defaults to nudge_type)
+        save_dir: Base directory for saving results (default: "results")
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -775,6 +777,7 @@ async def run_nudging_experiments(
     print(f"\nRunning nudging experiments for factor '{factor_name}'")
     print(f"Nudge type: {nudge_type}")
     print(f"Results directory name: {effective_nudge_name}")
+    print(f"Output directory: {save_dir}")
     print(f"Groups to test: {group_values}")
     print("=" * 80)
 
@@ -805,6 +808,7 @@ async def run_nudging_experiments(
         max_requests=max_requests,
         requests_per_edge=requests_per_edge,
         seed=seed,
+        save_dir=save_dir,
         verbose=True,
         reasoning=reasoning,
         save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
@@ -848,6 +852,7 @@ async def run_nudging_experiments(
             max_requests=max_requests,
             requests_per_edge=requests_per_edge,
             seed=seed,
+            save_dir=save_dir,
             verbose=True,
             reasoning=reasoning,
             save_nudge_dir=effective_nudge_name,
@@ -1043,6 +1048,13 @@ Examples:
         help="Override the directory name for results (defaults to --nudge value)",
     )
 
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="results",
+        help="Base directory for saving results (default: results)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -1071,6 +1083,7 @@ Examples:
                 nudge_position=args.nudge_position,
                 nudge_brackets=args.nudge_brackets,
                 nudge_name=args.override_nudge_save_name,
+                save_dir=args.save_dir,
             )
         )
     else:

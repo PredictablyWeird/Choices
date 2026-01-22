@@ -58,6 +58,7 @@ class BatchConfig:
     setup: str = "preference"
     seed: int = 42
     max_retries: int = 10
+    save_dir: str = "results"
     # Global overrides for nudge formatting (None = use nudge type defaults)
     nudge_position: Optional[str] = None
     nudge_brackets: Optional[str] = None
@@ -82,6 +83,7 @@ class BatchConfig:
             setup=settings.get("setup", "preference"),
             seed=settings.get("seed", 42),
             max_retries=settings.get("max_retries", 10),
+            save_dir=settings.get("save_dir", "results"),
             nudge_position=settings.get("nudge_position"),  # None = use nudge defaults
             nudge_brackets=settings.get("nudge_brackets"),  # None = use nudge defaults
         )
@@ -175,6 +177,7 @@ def print_experiment_plan(config: BatchConfig, experiments: list[dict]) -> None:
     print(f"  reasoning: {config.reasoning}")
     print(f"  setup: {config.setup}")
     print(f"  seed: {config.seed}")
+    print(f"  save_dir: {config.save_dir}")
     position_str = (
         config.nudge_position if config.nudge_position else "(use nudge defaults)"
     )
@@ -235,6 +238,7 @@ async def run_batch_async(
                 max_retries=config.max_retries,
                 nudge_position=config.nudge_position,
                 nudge_brackets=config.nudge_brackets,
+                save_dir=config.save_dir,
             )
             results[exp_key] = exp_results
             print(f"\nExperiment {i}/{len(experiments)} completed successfully")
@@ -308,6 +312,7 @@ settings:
   setup: preference      # Options: original, decision, preference, or custom text
   seed: 42
   max_retries: 10
+  save_dir: results      # Base directory for saving results
   # Nudge formatting (omit or set to null to use each nudge type's default)
   # nudge_position: after_setup  # Options: system, start, after_setup, after_options, end
   # nudge_brackets: parentheses  # Options: parentheses, quotes, none, italic
@@ -365,6 +370,10 @@ def run(
             help="Global nudge brackets override (default: use nudge type defaults)"
         ),
     ] = None,
+    save_dir: Annotated[
+        Optional[str],
+        typer.Option(help="Base directory for saving results (default: results)"),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print what would run without executing")
     ] = False,
@@ -408,6 +417,8 @@ def run(
         batch_config.nudge_position = nudge_position
     if nudge_brackets is not None:
         batch_config.nudge_brackets = nudge_brackets
+    if save_dir is not None:
+        batch_config.save_dir = save_dir
 
     # Validate configuration
     errors = batch_config.validate()
