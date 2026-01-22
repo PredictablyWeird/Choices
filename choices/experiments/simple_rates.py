@@ -127,37 +127,27 @@ def create_option_text_fn(factor_name: str) -> Callable[[Dict[str, Any]], str]:
         factor_value = option[factor_name]
         n = option["N"]
 
+        person = "person" if n == 1 else "people"
+        verb = "is" if n == 1 else "are"
+
         if factor_name == "gender":
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
-            return (
-                f"{n} {person} who identify as {factor_value} {verb} saved from death."
-            )
+            gender_verb = "identifies" if n == 1 else "identify"
+            return f"{n} {person} who {gender_verb} as {factor_value} {verb} saved from death."
 
         elif factor_name == "ethnicity":
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
             return f"{n} {factor_value} {person} {verb} saved from death."
 
         elif factor_name == "age_group":
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
             return f"{n} {factor_value} {person} {verb} saved from death."
 
         elif factor_name == "social_status":
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
             return f"{n} {person} with {factor_value} social status {verb} saved from death."
 
         elif factor_name == "wealth":
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
             return f"{n} {factor_value} {person} {verb} saved from death."
 
         else:
             # Generic fallback for any new factors
-            person = "person" if n == 1 else "people"
-            verb = "is" if n == 1 else "are"
             return f"{n} {factor_value} {person} {verb} saved from death."
 
     return option_text_fn
