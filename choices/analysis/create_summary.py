@@ -623,12 +623,38 @@ def compute_all_results(
     return results
 
 
+# Ordered list of (display_header, key) tuples - single source of truth for columns
+TABLE_COLUMNS = [
+    ("Model", "model"),
+    ("Reasoning", "reasoning"),
+    ("Factor", "factor"),
+    ("Nudge Type", "nudge_type"),
+    ("Invalid%", "invalid_pct"),
+    ("f_0(B)", "f_0_b"),
+    ("f_A(B)", "f_a_b"),
+    ("f_B(B)", "f_b_b"),
+    ("Avg f(B)", "avg_f_b"),
+    ("|Effect|", "effect"),
+    ("Steer(A)", "steer_a"),
+    ("Steer(B)", "steer_b"),
+    ("Avg Steer", "avg_steer"),
+    ("|Steer|", "abs_steer"),
+    ("Steer Bias", "steer_bias"),
+    ("Backfire", "backfire"),
+]
+
+# Derived mappings for lookups
+HEADER_TO_KEY = {header.lower(): key for header, key in TABLE_COLUMNS}
+KEY_TO_HEADER = {key: header for header, key in TABLE_COLUMNS}
+
+
 def format_table(
     results: List[FrequencyResult],
     show_display_names: bool = True,
     decimals: int = 2,
     sort_column: Optional[str] = None,
     reverse: bool = False,
+    hide_columns: Optional[List[str]] = None,
 ) -> str:
     """Format results as a text table."""
     if not results:
@@ -637,25 +663,19 @@ def format_table(
     # Sort results
     results = sort_results(results, sort_column, reverse)
 
-    # Build header
-    headers = [
-        "Model",
-        "Reasoning",
-        "Factor (A/B)",
-        "Nudge Type",
-        "Invalid%",
-        "f_0(B)",
-        "f_A(B)",
-        "f_B(B)",
-        "Avg f(B)",
-        "|Effect|",
-        "Steer(A)",
-        "Steer(B)",
-        "Avg Steer",
-        "|Steer|",
-        "Steer Bias",
-        "Backfire",
+    # Normalize hidden columns to lowercase
+    hidden_set = set()
+    if hide_columns:
+        for col in hide_columns:
+            col_lower = col.lower().replace("-", "_").replace(" ", "_")
+            hidden_set.add(col_lower)
+
+    # Filter out hidden columns
+    visible_columns = [
+        (header, key) for header, key in TABLE_COLUMNS if key not in hidden_set
     ]
+    headers = [header for header, _ in visible_columns]
+    visible_keys = [key for _, key in visible_columns]
 
     # Build rows
     rows = []
@@ -686,7 +706,7 @@ def format_table(
             if r.steerability_bias is not None
             else "N/A"
         )
-        factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
+        factor_with_levels = f"{r.level_A}/{r.level_B}"
 
         # Format frequency columns with asterisks for significant changes
         f_A_B_str = f"{r.f_A_B:.{decimals}f}{'*' if r.sig_A else ''}"
@@ -700,26 +720,27 @@ def format_table(
             backfire_parts.append("B")
         backfire_str = ",".join(backfire_parts) if backfire_parts else "None"
 
-        rows.append(
-            [
-                model_name,
-                r.reasoning_condition,
-                factor_with_levels,
-                r.nudge_type,
-                f"{r.invalid_pct:.1f}%",
-                f"{r.f_0_B:.{decimals}f}",
-                f_A_B_str,
-                f_B_B_str,
-                f"{r.avg_f_B:.{decimals}f}",
-                f"{r.abs_effect:.{decimals}f}",
-                steer_A_str,
-                steer_B_str,
-                avg_steer_str,
-                abs_steer_str,
-                steer_bias_str,
-                backfire_str,
-            ]
-        )
+        # Map keys to values
+        all_values = {
+            "model": model_name,
+            "reasoning": r.reasoning_condition,
+            "factor": factor_with_levels,
+            "nudge_type": r.nudge_type,
+            "invalid_pct": f"{r.invalid_pct:.1f}%",
+            "f_0_b": f"{r.f_0_B:.{decimals}f}",
+            "f_a_b": f_A_B_str,
+            "f_b_b": f_B_B_str,
+            "avg_f_b": f"{r.avg_f_B:.{decimals}f}",
+            "effect": f"{r.abs_effect:.{decimals}f}",
+            "steer_a": steer_A_str,
+            "steer_b": steer_B_str,
+            "avg_steer": avg_steer_str,
+            "abs_steer": abs_steer_str,
+            "steer_bias": steer_bias_str,
+            "backfire": backfire_str,
+        }
+
+        rows.append([all_values[key] for key in visible_keys])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
@@ -926,6 +947,14 @@ Examples:
         help="Number of decimal places for frequency values (default: 2)",
     )
 
+    parser.add_argument(
+        "--hide-columns",
+        nargs="+",
+        default=None,
+        help="List of columns to hide. Column names (case-insensitive): "
+        + ", ".join(key for _, key in TABLE_COLUMNS),
+    )
+
     args = parser.parse_args()
 
     print("=" * 80)
@@ -945,6 +974,8 @@ Examples:
         if args.reverse:
             sort_desc += " (descending)"
         print(sort_desc)
+    if args.hide_columns:
+        print(f"Hidden columns: {args.hide_columns}")
     print("=" * 80)
     print()
 
@@ -974,7 +1005,16 @@ Examples:
     if args.output:
         write_csv(results, args.output, show_display_names, sort_column, reverse)
     else:
-        print(format_table(results, show_display_names, decimals, sort_column, reverse))
+        print(
+            format_table(
+                results,
+                show_display_names,
+                decimals,
+                sort_column,
+                reverse,
+                args.hide_columns,
+            )
+        )
 
     # Print summary statistics
     print("\n" + "=" * 80)

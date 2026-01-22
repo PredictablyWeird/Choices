@@ -292,7 +292,8 @@ factors:
   - gender
   - age_group
   - wealth
-  - social_status
+  - nationality
+  - handedness
 
 nudges:
   # Information-based nudges:
