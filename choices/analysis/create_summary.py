@@ -62,6 +62,7 @@ from choices.analysis.utils import (
     get_base_model_name,
     get_model_display_name,
     get_reasoning_condition,
+    get_reasoning_mode_from_results,
 )
 
 # Default significance level (95% confidence)
@@ -324,22 +325,30 @@ def find_condition_directories(
     model: str,
     nudge_type: str,
     results_base_dir: str = "results",
-) -> Dict[str, Path]:
+) -> List[Dict[str, Path]]:
     """
     Find result directories for each condition (base, and each nudge target).
 
+    Groups directories by both condition AND reasoning_mode to handle cases where
+    the same model/factor/nudge_type has results with different reasoning settings.
+
     Returns:
-        Dictionary mapping condition name -> Path to result directory
-        e.g., {'base': Path(...), 'young': Path(...), 'old': Path(...)}
+        List of dictionaries, each mapping condition name -> Path to result directory.
+        Each dict represents a complete experiment with consistent reasoning_mode.
+        e.g., [
+            {'base': Path(...), 'young': Path(...), 'old': Path(...)},  # reasoning_mode="none"
+            {'base': Path(...), 'young': Path(...), 'old': Path(...)},  # reasoning_mode="before"
+        ]
     """
     experiment_name = f"simple_{factor_name}"
     base_path = Path(results_base_dir) / experiment_name / model / nudge_type
 
     if not base_path.exists():
-        return {}
+        return []
 
-    result_dirs = {}
-    dirs_by_condition: Dict[str, List[Path]] = {}
+    # Group directories by (condition, reasoning_mode)
+    # Key: (condition, reasoning_mode), Value: list of directories
+    dirs_by_condition_and_reasoning: Dict[Tuple[str, str], List[Path]] = {}
 
     for result_dir in base_path.iterdir():
         if not result_dir.is_dir():
@@ -354,41 +363,49 @@ def find_condition_directories(
             if not condition:
                 continue
 
-        if condition not in dirs_by_condition:
-            dirs_by_condition[condition] = []
-        dirs_by_condition[condition].append(result_dir)
+        # Get reasoning_mode from the utility model JSON
+        reasoning_mode = get_reasoning_mode_from_results(result_dir)
+        if reasoning_mode is None:
+            reasoning_mode = "unknown"
 
-    # For each condition, use the most recent directory
-    for condition, dirs in dirs_by_condition.items():
+        key = (condition, reasoning_mode)
+        if key not in dirs_by_condition_and_reasoning:
+            dirs_by_condition_and_reasoning[key] = []
+        dirs_by_condition_and_reasoning[key].append(result_dir)
+
+    # For each (condition, reasoning_mode), use the most recent directory
+    # Then group by reasoning_mode to build complete experiments
+    experiments_by_reasoning: Dict[str, Dict[str, Path]] = {}
+
+    for (condition, reasoning_mode), dirs in dirs_by_condition_and_reasoning.items():
         most_recent = max(dirs, key=lambda d: d.stat().st_mtime)
-        result_dirs[condition] = most_recent
 
-    return result_dirs
+        if reasoning_mode not in experiments_by_reasoning:
+            experiments_by_reasoning[reasoning_mode] = {}
+        experiments_by_reasoning[reasoning_mode][condition] = most_recent
+
+    # Return list of complete experiments (one per reasoning_mode)
+    return list(experiments_by_reasoning.values())
 
 
-def compute_frequency_result(
+def _compute_single_frequency_result(
     factor_name: str,
     model: str,
     nudge_type: str,
-    results_base_dir: str = "results",
+    condition_dirs: Dict[str, Path],
 ) -> Optional[FrequencyResult]:
     """
-    Compute frequency metrics for a single experiment.
+    Compute frequency metrics for a single experiment given its condition directories.
 
     Args:
         factor_name: Name of the factor (e.g., 'age_group')
         model: Model name
         nudge_type: Type of nudge (e.g., 'user_preference')
-        results_base_dir: Base directory for results
+        condition_dirs: Dictionary mapping condition name -> Path to result directory
 
     Returns:
         FrequencyResult object or None if data is insufficient
     """
-    # Find all condition directories
-    condition_dirs = find_condition_directories(
-        factor_name, model, nudge_type, results_base_dir
-    )
-
     if "base" not in condition_dirs:
         return None
 
@@ -533,6 +550,43 @@ def compute_frequency_result(
     )
 
 
+def compute_frequency_results(
+    factor_name: str,
+    model: str,
+    nudge_type: str,
+    results_base_dir: str = "results",
+) -> List[FrequencyResult]:
+    """
+    Compute frequency metrics for all experiments matching the given parameters.
+
+    This handles cases where the same model/factor/nudge_type combination has
+    multiple experiment runs with different reasoning_mode settings.
+
+    Args:
+        factor_name: Name of the factor (e.g., 'age_group')
+        model: Model name
+        nudge_type: Type of nudge (e.g., 'user_preference')
+        results_base_dir: Base directory for results
+
+    Returns:
+        List of FrequencyResult objects (one per unique reasoning_mode)
+    """
+    # Find all experiment sets (one per reasoning_mode)
+    experiment_sets = find_condition_directories(
+        factor_name, model, nudge_type, results_base_dir
+    )
+
+    results = []
+    for condition_dirs in experiment_sets:
+        result = _compute_single_frequency_result(
+            factor_name, model, nudge_type, condition_dirs
+        )
+        if result is not None:
+            results.append(result)
+
+    return results
+
+
 def discover_experiments(
     results_base_dirs: List[str],
     model_filter: Optional[List[str]] = None,
@@ -616,11 +670,11 @@ def compute_all_results(
 
     results = []
     for results_base_dir, factor_name, model, nudge_type in experiments:
-        result = compute_frequency_result(
+        # compute_frequency_results returns a list (one per reasoning_mode)
+        experiment_results = compute_frequency_results(
             factor_name, model, nudge_type, results_base_dir
         )
-        if result is not None:
-            results.append(result)
+        results.extend(experiment_results)
 
     return results
 
