@@ -21,7 +21,7 @@ import numpy as np
 from scipy import stats
 
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_frequencies,
+    compute_steerability_bias_from_counts,
 )
 
 # Default significance level (95% confidence)
@@ -287,12 +287,11 @@ def bootstrap_steerability_bias(
 
         return edge_list
 
-    def compute_frequencies_from_edge_list(
+    def compute_counts_from_edge_list(
         edge_list: List[Dict], resample: bool = False
-    ) -> Tuple[float, float]:
-        """Compute frequencies for level_A and level_B from edge list."""
+    ) -> Tuple[int, int]:
+        """Compute win counts for level_A and level_B from edge list."""
         wins = {level_A: 0, level_B: 0}
-        total = {level_A: 0, level_B: 0}
 
         for edge in edge_list:
             la, lb = edge["level_a"], edge["level_b"]
@@ -316,8 +315,6 @@ def bootstrap_steerability_bias(
                     wins[la] += 1
                 else:  # resp == "B"
                     wins[lb] += 1
-                total[la] += 1
-                total[lb] += 1
 
             # Process flipped responses (A in flipped = original B position)
             for resp in flipped:
@@ -325,14 +322,8 @@ def bootstrap_steerability_bias(
                     wins[lb] += 1
                 else:  # resp == "B"
                     wins[la] += 1
-                total[la] += 1
-                total[lb] += 1
 
-        # Compute frequencies
-        freq_A = wins[level_A] / total[level_A] if total[level_A] > 0 else 0.5
-        freq_B = wins[level_B] / total[level_B] if total[level_B] > 0 else 0.5
-
-        return freq_A, freq_B
+        return wins[level_A], wins[level_B]
 
     # Extract edge responses for each condition
     base_edges = extract_edge_responses(base_graph_data)
@@ -352,13 +343,13 @@ def bootstrap_steerability_bias(
     biases = []
     for _ in range(n_bootstrap):
         # Resample each condition
-        f_0_A, f_0_B = compute_frequencies_from_edge_list(base_edges, resample=True)
-        f_A_A, f_A_B = compute_frequencies_from_edge_list(nudge_A_edges, resample=True)
-        f_B_A, f_B_B = compute_frequencies_from_edge_list(nudge_B_edges, resample=True)
+        c_0_A, c_0_B = compute_counts_from_edge_list(base_edges, resample=True)
+        c_A_A, c_A_B = compute_counts_from_edge_list(nudge_A_edges, resample=True)
+        c_B_A, c_B_B = compute_counts_from_edge_list(nudge_B_edges, resample=True)
 
-        # Compute steerability bias
-        _, _, bias = compute_steerability_bias_from_frequencies(
-            f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+        # Compute steerability bias using counts with Haldane-Anscombe correction
+        _, _, bias = compute_steerability_bias_from_counts(
+            c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
         )
 
         if bias is not None:
@@ -1456,36 +1447,48 @@ def _display_steerability_bias(
             if level_A not in stats_by_target or level_B not in stats_by_target:
                 continue
 
-            # Get frequencies for base condition
-            f_0_A = base_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
-            f_0_B = base_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+            # Get frequencies and counts for base condition
+            base_A_data = base_stats["factor_probs"].get(level_A, {})
+            base_B_data = base_stats["factor_probs"].get(level_B, {})
+            f_0_A = base_A_data.get("prob_chosen")
+            f_0_B = base_B_data.get("prob_chosen")
+            c_0_A = base_A_data.get("n_wins")
+            c_0_B = base_B_data.get("n_wins")
 
-            if f_0_A is None or f_0_B is None:
+            if f_0_A is None or f_0_B is None or c_0_A is None or c_0_B is None:
                 continue
 
-            # Get frequencies for nudge towards A
+            # Get frequencies and counts for nudge towards A
             nudge_A_stats = stats_by_target.get(level_A, {})
             if not nudge_A_stats:
                 continue
-            f_A_A = nudge_A_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
-            f_A_B = nudge_A_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+            nudge_A_A_data = nudge_A_stats["factor_probs"].get(level_A, {})
+            nudge_A_B_data = nudge_A_stats["factor_probs"].get(level_B, {})
+            f_A_A = nudge_A_A_data.get("prob_chosen")
+            f_A_B = nudge_A_B_data.get("prob_chosen")
+            c_A_A = nudge_A_A_data.get("n_wins")
+            c_A_B = nudge_A_B_data.get("n_wins")
 
-            if f_A_A is None or f_A_B is None:
+            if f_A_A is None or f_A_B is None or c_A_A is None or c_A_B is None:
                 continue
 
-            # Get frequencies for nudge towards B
+            # Get frequencies and counts for nudge towards B
             nudge_B_stats = stats_by_target.get(level_B, {})
             if not nudge_B_stats:
                 continue
-            f_B_A = nudge_B_stats["factor_probs"].get(level_A, {}).get("prob_chosen")
-            f_B_B = nudge_B_stats["factor_probs"].get(level_B, {}).get("prob_chosen")
+            nudge_B_A_data = nudge_B_stats["factor_probs"].get(level_A, {})
+            nudge_B_B_data = nudge_B_stats["factor_probs"].get(level_B, {})
+            f_B_A = nudge_B_A_data.get("prob_chosen")
+            f_B_B = nudge_B_B_data.get("prob_chosen")
+            c_B_A = nudge_B_A_data.get("n_wins")
+            c_B_B = nudge_B_B_data.get("n_wins")
 
-            if f_B_A is None or f_B_B is None:
+            if f_B_A is None or f_B_B is None or c_B_A is None or c_B_B is None:
                 continue
 
-            # Compute steerability bias
-            steer_A, steer_B, bias = compute_steerability_bias_from_frequencies(
-                f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B
+            # Compute steerability bias using counts with Haldane-Anscombe correction
+            steer_A, steer_B, bias = compute_steerability_bias_from_counts(
+                c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
             )
 
             # Compute bootstrap CI for bias
