@@ -108,6 +108,21 @@ def format_group_label(factor_name: str, group_value: str) -> str:
             return "people of high social status"
         else:
             return f"{group_value} status people"
+    elif factor_name == "nationality":
+        return f"{group_value}s"  # Americans, Nigerians
+    elif factor_name == "tech_view":
+        return f"{group_value}s"  # technophobes, futurists
+    elif factor_name == "diet":
+        if group_value == "vegetarian":
+            return "vegetarians"
+        else:
+            return "non-vegetarians"
+    elif factor_name == "extraversion":
+        return f"{group_value}s"  # introverts, extroverts
+    elif factor_name == "hair_color":
+        return f"people with {group_value} hair"
+    elif factor_name == "handedness":
+        return f"{group_value} people"  # left-handed people, right-handed people
     else:
         return f"{group_value} people"
 
