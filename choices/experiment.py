@@ -128,13 +128,27 @@ class PromptConfig:
         else:  # "none"
             return self.nudge_text
 
+    def _append_nudge(self, parts: list, nudge: str) -> None:
+        """
+        Append a nudge to the parts list with appropriate spacing.
+
+        - parentheses brackets: single newline (attached to previous part)
+        - other brackets: double newline (separate part)
+        """
+        if self.nudge_brackets == "parentheses" and parts:
+            # Append to previous part with single newline
+            parts[-1] = parts[-1] + "\n" + nudge
+        else:
+            # Add as separate part (will be joined with double newline)
+            parts.append(nudge)
+
     @property
     def template(self) -> str:
         """Dynamically generate the full template from components."""
         parts = []
         nudge = self._format_nudge()
 
-        # Start position: nudge before setup
+        # Start position: nudge before setup (no prefix regardless of style)
         if nudge and self.nudge_position == "start":
             parts.append(nudge)
 
@@ -143,21 +157,21 @@ class PromptConfig:
 
         # After_setup position: nudge after setup, before options (default)
         if nudge and self.nudge_position == "after_setup":
-            parts.append(nudge)
+            self._append_nudge(parts, nudge)
 
         if self.option_list:
             parts.append(self.option_list)
 
         # After_options position: nudge after options, before instructions
         if nudge and self.nudge_position == "after_options":
-            parts.append(nudge)
+            self._append_nudge(parts, nudge)
 
         if self.instructions:
             parts.append(self.instructions)
 
         # End position: nudge after instructions
         if nudge and self.nudge_position == "end":
-            parts.append(nudge)
+            self._append_nudge(parts, nudge)
 
         if self.ending:
             parts.append(self.ending)

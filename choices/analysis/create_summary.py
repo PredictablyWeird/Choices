@@ -23,6 +23,17 @@ Usage:
         --factors age_group social_status \
         --nudge-types user_preference
 
+    # Filter by reasoning condition (as displayed in the Reasoning column)
+    uv run python -m choices.analysis.create_summary --reasoning low medium high
+    uv run python -m choices.analysis.create_summary --reasoning none before after
+
+    # Sort by a specific column (ascending by default)
+    uv run python -m choices.analysis.create_summary --sort steer_bias
+    uv run python -m choices.analysis.create_summary --sort abs_effect --reverse
+
+    # Sort by absolute value (prefix column with "abs-")
+    uv run python -m choices.analysis.create_summary --sort abs-steer_bias --reverse
+
     # Output to CSV
     uv run python -m choices.analysis.create_summary --output summary.csv
 
@@ -55,6 +66,97 @@ from choices.analysis.utils import (
 
 # Default significance level (95% confidence)
 DEFAULT_ALPHA = 0.05
+
+# Mapping from display column names to FrequencyResult attributes
+# Keys are lowercase for case-insensitive matching
+COLUMN_TO_ATTR = {
+    "model": "model",
+    "reasoning": "reasoning_condition",
+    "factor": "factor",
+    "nudge_type": "nudge_type",
+    "nudge type": "nudge_type",
+    "invalid%": "invalid_pct",
+    "invalid_pct": "invalid_pct",
+    "f_0(b)": "f_0_B",
+    "f_0_b": "f_0_B",
+    "f_a(b)": "f_A_B",
+    "f_a_b": "f_A_B",
+    "f_b(b)": "f_B_B",
+    "f_b_b": "f_B_B",
+    "avg f(b)": "avg_f_B",
+    "avg_f_b": "avg_f_B",
+    "|effect|": "abs_effect",
+    "abs_effect": "abs_effect",
+    "effect": "abs_effect",
+    "steer(a)": "steerability_A",
+    "steerability_a": "steerability_A",
+    "steer_a": "steerability_A",
+    "steer(b)": "steerability_B",
+    "steerability_b": "steerability_B",
+    "steer_b": "steerability_B",
+    "avg steer": "avg_steerability",
+    "avg_steer": "avg_steerability",
+    "avg_steerability": "avg_steerability",
+    "|steer|": "abs_steerability",
+    "abs_steer": "abs_steerability",
+    "abs_steerability": "abs_steerability",
+    "steer bias": "steerability_bias",
+    "steer_bias": "steerability_bias",
+    "steerability_bias": "steerability_bias",
+    "n_comparisons": "n_comparisons",
+}
+
+
+def sort_results(
+    results: List["FrequencyResult"],
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
+) -> List["FrequencyResult"]:
+    """
+    Sort results by the specified column.
+
+    Args:
+        results: List of FrequencyResult objects
+        sort_column: Column name to sort by. Prefix with "abs-" to sort by absolute value.
+        reverse: If True, sort in descending order
+
+    Returns:
+        Sorted list of results
+    """
+    if not sort_column:
+        # Default sort: by base_model, factor, nudge_type, reasoning_condition
+        return sorted(
+            results,
+            key=lambda r: (
+                get_base_model_name(r.model),
+                r.factor,
+                r.nudge_type,
+                r.reasoning_condition,
+            ),
+        )
+
+    # Check for abs- prefix
+    use_abs = sort_column.lower().startswith("abs-")
+    if use_abs:
+        sort_column = sort_column[4:]  # Remove "abs-" prefix
+
+    # Look up the attribute name
+    attr_name = COLUMN_TO_ATTR.get(sort_column.lower())
+    if not attr_name:
+        print(f"Warning: Unknown sort column '{sort_column}'. Using default sort.")
+        print(f"Valid columns: {', '.join(sorted(set(COLUMN_TO_ATTR.values())))}")
+        return sort_results(results, None, reverse)
+
+    def sort_key(r: "FrequencyResult"):
+        val = getattr(r, attr_name)
+        # Handle None values - put them at the end
+        if val is None:
+            return (1, 0)  # (is_none, value) - None values sort last
+        if use_abs:
+            return (0, abs(val))
+        return (0, val)
+
+    return sorted(results, key=sort_key, reverse=reverse)
 
 
 @dataclass
@@ -521,45 +623,59 @@ def compute_all_results(
     return results
 
 
+# Ordered list of (display_header, key) tuples - single source of truth for columns
+TABLE_COLUMNS = [
+    ("Model", "model"),
+    ("Reasoning", "reasoning"),
+    ("Factor", "factor"),
+    ("Nudge Type", "nudge_type"),
+    ("Invalid%", "invalid_pct"),
+    ("f_0(B)", "f_0_b"),
+    ("f_A(B)", "f_a_b"),
+    ("f_B(B)", "f_b_b"),
+    ("Avg f(B)", "avg_f_b"),
+    ("|Effect|", "effect"),
+    ("Steer(A)", "steer_a"),
+    ("Steer(B)", "steer_b"),
+    ("Avg Steer", "avg_steer"),
+    ("|Steer|", "abs_steer"),
+    ("Steer Bias", "steer_bias"),
+    ("Backfire", "backfire"),
+]
+
+# Derived mappings for lookups
+HEADER_TO_KEY = {header.lower(): key for header, key in TABLE_COLUMNS}
+KEY_TO_HEADER = {key: header for header, key in TABLE_COLUMNS}
+
+
 def format_table(
     results: List[FrequencyResult],
     show_display_names: bool = True,
     decimals: int = 2,
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
+    hide_columns: Optional[List[str]] = None,
 ) -> str:
     """Format results as a text table."""
     if not results:
         return "No results found."
 
-    # Sort by base_model, factor, nudge_type, reasoning_condition
-    results = sorted(
-        results,
-        key=lambda r: (
-            get_base_model_name(r.model),
-            r.factor,
-            r.nudge_type,
-            r.reasoning_condition,
-        ),
-    )
+    # Sort results
+    results = sort_results(results, sort_column, reverse)
 
-    # Build header
-    headers = [
-        "Model",
-        "Reasoning",
-        "Factor (A/B)",
-        "Nudge Type",
-        "Invalid%",
-        "f_0(B)",
-        "f_A(B)",
-        "f_B(B)",
-        "Avg f(B)",
-        "|Effect|",
-        "Steer(A)",
-        "Steer(B)",
-        "Avg Steer",
-        "|Steer|",
-        "Steer Bias",
-        "Backfire",
+    # Normalize hidden columns to lowercase
+    hidden_set = set()
+    if hide_columns:
+        for col in hide_columns:
+            col_lower = col.lower().replace("-", "_").replace(" ", "_")
+            hidden_set.add(col_lower)
+
+    # Filter out hidden columns
+    visible_columns = [
+        (header, key) for header, key in TABLE_COLUMNS if key not in hidden_set
     ]
+    headers = [header for header, _ in visible_columns]
+    visible_keys = [key for _, key in visible_columns]
 
     # Build rows
     rows = []
@@ -590,7 +706,7 @@ def format_table(
             if r.steerability_bias is not None
             else "N/A"
         )
-        factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
+        factor_with_levels = f"{r.level_A}/{r.level_B}"
 
         # Format frequency columns with asterisks for significant changes
         f_A_B_str = f"{r.f_A_B:.{decimals}f}{'*' if r.sig_A else ''}"
@@ -604,26 +720,27 @@ def format_table(
             backfire_parts.append("B")
         backfire_str = ",".join(backfire_parts) if backfire_parts else "None"
 
-        rows.append(
-            [
-                model_name,
-                r.reasoning_condition,
-                factor_with_levels,
-                r.nudge_type,
-                f"{r.invalid_pct:.1f}%",
-                f"{r.f_0_B:.{decimals}f}",
-                f_A_B_str,
-                f_B_B_str,
-                f"{r.avg_f_B:.{decimals}f}",
-                f"{r.abs_effect:.{decimals}f}",
-                steer_A_str,
-                steer_B_str,
-                avg_steer_str,
-                abs_steer_str,
-                steer_bias_str,
-                backfire_str,
-            ]
-        )
+        # Map keys to values
+        all_values = {
+            "model": model_name,
+            "reasoning": r.reasoning_condition,
+            "factor": factor_with_levels,
+            "nudge_type": r.nudge_type,
+            "invalid_pct": f"{r.invalid_pct:.1f}%",
+            "f_0_b": f"{r.f_0_B:.{decimals}f}",
+            "f_a_b": f_A_B_str,
+            "f_b_b": f_B_B_str,
+            "avg_f_b": f"{r.avg_f_B:.{decimals}f}",
+            "effect": f"{r.abs_effect:.{decimals}f}",
+            "steer_a": steer_A_str,
+            "steer_b": steer_B_str,
+            "avg_steer": avg_steer_str,
+            "abs_steer": abs_steer_str,
+            "steer_bias": steer_bias_str,
+            "backfire": backfire_str,
+        }
+
+        rows.append([all_values[key] for key in visible_keys])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
@@ -649,22 +766,16 @@ def write_csv(
     results: List[FrequencyResult],
     output_path: str,
     show_display_names: bool = True,
+    sort_column: Optional[str] = None,
+    reverse: bool = False,
 ) -> None:
     """Write results to a CSV file."""
     if not results:
         print("No results to write.")
         return
 
-    # Sort by base_model, factor, nudge_type, reasoning_condition
-    results = sorted(
-        results,
-        key=lambda r: (
-            get_base_model_name(r.model),
-            r.factor,
-            r.nudge_type,
-            r.reasoning_condition,
-        ),
-    )
+    # Sort results
+    results = sort_results(results, sort_column, reverse)
 
     headers = [
         "model",
@@ -746,6 +857,14 @@ Examples:
         --factors age_group social_status \\
         --nudge-types user_preference
 
+    # Filter by reasoning condition (as shown in the table)
+    python create_frequency_table.py --reasoning low medium high
+    python create_frequency_table.py --reasoning none before after
+
+    # Sort by a column (use abs- prefix for absolute value sorting)
+    python create_frequency_table.py --sort steer_bias
+    python create_frequency_table.py --sort abs-steer_bias --reverse
+
     # Output to CSV
     python create_frequency_table.py --output frequencies.csv
         """,
@@ -780,6 +899,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--reasoning",
+        nargs="+",
+        default=None,
+        help="List of reasoning conditions to include, as they appear in the table "
+        "(e.g., 'low', 'medium', 'high', 'off', 'before', 'after', 'none', '10000')",
+    )
+
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -794,11 +921,38 @@ Examples:
     )
 
     parser.add_argument(
+        "--sort",
+        "-s",
+        type=str,
+        default=None,
+        help="Column to sort by. Prefix with 'abs-' to sort by absolute value "
+        "(e.g., 'steer_bias', 'abs-steer_bias', 'abs_effect'). "
+        "Valid columns: model, reasoning, factor, nudge_type, invalid_pct, "
+        "f_0_B, f_A_B, f_B_B, avg_f_B, abs_effect, steerability_A, steerability_B, "
+        "avg_steerability, abs_steerability, steerability_bias",
+    )
+
+    parser.add_argument(
+        "--reverse",
+        "-r",
+        action="store_true",
+        help="Sort in descending order (default: ascending)",
+    )
+
+    parser.add_argument(
         "--decimals",
         "-d",
         type=int,
         default=2,
         help="Number of decimal places for frequency values (default: 2)",
+    )
+
+    parser.add_argument(
+        "--hide-columns",
+        nargs="+",
+        default=None,
+        help="List of columns to hide. Column names (case-insensitive): "
+        + ", ".join(key for _, key in TABLE_COLUMNS),
     )
 
     args = parser.parse_args()
@@ -813,6 +967,15 @@ Examples:
         print(f"Factor filter: {args.factors}")
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
+    if args.reasoning:
+        print(f"Reasoning condition filter: {args.reasoning}")
+    if args.sort:
+        sort_desc = f"Sort by: {args.sort}"
+        if args.reverse:
+            sort_desc += " (descending)"
+        print(sort_desc)
+    if args.hide_columns:
+        print(f"Hidden columns: {args.hide_columns}")
     print("=" * 80)
     print()
 
@@ -824,6 +987,10 @@ Examples:
         nudge_type_filter=args.nudge_types,
     )
 
+    # Apply reasoning condition filter (post-computation since it's derived from results)
+    if args.reasoning:
+        results = [r for r in results if r.reasoning_condition in args.reasoning]
+
     print(f"Found {len(results)} complete experiments\n")
 
     if not results:
@@ -832,11 +999,22 @@ Examples:
 
     show_display_names = not args.no_display_names
     decimals = args.decimals
+    sort_column = args.sort
+    reverse = args.reverse
 
     if args.output:
-        write_csv(results, args.output, show_display_names)
+        write_csv(results, args.output, show_display_names, sort_column, reverse)
     else:
-        print(format_table(results, show_display_names, decimals))
+        print(
+            format_table(
+                results,
+                show_display_names,
+                decimals,
+                sort_column,
+                reverse,
+                args.hide_columns,
+            )
+        )
 
     # Print summary statistics
     print("\n" + "=" * 80)

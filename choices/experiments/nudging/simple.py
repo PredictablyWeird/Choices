@@ -45,6 +45,7 @@ from choices.variable import AnalysisConfig, AnalysisType
 # Import from simple_rates
 from choices.experiments.simple_rates import (
     BINARY_FACTORS,
+    MAX_REQUESTS,
     N_VALUES,
     create_option_text_fn,
     sample_balanced_edges,
@@ -107,6 +108,21 @@ def format_group_label(factor_name: str, group_value: str) -> str:
             return "people of high social status"
         else:
             return f"{group_value} status people"
+    elif factor_name == "nationality":
+        return f"{group_value}s"  # Americans, Nigerians
+    elif factor_name == "tech_view":
+        return f"{group_value}s"  # technophobes, futurists
+    elif factor_name == "diet":
+        if group_value == "vegetarian":
+            return "vegetarians"
+        else:
+            return "non-vegetarians"
+    elif factor_name == "extraversion":
+        return f"{group_value}s"  # introverts, extroverts
+    elif factor_name == "hair_color":
+        return f"people with {group_value} hair"
+    elif factor_name == "handedness":
+        return f"{group_value} people"  # left-handed people, right-handed people
     else:
         return f"{group_value} people"
 
@@ -722,6 +738,7 @@ async def run_nudging_experiments(
     nudge_position: Optional[str] = None,
     nudge_brackets: Optional[str] = None,
     nudge_name: Optional[str] = None,
+    save_dir: str = "results",
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -741,6 +758,7 @@ async def run_nudging_experiments(
         nudge_position: Where to insert nudge (None = use nudge type default)
         nudge_brackets: Bracket style (None = use nudge type default)
         nudge_name: Override directory name for results (defaults to nudge_type)
+        save_dir: Base directory for saving results (default: "results")
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -759,6 +777,7 @@ async def run_nudging_experiments(
     print(f"\nRunning nudging experiments for factor '{factor_name}'")
     print(f"Nudge type: {nudge_type}")
     print(f"Results directory name: {effective_nudge_name}")
+    print(f"Output directory: {save_dir}")
     print(f"Groups to test: {group_values}")
     print("=" * 80)
 
@@ -789,6 +808,7 @@ async def run_nudging_experiments(
         max_requests=max_requests,
         requests_per_edge=requests_per_edge,
         seed=seed,
+        save_dir=save_dir,
         verbose=True,
         reasoning=reasoning,
         save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
@@ -832,6 +852,7 @@ async def run_nudging_experiments(
             max_requests=max_requests,
             requests_per_edge=requests_per_edge,
             seed=seed,
+            save_dir=save_dir,
             verbose=True,
             reasoning=reasoning,
             save_nudge_dir=effective_nudge_name,
@@ -963,8 +984,8 @@ Examples:
     parser.add_argument(
         "--max-requests",
         type=int,
-        default=200,
-        help="Maximum number of API requests per experiment (default: 200)",
+        default=MAX_REQUESTS,
+        help=f"Maximum number of API requests per experiment (default: {MAX_REQUESTS})",
     )
 
     parser.add_argument(
@@ -977,9 +998,9 @@ Examples:
     parser.add_argument(
         "--n-values",
         type=str,
-        choices=["binary", "small", "original"],
-        default="small",
-        help="N values to use (default: small = [1, 2, 3, 4, 5])",
+        choices=["binary", "small", "paper", "original"],
+        default="paper",
+        help="N values to use (default: paper)",
     )
 
     parser.add_argument(
@@ -1027,6 +1048,13 @@ Examples:
         help="Override the directory name for results (defaults to --nudge value)",
     )
 
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="results",
+        help="Base directory for saving results (default: results)",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -1055,6 +1083,7 @@ Examples:
                 nudge_position=args.nudge_position,
                 nudge_brackets=args.nudge_brackets,
                 nudge_name=args.override_nudge_save_name,
+                save_dir=args.save_dir,
             )
         )
     else:

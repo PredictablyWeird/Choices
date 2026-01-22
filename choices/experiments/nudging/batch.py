@@ -35,7 +35,7 @@ from typing import Annotated, Optional
 import typer
 import yaml
 
-from choices.experiments.simple_rates import BINARY_FACTORS
+from choices.experiments.simple_rates import BINARY_FACTORS, MAX_REQUESTS
 from choices.experiments.nudging.templates import NUDGE_TEMPLATES
 from choices.experiments.nudging.simple import run_nudging_experiments
 
@@ -51,13 +51,14 @@ class BatchConfig:
     nudges: list[str] = field(
         default_factory=lambda: [k for k in NUDGE_TEMPLATES.keys() if k != "custom"]
     )
-    max_requests: int = 200
+    max_requests: int = MAX_REQUESTS
     requests_per_edge: int = 4
-    n_values: str = "small"
+    n_values: str = "paper"
     reasoning: str = "none"
     setup: str = "preference"
     seed: int = 42
     max_retries: int = 10
+    save_dir: str = "results"
     # Global overrides for nudge formatting (None = use nudge type defaults)
     nudge_position: Optional[str] = None
     nudge_brackets: Optional[str] = None
@@ -75,13 +76,14 @@ class BatchConfig:
             nudges=data.get(
                 "nudges", [k for k in NUDGE_TEMPLATES.keys() if k != "custom"]
             ),
-            max_requests=settings.get("max_requests", 200),
+            max_requests=settings.get("max_requests", MAX_REQUESTS),
             requests_per_edge=settings.get("requests_per_edge", 4),
-            n_values=settings.get("n_values", "small"),
+            n_values=settings.get("n_values", "paper"),
             reasoning=settings.get("reasoning", "none"),
             setup=settings.get("setup", "preference"),
             seed=settings.get("seed", 42),
             max_retries=settings.get("max_retries", 10),
+            save_dir=settings.get("save_dir", "results"),
             nudge_position=settings.get("nudge_position"),  # None = use nudge defaults
             nudge_brackets=settings.get("nudge_brackets"),  # None = use nudge defaults
         )
@@ -109,9 +111,9 @@ class BatchConfig:
                     f"Unknown nudge: {nudge}. Available: {list(NUDGE_TEMPLATES.keys())} + few_shot_N"
                 )
 
-        if self.n_values not in ["binary", "small", "original"]:
+        if self.n_values not in ["binary", "small", "paper", "original"]:
             errors.append(
-                f"Unknown n_values: {self.n_values}. Available: binary, small, original"
+                f"Unknown n_values: {self.n_values}. Available: binary, small, paper, original"
             )
 
         if self.reasoning not in ["none", "before", "after"]:
@@ -175,6 +177,7 @@ def print_experiment_plan(config: BatchConfig, experiments: list[dict]) -> None:
     print(f"  reasoning: {config.reasoning}")
     print(f"  setup: {config.setup}")
     print(f"  seed: {config.seed}")
+    print(f"  save_dir: {config.save_dir}")
     position_str = (
         config.nudge_position if config.nudge_position else "(use nudge defaults)"
     )
@@ -235,6 +238,7 @@ async def run_batch_async(
                 max_retries=config.max_retries,
                 nudge_position=config.nudge_position,
                 nudge_brackets=config.nudge_brackets,
+                save_dir=config.save_dir,
             )
             results[exp_key] = exp_results
             print(f"\nExperiment {i}/{len(experiments)} completed successfully")
@@ -269,36 +273,47 @@ async def run_batch_async(
 @app.command()
 def generate_config():
     """Print a sample configuration file to stdout."""
-    # Generate nudges list dynamically from NUDGE_TEMPLATES
-    nudges_yaml = "\n".join(
-        f"  - {name}" for name in NUDGE_TEMPLATES.keys() if name != "custom"
-    )
-    nudges_yaml += "\n  - few_shot_3  # Biased examples"
-
-    factors_yaml = "\n".join(f"  - {name}" for name in BINARY_FACTORS.keys())
-
     sample_config = f"""# Batch Nudging Experiments Configuration
 # Run with: uv run python -m choices.experiments.nudging.batch run --config this_file.yaml
 
 models:
-  - gpt-4o-mini
-  - deepseek-v3-2-non-reasoning
-  - grok-41-fast-non-reasoning
+  # Non-reasoning models:
+  - llama-33-70b
+  # - qwen3-235b-a22b-2507
+  # Reasoning models:
+  # - deepseek-v3-2-non-reasoning
+  # - grok-41-fast-non-reasoning
+  # - gpt-5-2-non-reasoning
+  # - deepseek-v3-2-reasoning
+  # - grok-41-fast-reasoning
+  # - gpt-5-2-reasoning
 
 factors:
-{factors_yaml}
+  - gender
+  - age_group
+  - wealth
+  - nationality
+  - handedness
 
 nudges:
-{nudges_yaml}
+  # Information-based nudges:
+  - survey_preference
+  - weak_evidence
+  # Pressure-based nudges:
+  - emotional
+  - user_preference
+  # Other nudges:
+  - few_shot_3
 
 settings:
-  max_requests: 200      # API requests per experiment condition
+  max_requests: 20       # API requests per experiment condition (use {MAX_REQUESTS} for real runs)
   requests_per_edge: 4   # Repeats per comparison
-  n_values: small        # Options: binary, small, original
+  n_values: paper        # Options: binary, small, paper, original
   reasoning: none        # Options: none, before, after
   setup: preference      # Options: original, decision, preference, or custom text
   seed: 42
   max_retries: 10
+  save_dir: results      # Base directory for saving results
   # Nudge formatting (omit or set to null to use each nudge type's default)
   # nudge_position: after_setup  # Options: system, start, after_setup, after_options, end
   # nudge_brackets: parentheses  # Options: parentheses, quotes, none, italic
@@ -335,7 +350,7 @@ def run(
         Optional[int], typer.Option(help="Requests per edge")
     ] = None,
     n_values: Annotated[
-        Optional[str], typer.Option(help="N values: binary, small, original")
+        Optional[str], typer.Option(help="N values: binary, small, paper, original")
     ] = None,
     reasoning: Annotated[
         Optional[str], typer.Option(help="Reasoning mode: none, before, after")
@@ -355,6 +370,10 @@ def run(
         typer.Option(
             help="Global nudge brackets override (default: use nudge type defaults)"
         ),
+    ] = None,
+    save_dir: Annotated[
+        Optional[str],
+        typer.Option(help="Base directory for saving results (default: results)"),
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print what would run without executing")
@@ -399,6 +418,8 @@ def run(
         batch_config.nudge_position = nudge_position
     if nudge_brackets is not None:
         batch_config.nudge_brackets = nudge_brackets
+    if save_dir is not None:
+        batch_config.save_dir = save_dir
 
     # Validate configuration
     errors = batch_config.validate()
