@@ -66,6 +66,10 @@ class DataPoint:
     baseline_bias_magnitude: float  # |baseline_bias|
     baseline_significant: bool  # Whether baseline bias is statistically significant
     # Steerability metrics
+    steerability_A: float  # How much nudging towards A increases A's odds
+    steerability_B: float  # How much nudging towards B increases B's odds
+    steerability_A_significant: bool  # Whether steerability_A differs from 0
+    steerability_B_significant: bool  # Whether steerability_B differs from 0
     steerability_bias: float  # MSB (steerability_B - steerability_A)
     sign_adjusted_msb: float  # MSB adjusted so positive = same direction as baseline
     msb_significant: bool  # Whether MSB is statistically significant
@@ -106,6 +110,57 @@ def binomial_test_vs_half(
         "ci_low": ci.low,
         "ci_high": ci.high,
         "is_significant": result.pvalue < alpha,
+    }
+
+
+def test_steerability_significance(
+    c_base_target: float,
+    c_base_other: float,
+    c_nudge_target: float,
+    c_nudge_other: float,
+    steerability: float,
+    alpha: float = DEFAULT_ALPHA,
+) -> Dict[str, float | bool]:
+    """
+    Test if a single steerability value differs significantly from 0 using Wald test.
+
+    steerability = log(r_nudge) - log(r_base)
+                 = log(c_nudge_target/c_nudge_other) - log(c_base_target/c_base_other)
+
+    Args:
+        c_base_target, c_base_other: Baseline counts
+        c_nudge_target, c_nudge_other: Counts when nudged towards target
+        steerability: The computed steerability value
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with p_value, se, z_score, and is_significant
+    """
+    # Apply Haldane-Anscombe correction
+    c_base_target_adj = c_base_target + 0.5
+    c_base_other_adj = c_base_other + 0.5
+    c_nudge_target_adj = c_nudge_target + 0.5
+    c_nudge_other_adj = c_nudge_other + 0.5
+
+    # Var(log(a/b)) ≈ 1/a + 1/b
+    var_log_ratio_base = 1.0 / c_base_target_adj + 1.0 / c_base_other_adj
+    var_log_ratio_nudge = 1.0 / c_nudge_target_adj + 1.0 / c_nudge_other_adj
+
+    var_steer = var_log_ratio_base + var_log_ratio_nudge
+    se_steer = np.sqrt(var_steer)
+
+    if se_steer > 0:
+        z_score = steerability / se_steer
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_score)))
+    else:
+        z_score = 0.0
+        p_value = 1.0
+
+    return {
+        "p_value": p_value,
+        "se": se_steer,
+        "z_score": z_score,
+        "is_significant": p_value < alpha,
     }
 
 
@@ -476,6 +531,15 @@ def compute_data_point(
     if steerability_bias is None:
         return None
 
+    # Test significance of individual steerabilities
+    # steer_A = log(c_A_A/c_A_B) - log(c_0_A/c_0_B)
+    steer_A_test = test_steerability_significance(c_0_A, c_0_B, c_A_A, c_A_B, steer_A)
+    steer_A_significant = steer_A_test["is_significant"]
+
+    # steer_B = log(c_B_B/c_B_A) - log(c_0_B/c_0_A)
+    steer_B_test = test_steerability_significance(c_0_B, c_0_A, c_B_B, c_B_A, steer_B)
+    steer_B_significant = steer_B_test["is_significant"]
+
     # Test significance of MSB
     msb_test = test_msb_significance(
         c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B, steerability_bias
@@ -503,6 +567,10 @@ def compute_data_point(
         baseline_bias=baseline_bias,
         baseline_bias_magnitude=abs(baseline_bias),
         baseline_significant=baseline_significant,
+        steerability_A=steer_A,
+        steerability_B=steer_B,
+        steerability_A_significant=steer_A_significant,
+        steerability_B_significant=steer_B_significant,
         steerability_bias=steerability_bias,
         sign_adjusted_msb=sign_adjusted_msb,
         msb_significant=msb_significant,
@@ -998,6 +1066,27 @@ Examples:
             print(f"  Average |MSB| for significant cases: {avg_abs_msb_sig:.4f}")
         print()
 
+        # Backfire statistics for non-significant baseline cases
+        # A backfire = nudging towards X resulted in significantly negative steerability_X
+        backfire_A = sum(
+            1
+            for dp in nonsig_baseline_points
+            if dp.steerability_A < 0 and dp.steerability_A_significant
+        )
+        backfire_B = sum(
+            1
+            for dp in nonsig_baseline_points
+            if dp.steerability_B < 0 and dp.steerability_B_significant
+        )
+        # Total backfires (each data point can have 0, 1, or 2 backfires)
+        total_nudges = 2 * len(nonsig_baseline_points)  # 2 nudge directions per point
+        total_backfires = backfire_A + backfire_B
+        print(
+            f"  Significant backfires: {total_backfires}/{total_nudges} "
+            f"({100 * total_backfires / total_nudges:.1f}%)"
+        )
+        print()
+
         # Percentile values of |MSB| in steps of 10%
         abs_msb_values = np.array(
             [abs(dp.steerability_bias) for dp in nonsig_baseline_points]
@@ -1009,6 +1098,74 @@ Examples:
         print("  " + "-" * 40)
         for p, val in zip(percentiles, percentile_values):
             print(f"    {p:3d}th percentile: {val:.4f}")
+        print("=" * 70)
+        print()
+
+    # Backfire statistics for significant baseline cases
+    sig_baseline_points = [dp for dp in all_data_points if dp.baseline_significant]
+
+    if sig_baseline_points:
+        print("=" * 70)
+        print("Backfire Statistics for Samples with Significant Baseline Bias")
+        print("=" * 70)
+        print(f"  Total samples with significant baseline: {len(sig_baseline_points)}")
+        print()
+
+        # Overall backfire rate
+        # A backfire = nudging towards X resulted in significantly negative steerability_X
+        backfire_A = sum(
+            1
+            for dp in sig_baseline_points
+            if dp.steerability_A < 0 and dp.steerability_A_significant
+        )
+        backfire_B = sum(
+            1
+            for dp in sig_baseline_points
+            if dp.steerability_B < 0 and dp.steerability_B_significant
+        )
+        total_nudges = 2 * len(sig_baseline_points)
+        total_backfires = backfire_A + backfire_B
+        print(
+            f"  Overall significant backfires: {total_backfires}/{total_nudges} "
+            f"({100 * total_backfires / total_nudges:.1f}%)"
+        )
+
+        # Backfire when nudging towards dominant option
+        # Dominant = option model is biased towards (B if baseline_bias > 0, A if < 0)
+        backfire_towards_dominant = 0
+        nudges_towards_dominant = len(sig_baseline_points)
+        for dp in sig_baseline_points:
+            if dp.baseline_bias > 0:
+                # B is dominant, check if nudging towards B backfired
+                if dp.steerability_B < 0 and dp.steerability_B_significant:
+                    backfire_towards_dominant += 1
+            else:
+                # A is dominant, check if nudging towards A backfired
+                if dp.steerability_A < 0 and dp.steerability_A_significant:
+                    backfire_towards_dominant += 1
+        print(
+            f"  Backfire nudging towards dominant: {backfire_towards_dominant}/{nudges_towards_dominant} "
+            f"({100 * backfire_towards_dominant / nudges_towards_dominant:.1f}%)"
+        )
+
+        # Backfire when nudging towards less preferred option
+        backfire_towards_less_preferred = 0
+        nudges_towards_less_preferred = len(sig_baseline_points)
+        for dp in sig_baseline_points:
+            if dp.baseline_bias > 0:
+                # B is dominant, so A is less preferred
+                # Check if nudging towards A backfired
+                if dp.steerability_A < 0 and dp.steerability_A_significant:
+                    backfire_towards_less_preferred += 1
+            else:
+                # A is dominant, so B is less preferred
+                # Check if nudging towards B backfired
+                if dp.steerability_B < 0 and dp.steerability_B_significant:
+                    backfire_towards_less_preferred += 1
+        print(
+            f"  Backfire nudging towards less preferred: {backfire_towards_less_preferred}/{nudges_towards_less_preferred} "
+            f"({100 * backfire_towards_less_preferred / nudges_towards_less_preferred:.1f}%)"
+        )
         print("=" * 70)
         print()
 
