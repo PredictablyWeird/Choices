@@ -16,8 +16,9 @@ Usage:
     # Filter by reasoning condition
     uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --reasoning-conditions before none
 
-    # Group by model, factor, or nudge type
+    # Group by model, factor, nudge type, or reasoning condition
     uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --groups model
+    uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --groups reasoning
 """
 
 import argparse
@@ -435,6 +436,45 @@ _EXTRA_NUDGE_COLORS = [
     "#06d6a0",
 ]
 
+# Color palette for reasoning conditions
+REASONING_COLORS = {
+    # Chat model reasoning modes
+    "none": "#E63946",  # red - no reasoning instruction
+    "before": "#457B9D",  # blue - reasoning before answer
+    "after": "#2A9D8F",  # teal - reasoning after answer
+    # Reasoning model effort levels
+    "off": "#9B5DE5",  # purple - reasoning disabled
+    "low": "#F4A261",  # orange
+    "medium": "#00BBF9",  # cyan
+    "high": "#F15BB5",  # pink
+    # Anthropic thinking budget
+    "10000": "#264653",  # dark teal
+    "unknown": "#808080",  # gray
+}
+
+_EXTRA_REASONING_COLORS = [
+    "#e76f51",
+    "#8338ec",
+    "#ff006e",
+    "#3a86ff",
+    "#fb5607",
+]
+
+_dynamic_reasoning_colors: Dict[str, str] = {}
+
+
+def get_reasoning_color(reasoning: str) -> str:
+    """Get color for a reasoning condition, auto-assigning from palette if not predefined."""
+    if reasoning in REASONING_COLORS:
+        return REASONING_COLORS[reasoning]
+
+    if reasoning not in _dynamic_reasoning_colors:
+        idx = len(_dynamic_reasoning_colors) % len(_EXTRA_REASONING_COLORS)
+        _dynamic_reasoning_colors[reasoning] = _EXTRA_REASONING_COLORS[idx]
+
+    return _dynamic_reasoning_colors[reasoning]
+
+
 _dynamic_nudge_colors: Dict[str, str] = {}
 
 
@@ -502,6 +542,12 @@ def create_scatter_plot(
     def get_label_nudge(g):
         return g.replace("_", " ").title()
 
+    def get_group_reasoning(dp: FrequencyDataPoint):
+        return dp.reasoning_condition
+
+    def get_label_reasoning(g):
+        return g
+
     def get_group_none(dp: FrequencyDataPoint):
         return None
 
@@ -529,6 +575,13 @@ def create_scatter_plot(
         get_group = get_group_nudge
         get_color = get_nudge_color
         get_label = get_label_nudge
+    elif groups == "reasoning":
+        unique_groups = list(
+            dict.fromkeys(dp.reasoning_condition for dp in data_points)
+        )
+        get_group = get_group_reasoning
+        get_color = get_reasoning_color
+        get_label = get_label_reasoning
     else:
         unique_groups = None
         get_group = get_group_none
@@ -686,17 +739,18 @@ Examples:
     # Filter by reasoning condition
     uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --reasoning-conditions before none
 
-    # Group by model, factor, or nudge type
+    # Group by model, factor, nudge type, or reasoning condition
     uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --groups model
+    uv run python -m choices.analysis.plot_baseline_vs_nudged_frequency --groups reasoning
         """,
     )
 
     parser.add_argument(
         "--groups",
         type=str,
-        choices=["model", "factor", "nudge"],
+        choices=["model", "factor", "nudge", "reasoning"],
         default=None,
-        help="Group data points by this variable (model, factor, or nudge)",
+        help="Group data points by this variable (model, factor, nudge, or reasoning)",
     )
 
     parser.add_argument(
@@ -918,6 +972,27 @@ Examples:
                 positive_count = sum(1 for dp in points if dp.effect_size > 0)
                 print(
                     f"  {nudge_type}: "
+                    f"n={len(points)}, "
+                    f"avg f₀={avg_f0:.3f}, "
+                    f"avg f_c={avg_fc:.3f}, "
+                    f"avg effect={avg_effect:+.3f}, "
+                    f"positive={positive_count}/{len(points)}"
+                )
+
+        elif args.groups == "reasoning":
+            groups = {}
+            for dp in data_points:
+                if dp.reasoning_condition not in groups:
+                    groups[dp.reasoning_condition] = []
+                groups[dp.reasoning_condition].append(dp)
+
+            for reasoning, points in sorted(groups.items()):
+                avg_f0 = np.mean([dp.f_0 for dp in points])
+                avg_fc = np.mean([dp.f_c for dp in points])
+                avg_effect = np.mean([dp.effect_size for dp in points])
+                positive_count = sum(1 for dp in points if dp.effect_size > 0)
+                print(
+                    f"  {reasoning}: "
                     f"n={len(points)}, "
                     f"avg f₀={avg_f0:.3f}, "
                     f"avg f_c={avg_fc:.3f}, "
