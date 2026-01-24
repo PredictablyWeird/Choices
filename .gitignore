@@ -56,3 +56,7 @@ dmypy.json
 results/
 results*
 *.pdf
+
+# Analysis outputs (regenerable)
+analysis/*.json
+analysis/plots/
