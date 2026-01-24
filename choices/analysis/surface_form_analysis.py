@@ -54,6 +54,9 @@ from choices.analysis.plot_baseline_vs_nudged_frequency import (
     get_nudge_color,
     get_reasoning_color,
 )
+from choices.analysis.analyze_simple_nudging_results import (
+    two_proportion_z_test,
+)
 from choices.analysis.utils import (
     compute_factor_frequencies_with_counts,
     get_model_color,
@@ -61,6 +64,9 @@ from choices.analysis.utils import (
     get_reasoning_condition,
     get_reasoning_mode_from_results,
 )
+
+# Default significance level (95% confidence)
+DEFAULT_ALPHA = 0.05
 
 
 @dataclass
@@ -78,6 +84,9 @@ class SurfaceFormDataPoint:
     f_0: float  # Baseline frequency (no nudge)
     f_c: float  # Frequency when nudged towards this option
     effect_size: float  # f_c - f_0
+    # Significance (two-proportion z-test comparing nudge to baseline)
+    is_significant: bool  # True if effect differs significantly from 0
+    p_value: float  # p-value from the test
     # Sample sizes
     n_base: int
     n_nudged: int
@@ -370,6 +379,11 @@ def compute_data_points_for_pair(
         f_c_normal_A = normal_A_stats.get(level_A, {}).get("freq", 0.5)
         n_normal_A = normal_A_stats.get(level_A, {}).get("n", 0)
 
+        # Test significance for normal nudge A
+        test_normal_A = two_proportion_z_test(
+            f_0_A, n_base_A, f_c_normal_A, n_normal_A, DEFAULT_ALPHA
+        )
+
         data_points.append(
             SurfaceFormDataPoint(
                 model=model,
@@ -382,6 +396,8 @@ def compute_data_points_for_pair(
                 f_0=f_0_A,
                 f_c=f_c_normal_A,
                 effect_size=f_c_normal_A - f_0_A,
+                is_significant=test_normal_A["is_significant"],
+                p_value=test_normal_A["p_value"],
                 n_base=n_base_A,
                 n_nudged=n_normal_A,
             )
@@ -390,6 +406,11 @@ def compute_data_points_for_pair(
         # Create data points for option A - BASELINE nudge
         f_c_baseline_A = baseline_A_stats.get(level_A, {}).get("freq", 0.5)
         n_baseline_A = baseline_A_stats.get(level_A, {}).get("n", 0)
+
+        # Test significance for baseline nudge A
+        test_baseline_A = two_proportion_z_test(
+            f_0_A, n_base_A, f_c_baseline_A, n_baseline_A, DEFAULT_ALPHA
+        )
 
         data_points.append(
             SurfaceFormDataPoint(
@@ -403,6 +424,8 @@ def compute_data_points_for_pair(
                 f_0=f_0_A,
                 f_c=f_c_baseline_A,
                 effect_size=f_c_baseline_A - f_0_A,
+                is_significant=test_baseline_A["is_significant"],
+                p_value=test_baseline_A["p_value"],
                 n_base=n_base_A,
                 n_nudged=n_baseline_A,
             )
@@ -414,6 +437,11 @@ def compute_data_points_for_pair(
 
         f_c_normal_B = normal_B_stats.get(level_B, {}).get("freq", 0.5)
         n_normal_B = normal_B_stats.get(level_B, {}).get("n", 0)
+
+        # Test significance for normal nudge B
+        test_normal_B = two_proportion_z_test(
+            f_0_B, n_base_B, f_c_normal_B, n_normal_B, DEFAULT_ALPHA
+        )
 
         data_points.append(
             SurfaceFormDataPoint(
@@ -427,6 +455,8 @@ def compute_data_points_for_pair(
                 f_0=f_0_B,
                 f_c=f_c_normal_B,
                 effect_size=f_c_normal_B - f_0_B,
+                is_significant=test_normal_B["is_significant"],
+                p_value=test_normal_B["p_value"],
                 n_base=n_base_B,
                 n_nudged=n_normal_B,
             )
@@ -435,6 +465,11 @@ def compute_data_points_for_pair(
         # Create data points for option B - BASELINE nudge
         f_c_baseline_B = baseline_B_stats.get(level_B, {}).get("freq", 0.5)
         n_baseline_B = baseline_B_stats.get(level_B, {}).get("n", 0)
+
+        # Test significance for baseline nudge B
+        test_baseline_B = two_proportion_z_test(
+            f_0_B, n_base_B, f_c_baseline_B, n_baseline_B, DEFAULT_ALPHA
+        )
 
         data_points.append(
             SurfaceFormDataPoint(
@@ -448,6 +483,8 @@ def compute_data_points_for_pair(
                 f_0=f_0_B,
                 f_c=f_c_baseline_B,
                 effect_size=f_c_baseline_B - f_0_B,
+                is_significant=test_baseline_B["is_significant"],
+                p_value=test_baseline_B["p_value"],
                 n_base=n_base_B,
                 n_nudged=n_baseline_B,
             )
@@ -757,19 +794,21 @@ def print_statistics(
     normal_points = [dp for dp in data_points if dp.condition == "normal"]
     baseline_points = [dp for dp in data_points if dp.condition == "baseline"]
 
-    # Data summary table
-    print("\n" + "=" * 110)
-    print("Data Summary")
-    print("=" * 110)
+    # Data summary table (with significance markers: * = p<0.05)
+    print("\n" + "=" * 115)
+    print("Data Summary (* = p<0.05)")
+    print("=" * 115)
     print(
         f"{'Model':<25} {'Factor':<12} {'Nudge':<18} "
-        f"{'Option':<10} {'Cond':<10} {'f_0':>8} {'f_c':>8} {'Effect':>8}"
+        f"{'Option':<10} {'Cond':<10} {'f_0':>8} {'f_c':>8} {'Effect':>10}"
     )
-    print("-" * 110)
+    print("-" * 115)
     for dp in sorted(
         data_points,
         key=lambda x: (x.model, x.factor, x.nudge_type, x.option, x.condition),
     ):
+        # Format effect with significance marker
+        effect_str = f"{dp.effect_size:+.3f}{'*' if dp.is_significant else ''}"
         print(
             f"{get_model_display_name(dp.model):<25} "
             f"{dp.factor:<12} "
@@ -778,13 +817,13 @@ def print_statistics(
             f"{dp.condition:<10} "
             f"{dp.f_0:>8.3f} "
             f"{dp.f_c:>8.3f} "
-            f"{dp.effect_size:>+8.3f}"
+            f"{effect_str:>10}"
         )
 
     # Statistics by condition
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 115)
     print("Statistics by Condition")
-    print("=" * 110)
+    print("=" * 115)
 
     for condition, points in [("normal", normal_points), ("baseline", baseline_points)]:
         if not points:
@@ -793,33 +832,35 @@ def print_statistics(
         avg_fc = np.mean([dp.f_c for dp in points])
         avg_effect = np.mean([dp.effect_size for dp in points])
         positive_count = sum(1 for dp in points if dp.effect_size > 0)
+        sig_count = sum(1 for dp in points if dp.is_significant)
         print(
             f"  {condition.capitalize()}: "
             f"n={len(points)}, "
             f"avg f₀={avg_f0:.3f}, "
             f"avg f_c={avg_fc:.3f}, "
             f"avg effect={avg_effect:+.3f}, "
-            f"positive={positive_count}/{len(points)}"
+            f"positive={positive_count}/{len(points)}, "
+            f"significant={sig_count}/{len(points)} ({100*sig_count/len(points):.0f}%)"
         )
 
     # Statistics by additional group if specified
     if groups:
-        print("\n" + "=" * 110)
+        print("\n" + "=" * 115)
         print(f"Statistics by {groups.title()}")
-        print("=" * 110)
+        print("=" * 115)
 
         def print_group_stats(group_name, points):
-            avg_f0 = np.mean([dp.f_0 for dp in points])
-            avg_fc = np.mean([dp.f_c for dp in points])
+            # avg_f0 = np.mean([dp.f_0 for dp in points])
+            # avg_fc = np.mean([dp.f_c for dp in points])
             avg_effect = np.mean([dp.effect_size for dp in points])
             positive_count = sum(1 for dp in points if dp.effect_size > 0)
+            sig_count = sum(1 for dp in points if dp.is_significant)
             print(
                 f"  {group_name}: "
                 f"n={len(points)}, "
-                f"avg f₀={avg_f0:.3f}, "
-                f"avg f_c={avg_fc:.3f}, "
                 f"avg effect={avg_effect:+.3f}, "
-                f"positive={positive_count}/{len(points)}"
+                f"positive={positive_count}/{len(points)}, "
+                f"sig={sig_count}/{len(points)} ({100*sig_count/len(points):.0f}%)"
             )
 
         if groups == "model":
@@ -866,9 +907,9 @@ def print_statistics(
                 print_group_stats(reasoning, points)
 
     # Overall statistics
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 115)
     print("Overall Statistics")
-    print("=" * 110)
+    print("=" * 115)
 
     x_all = [dp.f_0 for dp in data_points]
     y_all = [dp.f_c for dp in data_points]
@@ -878,6 +919,7 @@ def print_statistics(
     avg_fc = np.mean(y_all)
     avg_effect = np.mean(effects)
     positive_count = sum(1 for e in effects if e > 0)
+    sig_count = sum(1 for dp in data_points if dp.is_significant)
 
     # Correlation
     corr, p_value = stats.pearsonr(x_all, y_all)
@@ -893,24 +935,40 @@ def print_statistics(
         f"  Positive effects: {positive_count}/{len(data_points)} "
         f"({100*positive_count/len(data_points):.1f}%)"
     )
+    print(
+        f"  Significant effects (p<0.05): {sig_count}/{len(data_points)} "
+        f"({100*sig_count/len(data_points):.1f}%)"
+    )
     print(f"  Correlation (f₀ vs f_c): r = {corr:.3f} (p = {p_value:.4f})")
     print(f"  Effect size t-test: t = {t_stat:.3f} (p = {t_pvalue:.4f})")
 
     # Comparison between normal and baseline (if both present)
     if normal_points and baseline_points:
-        print("\n" + "-" * 110)
+        print("\n" + "-" * 115)
         print("Normal vs Baseline Comparison")
-        print("-" * 110)
+        print("-" * 115)
 
         normal_effects = [dp.effect_size for dp in normal_points]
         baseline_effects = [dp.effect_size for dp in baseline_points]
+        normal_sig = sum(1 for dp in normal_points if dp.is_significant)
+        baseline_sig = sum(1 for dp in baseline_points if dp.is_significant)
 
         avg_normal = np.mean(normal_effects)
         avg_baseline = np.mean(baseline_effects)
 
         print(f"  Normal nudge avg effect: {avg_normal:+.3f}")
+        print(
+            f"  Normal nudge significant: {normal_sig}/{len(normal_points)} "
+            f"({100*normal_sig/len(normal_points):.0f}%)"
+        )
         print(f"  Baseline nudge avg effect: {avg_baseline:+.3f}")
-        print(f"  Difference (normal - baseline): {avg_normal - avg_baseline:+.3f}")
+        print(
+            f"  Baseline nudge significant: {baseline_sig}/{len(baseline_points)} "
+            f"({100*baseline_sig/len(baseline_points):.0f}%)"
+        )
+        print(
+            f"  Effect difference (normal - baseline): {avg_normal - avg_baseline:+.3f}"
+        )
 
         # Independent t-test comparing effect sizes
         t_compare, p_compare = stats.ttest_ind(normal_effects, baseline_effects)
