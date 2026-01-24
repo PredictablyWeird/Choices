@@ -40,6 +40,7 @@ from choices.analysis.nudge_effect_size import (
 )
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_counts,
+    wald_test_steerability_bias,
 )
 from choices.analysis.utils import (
     get_model_color,
@@ -177,63 +178,11 @@ def test_msb_significance(
     """
     Test if MSB (steerability bias) differs significantly from 0 using Wald test.
 
-    Uses log-odds ratio variance approximation:
-    Var(log(a/b)) ≈ 1/a + 1/b
-
-    MSB = steerability_B - steerability_A
-        = [log(c_B_B/c_B_A) - log(c_0_B/c_0_A)] - [log(c_A_A/c_A_B) - log(c_0_A/c_0_B)]
-
-    Variance is computed assuming independence between nudge conditions
-    (the baseline terms partially cancel in the variance calculation).
-
-    Args:
-        c_0_A, c_0_B: Baseline counts
-        c_A_A, c_A_B: Counts when nudged towards A
-        c_B_A, c_B_B: Counts when nudged towards B
-        msb: The computed MSB value
-        alpha: Significance level (default 0.05)
-
-    Returns:
-        Dictionary with p_value, se, z_score, and is_significant
+    This is a thin wrapper around wald_test_steerability_bias for backward compatibility.
     """
-    # Apply Haldane-Anscombe correction for variance calculation
-    c_0_A_adj = c_0_A + 0.5
-    c_0_B_adj = c_0_B + 0.5
-    c_A_A_adj = c_A_A + 0.5
-    c_A_B_adj = c_A_B + 0.5
-    c_B_A_adj = c_B_A + 0.5
-    c_B_B_adj = c_B_B + 0.5
-
-    # Variance of each log-odds term
-    # steerability_A = log(c_A_A/c_A_B) - log(c_0_A/c_0_B)
-    # steerability_B = log(c_B_B/c_B_A) - log(c_0_B/c_0_A)
-    # MSB = steerability_B - steerability_A
-
-    # Var(log(a/b)) ≈ 1/a + 1/b
-    var_log_ratio_nudge_A = 1.0 / c_A_A_adj + 1.0 / c_A_B_adj
-    var_log_ratio_nudge_B = 1.0 / c_B_B_adj + 1.0 / c_B_A_adj
-    var_log_ratio_base = 1.0 / c_0_A_adj + 1.0 / c_0_B_adj
-
-    # Total variance (treating nudge conditions as independent)
-    # Baseline terms appear in both steerability_A and steerability_B with opposite signs
-    # so they contribute 2 * var_log_ratio_base to total variance
-    var_msb = var_log_ratio_nudge_A + var_log_ratio_nudge_B + 2 * var_log_ratio_base
-    se_msb = np.sqrt(var_msb)
-
-    # Wald test: z = MSB / SE(MSB)
-    if se_msb > 0:
-        z_score = msb / se_msb
-        p_value = 2 * (1 - stats.norm.cdf(abs(z_score)))
-    else:
-        z_score = 0.0
-        p_value = 1.0
-
-    return {
-        "p_value": p_value,
-        "se": se_msb,
-        "z_score": z_score,
-        "is_significant": p_value < alpha,
-    }
+    return wald_test_steerability_bias(
+        c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B, msb, alpha
+    )
 
 
 def compute_factor_frequencies_with_counts(

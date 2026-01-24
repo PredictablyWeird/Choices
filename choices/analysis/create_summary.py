@@ -62,6 +62,7 @@ from choices.analysis.nudge_effect_size import (
 )
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_counts,
+    wald_test_steerability_bias,
 )
 from choices.analysis.utils import (
     get_base_model_name,
@@ -196,6 +197,8 @@ class FrequencyResult:
     sig_B: bool  # True if f_B(B) differs significantly from f_0(B)
     # Baseline significance (binomial test vs 0.5)
     sig_baseline_B: bool  # True if f_0(B) differs significantly from 0.5
+    # Steerability bias significance (bootstrap CI excludes 0)
+    sig_bias: bool  # True if steerability bias differs significantly from 0
     # Sample info
     n_comparisons: int  # Number of pairwise comparisons
     invalid_pct: float  # Percentage of invalid responses
@@ -504,6 +507,21 @@ def _compute_single_frequency_result(
         compute_steerability_bias_from_counts(c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B)
     )
 
+    # Test steerability bias significance using Wald test (fast analytical approach)
+    sig_bias = False
+    if steerability_bias is not None:
+        wald_result = wald_test_steerability_bias(
+            c_0_A,
+            c_0_B,
+            c_A_A,
+            c_A_B,
+            c_B_A,
+            c_B_B,
+            steerability_bias,
+            alpha=DEFAULT_ALPHA,
+        )
+        sig_bias = wald_result.get("is_significant", False)
+
     # Compute average steerability (signed)
     avg_steerability = None
     if steerability_A is not None and steerability_B is not None:
@@ -557,6 +575,7 @@ def _compute_single_frequency_result(
         sig_A=sig_A,
         sig_B=sig_B,
         sig_baseline_B=sig_baseline_B,
+        sig_bias=sig_bias,
         n_comparisons=n_comparisons,
         invalid_pct=invalid_pct,
     )
@@ -770,7 +789,7 @@ def format_table(
             else "N/A"
         )
         steer_bias_str = (
-            f"{r.steerability_bias:+.{decimals}f}"
+            f"{r.steerability_bias:+.{decimals}f}{'*' if r.sig_bias else ''}"
             if r.steerability_bias is not None
             else "N/A"
         )
@@ -870,6 +889,7 @@ def write_csv(
         "sig_A",
         "sig_B",
         "sig_baseline_B",
+        "sig_bias",
     ]
 
     with open(output_path, "w", newline="") as f:
@@ -903,6 +923,7 @@ def write_csv(
                     r.sig_A,
                     r.sig_B,
                     r.sig_baseline_B,
+                    r.sig_bias,
                 ]
             )
 
