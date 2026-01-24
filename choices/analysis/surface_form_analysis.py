@@ -858,18 +858,44 @@ def print_statistics(
         print("=" * 115)
 
         def print_group_stats(group_name, points):
-            # avg_f0 = np.mean([dp.f_0 for dp in points])
-            # avg_fc = np.mean([dp.f_c for dp in points])
-            avg_effect = np.mean([dp.effect_size for dp in points])
-            positive_count = sum(1 for dp in points if dp.effect_size > 0)
-            sig_count = sum(1 for dp in points if dp.is_significant)
-            print(
-                f"  {group_name}: "
-                f"n={len(points)}, "
-                f"avg effect={avg_effect:+.3f}, "
-                f"positive={positive_count}/{len(points)}, "
-                f"sig={sig_count}/{len(points)} ({100*sig_count/len(points):.0f}%)"
-            )
+            # Separate by condition
+            normal_pts = [dp for dp in points if dp.condition == "normal"]
+            baseline_pts = [dp for dp in points if dp.condition == "baseline"]
+
+            print(f"  {group_name}:")
+
+            # Normal condition stats
+            if normal_pts:
+                avg_effect_n = np.mean([dp.effect_size for dp in normal_pts])
+                avg_mag_n = np.mean([abs(dp.effect_size) for dp in normal_pts])
+                sig_n = sum(1 for dp in normal_pts if dp.is_significant)
+                print(
+                    f"    Normal:   n={len(normal_pts):>3}, "
+                    f"avg effect={avg_effect_n:+.3f}, "
+                    f"avg |effect|={avg_mag_n:.3f}, "
+                    f"sig={sig_n}/{len(normal_pts)} ({100*sig_n/len(normal_pts):.0f}%)"
+                )
+            else:
+                avg_mag_n = None
+
+            # Baseline condition stats
+            if baseline_pts:
+                avg_effect_b = np.mean([dp.effect_size for dp in baseline_pts])
+                avg_mag_b = np.mean([abs(dp.effect_size) for dp in baseline_pts])
+                sig_b = sum(1 for dp in baseline_pts if dp.is_significant)
+                print(
+                    f"    Baseline: n={len(baseline_pts):>3}, "
+                    f"avg effect={avg_effect_b:+.3f}, "
+                    f"avg |effect|={avg_mag_b:.3f}, "
+                    f"sig={sig_b}/{len(baseline_pts)} ({100*sig_b/len(baseline_pts):.0f}%)"
+                )
+            else:
+                avg_mag_b = None
+
+            # Ratio of baseline to normal magnitude
+            if avg_mag_n is not None and avg_mag_b is not None and avg_mag_n > 0:
+                ratio = avg_mag_b / avg_mag_n
+                print(f"    Baseline/Normal magnitude ratio: {ratio:.2f}x")
 
         if groups == "model":
             group_dict = {}
@@ -963,17 +989,29 @@ def print_statistics(
 
         avg_normal = np.mean(normal_effects)
         avg_baseline = np.mean(baseline_effects)
+        avg_mag_normal = np.mean([abs(e) for e in normal_effects])
+        avg_mag_baseline = np.mean([abs(e) for e in baseline_effects])
 
-        print(f"  Normal nudge avg effect: {avg_normal:+.3f}")
+        print(
+            f"  Normal nudge avg effect: {avg_normal:+.3f}, avg |effect|: {avg_mag_normal:.3f}"
+        )
         print(
             f"  Normal nudge significant: {normal_sig}/{len(normal_points)} "
             f"({100*normal_sig/len(normal_points):.0f}%)"
         )
-        print(f"  Baseline nudge avg effect: {avg_baseline:+.3f}")
+        print(
+            f"  Baseline nudge avg effect: {avg_baseline:+.3f}, avg |effect|: {avg_mag_baseline:.3f}"
+        )
         print(
             f"  Baseline nudge significant: {baseline_sig}/{len(baseline_points)} "
             f"({100*baseline_sig/len(baseline_points):.0f}%)"
         )
+
+        # Magnitude ratio
+        if avg_mag_normal > 0:
+            ratio = avg_mag_baseline / avg_mag_normal
+            print(f"  Baseline/Normal magnitude ratio: {ratio:.2f}x")
+
         print(
             f"  Effect difference (normal - baseline): {avg_normal - avg_baseline:+.3f}"
         )
