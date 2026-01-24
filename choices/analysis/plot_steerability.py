@@ -25,9 +25,20 @@ Usage:
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
         --output steerability_violins.pdf
+
+    # Show in log odds space
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --log-odds
+
+    # Show median and IQR instead of mean
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --percentiles
 """
 
 import argparse
+import math
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -40,6 +51,55 @@ from choices.analysis.create_summary import (
     discover_experiments,
 )
 from choices.analysis.utils import FACTOR_LEVELS
+
+
+def freq_to_log_odds(
+    freq: float,
+    pseudo_n: float = 100.0,
+) -> float:
+    """
+    Convert frequency to log odds with Haldane-Anscombe correction.
+
+    Uses pseudo-counts to handle frequencies at or near 0 and 1.
+    The correction adds 0.5 to both wins and losses before computing odds.
+
+    Args:
+        freq: Frequency (probability) in [0, 1]
+        pseudo_n: Pseudo sample size for correction (default 100)
+
+    Returns:
+        Log10 odds ratio
+    """
+    # Convert frequency to pseudo-counts
+    pseudo_wins = freq * pseudo_n
+    pseudo_losses = (1 - freq) * pseudo_n
+
+    # Apply Haldane-Anscombe correction
+    odds = (pseudo_wins + 0.5) / (pseudo_losses + 0.5)
+
+    return math.log10(odds)
+
+
+def transform_data_to_log_odds(
+    data_by_factor: Dict[str, Dict[str, List[float]]],
+) -> Dict[str, Dict[str, List[float]]]:
+    """
+    Transform all frequency data to log odds space.
+
+    Args:
+        data_by_factor: Dictionary mapping factor -> frequency data
+
+    Returns:
+        Same structure with frequencies converted to log odds
+    """
+    transformed = {}
+    for factor, factor_data in data_by_factor.items():
+        transformed[factor] = {
+            "f_A_B": [freq_to_log_odds(f) for f in factor_data["f_A_B"]],
+            "f_B_B": [freq_to_log_odds(f) for f in factor_data["f_B_B"]],
+            "f_0_B": [freq_to_log_odds(f) for f in factor_data["f_0_B"]],
+        }
+    return transformed
 
 
 def collect_data_by_factor(
@@ -108,6 +168,8 @@ def create_steerability_violin_plot(
     output_path: Optional[str] = None,
     title: Optional[str] = None,
     figsize: Tuple[float, float] = (12, None),
+    log_odds: bool = False,
+    percentiles: bool = False,
 ) -> plt.Figure:
     """
     Create violin plot showing steerability distributions for each factor.
@@ -121,6 +183,8 @@ def create_steerability_violin_plot(
         output_path: Optional path to save the figure
         title: Optional custom title
         figsize: Figure size (width, height). If height is None, auto-calculated.
+        log_odds: If True, data is in log odds space
+        percentiles: If True, show median and 25/75 percentiles instead of mean
 
     Returns:
         The matplotlib Figure object
@@ -165,7 +229,7 @@ def create_steerability_violin_plot(
             for pc in parts_A["bodies"]:
                 pc.set_facecolor(color_nudge_A)
                 pc.set_edgecolor(color_nudge_A)
-                pc.set_alpha(0.6)
+                pc.set_alpha(0.3)  # Lighter background
 
             _split_violin_halves(parts_A, "left", y_pos)
 
@@ -185,7 +249,7 @@ def create_steerability_violin_plot(
             for pc in parts_B["bodies"]:
                 pc.set_facecolor(color_nudge_B)
                 pc.set_edgecolor(color_nudge_B)
-                pc.set_alpha(0.6)
+                pc.set_alpha(0.3)  # Lighter background
 
             _split_violin_halves(parts_B, "right", y_pos)
 
@@ -218,60 +282,138 @@ def create_steerability_violin_plot(
             zorder=3,
         )
 
-        # Add mean markers for nudge conditions
-        mean_nudge_A = np.mean(factor_data["f_A_B"])
-        mean_nudge_B = np.mean(factor_data["f_B_B"])
+        # Add central tendency markers for nudge conditions
+        if percentiles:
+            # Use median and show 25/75 percentiles
+            center_nudge_A = np.median(factor_data["f_A_B"])
+            center_nudge_B = np.median(factor_data["f_B_B"])
+            p25_nudge_A = np.percentile(factor_data["f_A_B"], 25)
+            p75_nudge_A = np.percentile(factor_data["f_A_B"], 75)
+            p25_nudge_B = np.percentile(factor_data["f_B_B"], 25)
+            p75_nudge_B = np.percentile(factor_data["f_B_B"], 75)
+        else:
+            # Use mean
+            center_nudge_A = np.mean(factor_data["f_A_B"])
+            center_nudge_B = np.mean(factor_data["f_B_B"])
 
-        # Mean marker for nudge A (in lower half)
+        # Central marker for nudge A (in lower half)
+        # Add black outline for visibility (drawn first, behind)
         ax.scatter(
-            [mean_nudge_A],
+            [center_nudge_A],
+            [y_pos - 0.15],
+            color="black",
+            marker="|",
+            s=350,
+            linewidths=3,
+            zorder=6,
+        )
+        ax.scatter(
+            [center_nudge_A],
             [y_pos - 0.15],
             color=color_nudge_A,
             marker="|",
-            s=200,
+            s=300,
+            linewidths=2.5,
+            zorder=7,
+        )
+
+        # Central marker for nudge B (in upper half)
+        # Add black outline for visibility (drawn first, behind)
+        ax.scatter(
+            [center_nudge_B],
+            [y_pos + 0.15],
+            color="black",
+            marker="|",
+            s=350,
             linewidths=3,
             zorder=6,
         )
-
-        # Mean marker for nudge B (in upper half)
         ax.scatter(
-            [mean_nudge_B],
+            [center_nudge_B],
             [y_pos + 0.15],
             color=color_nudge_B,
             marker="|",
-            s=200,
-            linewidths=3,
-            zorder=6,
+            s=300,
+            linewidths=2.5,
+            zorder=7,
         )
 
-        # Add baseline marker (average f_0(B))
-        avg_baseline = np.mean(factor_data["f_0_B"])
+        # Add percentile markers if enabled
+        if percentiles:
+            # 25th and 75th percentile markers for nudge A - more visible
+            ax.scatter(
+                [p25_nudge_A, p75_nudge_A],
+                [y_pos - 0.15, y_pos - 0.15],
+                color=color_nudge_A,
+                marker="|",
+                s=250,
+                linewidths=2.5,
+                zorder=6,
+            )
 
-        # Draw vertical line at baseline spanning the row
+            # 25th and 75th percentile markers for nudge B - more visible
+            ax.scatter(
+                [p25_nudge_B, p75_nudge_B],
+                [y_pos + 0.15, y_pos + 0.15],
+                color=color_nudge_B,
+                marker="|",
+                s=250,
+                linewidths=2.5,
+                zorder=6,
+            )
+
+            # Connect percentiles with a horizontal line (IQR) - thicker
+            ax.plot(
+                [p25_nudge_A, p75_nudge_A],
+                [y_pos - 0.15, y_pos - 0.15],
+                color=color_nudge_A,
+                linewidth=2.5,
+                alpha=0.8,
+                zorder=5,
+            )
+            ax.plot(
+                [p25_nudge_B, p75_nudge_B],
+                [y_pos + 0.15, y_pos + 0.15],
+                color=color_nudge_B,
+                linewidth=2.5,
+                alpha=0.8,
+                zorder=5,
+            )
+
+        # Add baseline marker (median or mean f_0(B))
+        if percentiles:
+            center_baseline = np.median(factor_data["f_0_B"])
+        else:
+            center_baseline = np.mean(factor_data["f_0_B"])
+
+        # Draw vertical line at baseline spanning the row (high zorder to be visible)
         ax.plot(
-            [avg_baseline, avg_baseline],
+            [center_baseline, center_baseline],
             [y_pos - 0.35, y_pos + 0.35],
             color=color_baseline,
             linestyle="--",
             linewidth=2,
             alpha=0.9,
-            zorder=4,
+            zorder=8,
         )
 
-        # Add diamond marker at center
+        # Add diamond marker at center (highest zorder to always be on top)
         ax.scatter(
-            [avg_baseline],
+            [center_baseline],
             [y_pos],
             color=color_baseline,
             marker="D",
             s=100,
             edgecolors="black",
             linewidths=1.5,
-            zorder=5,
+            zorder=9,
         )
 
-    # Add reference line at 0.5 (no preference)
-    ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+    # Add reference line at 0.5 (no preference) or 0 (log odds)
+    ref_value = 0.0 if log_odds else 0.5
+    ax.axvline(
+        x=ref_value, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1
+    )
 
     # Create factor labels
     factor_labels = []
@@ -285,28 +427,46 @@ def create_steerability_violin_plot(
     # Set labels and title
     ax.set_yticks(y_positions)
     ax.set_yticklabels(factor_labels, fontsize=11)
-    ax.set_xlabel("Frequency of Choosing B", fontsize=12)
+
+    if log_odds:
+        ax.set_xlabel("Log₁₀ Odds of Choosing B", fontsize=12)
+    else:
+        ax.set_xlabel("Frequency of Choosing B", fontsize=12)
 
     if title:
         ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
     else:
+        space_label = "(Log Odds Space)" if log_odds else "(Frequency Space)"
         ax.set_title(
-            "Steerability by Factor\n(Distribution across models and nudge types)",
+            f"Steerability by Factor {space_label}\n(Distribution across models and nudge types)",
             fontsize=14,
             fontweight="bold",
             pad=20,
         )
 
     # Set x-axis limits
-    ax.set_xlim(-0.05, 1.05)
+    if log_odds:
+        # Auto-scale for log odds, with some padding
+        all_values = []
+        for factor_data in data_by_factor.values():
+            all_values.extend(factor_data["f_A_B"])
+            all_values.extend(factor_data["f_B_B"])
+            all_values.extend(factor_data["f_0_B"])
+        if all_values:
+            min_val, max_val = min(all_values), max(all_values)
+            padding = (max_val - min_val) * 0.1
+            ax.set_xlim(min_val - padding, max_val + padding)
+    else:
+        ax.set_xlim(-0.05, 1.05)
 
     # Create legend
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
 
+    central_label = "Median" if percentiles else "Mean"
     legend_elements = [
-        Patch(facecolor=color_nudge_A, alpha=0.6, label="Nudged towards A"),
-        Patch(facecolor=color_nudge_B, alpha=0.6, label="Nudged towards B"),
+        Patch(facecolor=color_nudge_A, alpha=0.3, label="Nudged towards A"),
+        Patch(facecolor=color_nudge_B, alpha=0.3, label="Nudged towards B"),
         Line2D(
             [0],
             [0],
@@ -314,8 +474,8 @@ def create_steerability_violin_plot(
             color=color_nudge_A,
             markersize=12,
             linewidth=0,
-            markeredgewidth=3,
-            label="Mean (nudged)",
+            markeredgewidth=2.5,
+            label=f"{central_label} (nudged)",
         ),
         Line2D(
             [0],
@@ -325,9 +485,21 @@ def create_steerability_violin_plot(
             markerfacecolor=color_baseline,
             markeredgecolor="black",
             markersize=10,
-            label="Mean Baseline f₀(B)",
+            label=f"{central_label} Baseline f₀(B)",
         ),
     ]
+
+    if percentiles:
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                color="gray",
+                linewidth=2.5,
+                alpha=0.8,
+                label="IQR (25-75%)",
+            )
+        )
     ax.legend(
         handles=legend_elements,
         loc="upper right",
@@ -441,6 +613,18 @@ Examples:
         help="Don't display the plot (only save to file)",
     )
 
+    parser.add_argument(
+        "--log-odds",
+        action="store_true",
+        help="Show plot in log odds space instead of frequency space",
+    )
+
+    parser.add_argument(
+        "--percentiles",
+        action="store_true",
+        help="Show median and IQR (25-75%%) instead of mean",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
@@ -457,6 +641,8 @@ Examples:
         print(f"Model filter: {args.models}")
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
+    print(f"Space: {'Log Odds' if args.log_odds else 'Frequency'}")
+    print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
     print(f"Output: {output_path}")
     print("=" * 70)
     print()
@@ -496,8 +682,8 @@ Examples:
     # Collect data by factor
     data_by_factor = collect_data_by_factor(results)
 
-    # Print summary
-    print("Data Summary by Factor:")
+    # Print summary (always in frequency space for clarity)
+    print("Data Summary by Factor (Frequency Space):")
     print("-" * 70)
     for factor in sorted(data_by_factor.keys()):
         factor_data = data_by_factor[factor]
@@ -513,6 +699,12 @@ Examples:
         )
     print()
 
+    # Transform to log odds if requested
+    if args.log_odds:
+        print("Transforming data to log odds space...")
+        data_by_factor = transform_data_to_log_odds(data_by_factor)
+        print()
+
     # Create plot
     figsize = (args.figsize[0], args.figsize[1] if args.figsize[1] else None)
     fig = create_steerability_violin_plot(
@@ -520,6 +712,8 @@ Examples:
         output_path=output_path,
         title=args.title,
         figsize=figsize,
+        log_odds=args.log_odds,
+        percentiles=args.percentiles,
     )
 
     if fig is None:
