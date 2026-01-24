@@ -795,22 +795,30 @@ def print_statistics(
     baseline_points = [dp for dp in data_points if dp.condition == "baseline"]
 
     # Data summary table (with significance markers: * = p<0.05)
-    print("\n" + "=" * 115)
+    print("\n" + "=" * 130)
     print("Data Summary (* = p<0.05)")
-    print("=" * 115)
+    print("=" * 130)
     print(
-        f"{'Model':<25} {'Factor':<12} {'Nudge':<18} "
+        f"{'Model':<20} {'Reas':<6} {'Factor':<12} {'Nudge':<18} "
         f"{'Option':<10} {'Cond':<10} {'f_0':>8} {'f_c':>8} {'Effect':>10}"
     )
-    print("-" * 115)
+    print("-" * 130)
     for dp in sorted(
         data_points,
-        key=lambda x: (x.model, x.factor, x.nudge_type, x.option, x.condition),
+        key=lambda x: (
+            x.model,
+            x.reasoning_condition,
+            x.factor,
+            x.nudge_type,
+            x.option,
+            x.condition,
+        ),
     ):
         # Format effect with significance marker
         effect_str = f"{dp.effect_size:+.3f}{'*' if dp.is_significant else ''}"
         print(
-            f"{get_model_display_name(dp.model):<25} "
+            f"{get_model_display_name(dp.model):<20} "
+            f"{dp.reasoning_condition:<6} "
             f"{dp.factor:<12} "
             f"{dp.nudge_type:<18} "
             f"{dp.option:<10} "
