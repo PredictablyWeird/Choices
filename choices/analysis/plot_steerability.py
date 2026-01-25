@@ -35,6 +35,16 @@ Usage:
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
         --percentiles
+
+    # Show effects relative to baseline
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --relative
+
+    # Combine: relative effects in log odds space
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --log-odds --relative
 """
 
 import argparse
@@ -98,6 +108,46 @@ def transform_data_to_log_odds(
             "f_A_B": [freq_to_log_odds(f) for f in factor_data["f_A_B"]],
             "f_B_B": [freq_to_log_odds(f) for f in factor_data["f_B_B"]],
             "f_0_B": [freq_to_log_odds(f) for f in factor_data["f_0_B"]],
+        }
+    return transformed
+
+
+def transform_data_to_relative(
+    data_by_factor: Dict[str, Dict[str, List[float]]],
+) -> Dict[str, Dict[str, List[float]]]:
+    """
+    Transform data to be relative to baseline (subtract baseline from each nudge condition).
+
+    For each experiment, computes:
+    - f_A_B - f_0_B (effect of nudging towards A)
+    - f_B_B - f_0_B (effect of nudging towards B)
+    - f_0_B remains as 0 (reference point)
+
+    This works in both frequency space (giving frequency differences) and
+    log odds space (giving log odds ratios).
+
+    Args:
+        data_by_factor: Dictionary mapping factor -> data (frequency or log odds)
+
+    Returns:
+        Same structure with values relative to baseline
+    """
+    transformed = {}
+    for factor, factor_data in data_by_factor.items():
+        # Compute relative values (subtract corresponding baseline)
+        relative_f_A_B = [
+            f_A - f_0 for f_A, f_0 in zip(factor_data["f_A_B"], factor_data["f_0_B"])
+        ]
+        relative_f_B_B = [
+            f_B - f_0 for f_B, f_0 in zip(factor_data["f_B_B"], factor_data["f_0_B"])
+        ]
+        # Baseline becomes zero (reference point)
+        relative_f_0_B = [0.0] * len(factor_data["f_0_B"])
+
+        transformed[factor] = {
+            "f_A_B": relative_f_A_B,
+            "f_B_B": relative_f_B_B,
+            "f_0_B": relative_f_0_B,
         }
     return transformed
 
@@ -170,6 +220,7 @@ def create_steerability_violin_plot(
     figsize: Tuple[float, float] = (12, None),
     log_odds: bool = False,
     percentiles: bool = False,
+    relative: bool = False,
 ) -> plt.Figure:
     """
     Create violin plot showing steerability distributions for each factor.
@@ -185,6 +236,7 @@ def create_steerability_violin_plot(
         figsize: Figure size (width, height). If height is None, auto-calculated.
         log_odds: If True, data is in log odds space
         percentiles: If True, show median and 25/75 percentiles instead of mean
+        relative: If True, values are relative to baseline
 
     Returns:
         The matplotlib Figure object
@@ -409,8 +461,16 @@ def create_steerability_violin_plot(
             zorder=9,
         )
 
-    # Add reference line at 0.5 (no preference) or 0 (log odds)
-    ref_value = 0.0 if log_odds else 0.5
+    # Add reference line at appropriate value
+    # - relative mode: 0 (no effect)
+    # - log odds mode: 0 (equal odds)
+    # - frequency mode: 0.5 (no preference)
+    if relative:
+        ref_value = 0.0
+    elif log_odds:
+        ref_value = 0.0
+    else:
+        ref_value = 0.5
     ax.axvline(
         x=ref_value, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1
     )
@@ -428,7 +488,12 @@ def create_steerability_violin_plot(
     ax.set_yticks(y_positions)
     ax.set_yticklabels(factor_labels, fontsize=11)
 
-    if log_odds:
+    # Build x-axis label based on mode
+    if relative and log_odds:
+        ax.set_xlabel("Δ Log₁₀ Odds (relative to baseline)", fontsize=12)
+    elif relative:
+        ax.set_xlabel("Δ Frequency (relative to baseline)", fontsize=12)
+    elif log_odds:
         ax.set_xlabel("Log₁₀ Odds of Choosing B", fontsize=12)
     else:
         ax.set_xlabel("Frequency of Choosing B", fontsize=12)
@@ -436,7 +501,15 @@ def create_steerability_violin_plot(
     if title:
         ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
     else:
-        space_label = "(Log Odds Space)" if log_odds else "(Frequency Space)"
+        # Build space label
+        if relative and log_odds:
+            space_label = "(Relative Log Odds)"
+        elif relative:
+            space_label = "(Relative Frequency)"
+        elif log_odds:
+            space_label = "(Log Odds Space)"
+        else:
+            space_label = "(Frequency Space)"
         ax.set_title(
             f"Steerability by Factor {space_label}\n(Distribution across models and nudge types)",
             fontsize=14,
@@ -445,8 +518,8 @@ def create_steerability_violin_plot(
         )
 
     # Set x-axis limits
-    if log_odds:
-        # Auto-scale for log odds, with some padding
+    if log_odds or relative:
+        # Auto-scale for log odds or relative mode, with some padding
         all_values = []
         for factor_data in data_by_factor.values():
             all_values.extend(factor_data["f_A_B"])
@@ -454,7 +527,7 @@ def create_steerability_violin_plot(
             all_values.extend(factor_data["f_0_B"])
         if all_values:
             min_val, max_val = min(all_values), max(all_values)
-            padding = (max_val - min_val) * 0.1
+            padding = (max_val - min_val) * 0.1 if max_val != min_val else 0.1
             ax.set_xlim(min_val - padding, max_val + padding)
     else:
         ax.set_xlim(-0.05, 1.05)
@@ -464,6 +537,7 @@ def create_steerability_violin_plot(
     from matplotlib.lines import Line2D
 
     central_label = "Median" if percentiles else "Mean"
+    baseline_label = "Baseline (=0)" if relative else f"{central_label} Baseline f₀(B)"
     legend_elements = [
         Patch(facecolor=color_nudge_A, alpha=0.3, label="Nudged towards A"),
         Patch(facecolor=color_nudge_B, alpha=0.3, label="Nudged towards B"),
@@ -485,7 +559,7 @@ def create_steerability_violin_plot(
             markerfacecolor=color_baseline,
             markeredgecolor="black",
             markersize=10,
-            label=f"{central_label} Baseline f₀(B)",
+            label=baseline_label,
         ),
     ]
 
@@ -625,6 +699,12 @@ Examples:
         help="Show median and IQR (25-75%%) instead of mean",
     )
 
+    parser.add_argument(
+        "--relative",
+        action="store_true",
+        help="Compute effects relative to baseline (subtract baseline from each condition)",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
@@ -642,6 +722,7 @@ Examples:
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
     print(f"Space: {'Log Odds' if args.log_odds else 'Frequency'}")
+    print(f"Relative: {'Yes' if args.relative else 'No'}")
     print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
     print(f"Output: {output_path}")
     print("=" * 70)
@@ -699,10 +780,16 @@ Examples:
         )
     print()
 
-    # Transform to log odds if requested
+    # Transform to log odds if requested (do this before relative transform)
     if args.log_odds:
         print("Transforming data to log odds space...")
         data_by_factor = transform_data_to_log_odds(data_by_factor)
+        print()
+
+    # Transform to relative values if requested (after log odds transform)
+    if args.relative:
+        print("Computing effects relative to baseline...")
+        data_by_factor = transform_data_to_relative(data_by_factor)
         print()
 
     # Create plot
@@ -714,6 +801,7 @@ Examples:
         figsize=figsize,
         log_odds=args.log_odds,
         percentiles=args.percentiles,
+        relative=args.relative,
     )
 
     if fig is None:
