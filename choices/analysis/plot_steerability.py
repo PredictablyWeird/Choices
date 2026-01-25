@@ -55,6 +55,11 @@ Usage:
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
         --rows nudges
+
+    # Filter by reasoning conditions
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --reasoning-conditions none before after
 """
 
 import argparse
@@ -202,14 +207,50 @@ def collect_data_by_factor(
     return dict(data_by_factor)
 
 
+def normalize_direction(
+    f_A_B: float, f_B_B: float, f_0_B: float
+) -> Tuple[float, float, float]:
+    """
+    Normalize frequencies so that A corresponds to the less-preferred option at baseline.
+
+    This ensures that when aggregating across factors:
+    - f_A_B represents nudging AWAY from baseline preference
+    - f_B_B represents nudging TOWARDS baseline preference
+    - f_0_B is always >= 0.5 (B is always the baseline-preferred option)
+
+    If baseline prefers A (f_0_B < 0.5), we swap the labels:
+    - new_f_A_B = 1 - old_f_B_B (nudge towards new A = nudge towards old B, measure new B = old A)
+    - new_f_B_B = 1 - old_f_A_B (nudge towards new B = nudge towards old A, measure new B = old A)
+    - new_f_0_B = 1 - old_f_0_B
+
+    Args:
+        f_A_B: Frequency of choosing B when nudged towards A
+        f_B_B: Frequency of choosing B when nudged towards B
+        f_0_B: Baseline frequency of choosing B
+
+    Returns:
+        Tuple of (normalized_f_A_B, normalized_f_B_B, normalized_f_0_B)
+    """
+    if f_0_B >= 0.5:
+        # B is already the preferred option, no change needed
+        return f_A_B, f_B_B, f_0_B
+    else:
+        # A is preferred, swap labels
+        return 1 - f_B_B, 1 - f_A_B, 1 - f_0_B
+
+
 def collect_data_by_model(
     results: List[FrequencyResult],
 ) -> Dict[str, Dict[str, any]]:
     """
-    Collect frequency data grouped by model.
+    Collect frequency data grouped by model and reasoning condition.
+
+    Models with different reasoning conditions are treated as separate entries.
+    Direction is normalized so A always corresponds to the less-preferred option
+    at baseline (i.e., f_A_B shows nudging AWAY from baseline preference).
 
     Returns:
-        Dictionary mapping model -> {
+        Dictionary mapping "model (reasoning)" -> {
             'f_A_B': list of f_A(B) values across all factors/nudge types,
             'f_B_B': list of f_B(B) values across all factors/nudge types,
             'f_0_B': list of f_0(B) values (baseline),
@@ -230,11 +271,15 @@ def collect_data_by_model(
     )
 
     for r in results:
-        # Use display name for cleaner labels
-        model_key = get_model_display_name(r.model)
-        data_by_model[model_key]["f_A_B"].append(r.f_A_B)
-        data_by_model[model_key]["f_B_B"].append(r.f_B_B)
-        data_by_model[model_key]["f_0_B"].append(r.f_0_B)
+        # Normalize direction so A is always the less-preferred option
+        f_A_B, f_B_B, f_0_B = normalize_direction(r.f_A_B, r.f_B_B, r.f_0_B)
+
+        # Include reasoning condition in key to separate different conditions
+        display_name = get_model_display_name(r.model)
+        model_key = f"{display_name} ({r.reasoning_condition})"
+        data_by_model[model_key]["f_A_B"].append(f_A_B)
+        data_by_model[model_key]["f_B_B"].append(f_B_B)
+        data_by_model[model_key]["f_0_B"].append(f_0_B)
 
     return dict(data_by_model)
 
@@ -244,6 +289,9 @@ def collect_data_by_nudge_type(
 ) -> Dict[str, Dict[str, any]]:
     """
     Collect frequency data grouped by nudge type.
+
+    Direction is normalized so A always corresponds to the less-preferred option
+    at baseline (i.e., f_A_B shows nudging AWAY from baseline preference).
 
     Returns:
         Dictionary mapping nudge_type -> {
@@ -265,11 +313,14 @@ def collect_data_by_nudge_type(
     )
 
     for r in results:
+        # Normalize direction so A is always the less-preferred option
+        f_A_B, f_B_B, f_0_B = normalize_direction(r.f_A_B, r.f_B_B, r.f_0_B)
+
         # Format nudge type for display
         nudge_key = r.nudge_type.replace("_", " ").title()
-        data_by_nudge[nudge_key]["f_A_B"].append(r.f_A_B)
-        data_by_nudge[nudge_key]["f_B_B"].append(r.f_B_B)
-        data_by_nudge[nudge_key]["f_0_B"].append(r.f_0_B)
+        data_by_nudge[nudge_key]["f_A_B"].append(f_A_B)
+        data_by_nudge[nudge_key]["f_B_B"].append(f_B_B)
+        data_by_nudge[nudge_key]["f_0_B"].append(f_0_B)
 
     return dict(data_by_nudge)
 
@@ -692,9 +743,19 @@ def create_steerability_violin_plot(
     from matplotlib.lines import Line2D
 
     central_label = "Median" if percentiles else "Mean"
+
+    # Use different legend labels when aggregating across factors
+    if row_type == "factors":
+        label_A = "Nudged towards A"
+        label_B = "Nudged towards B"
+    else:
+        # When aggregating, A = less preferred at baseline, B = more preferred
+        label_A = "Nudge away from baseline"
+        label_B = "Nudge towards baseline"
+
     legend_elements = [
-        Patch(facecolor=color_nudge_A, alpha=0.3, label="Nudged towards A"),
-        Patch(facecolor=color_nudge_B, alpha=0.3, label="Nudged towards B"),
+        Patch(facecolor=color_nudge_A, alpha=0.3, label=label_A),
+        Patch(facecolor=color_nudge_B, alpha=0.3, label=label_B),
         Line2D(
             [0],
             [0],
@@ -875,6 +936,13 @@ Examples:
         "Log odds space is forced for models/nudges.",
     )
 
+    parser.add_argument(
+        "--reasoning-conditions",
+        nargs="+",
+        default=None,
+        help="List of reasoning conditions to include (e.g., 'before', 'none', 'after', 'low', 'medium', 'high')",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
@@ -903,6 +971,8 @@ Examples:
         print(f"Model filter: {args.models}")
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
+    if args.reasoning_conditions:
+        print(f"Reasoning filter: {args.reasoning_conditions}")
     print(f"Space: {'Log Odds' if use_log_odds else 'Frequency'}")
     print(f"Relative: {'Yes' if use_relative else 'No'}")
     print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
@@ -940,6 +1010,18 @@ Examples:
         return
 
     print(f"Computed {len(results)} result(s)")
+
+    # Filter by reasoning condition if specified
+    if args.reasoning_conditions:
+        results = [
+            r for r in results if r.reasoning_condition in args.reasoning_conditions
+        ]
+        print(f"After reasoning filter: {len(results)} result(s)")
+
+    if not results:
+        print("No results after filtering.")
+        return
+
     print()
 
     # Collect data based on row type
