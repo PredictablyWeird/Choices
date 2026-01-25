@@ -56,6 +56,11 @@ Usage:
         --results-dirs results \
         --rows nudges
 
+    # Show rows by baseline bias magnitude bins
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --rows baseline --n-bins 5
+
     # Filter by reasoning conditions
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
@@ -323,6 +328,107 @@ def collect_data_by_nudge_type(
         data_by_nudge[nudge_key]["f_0_B"].append(f_0_B)
 
     return dict(data_by_nudge)
+
+
+def collect_data_by_baseline_bin(
+    results: List[FrequencyResult],
+    n_bins: int = 5,
+) -> Dict[str, Dict[str, any]]:
+    """
+    Collect frequency data grouped by baseline bias magnitude bins.
+
+    Direction is normalized so A always corresponds to the less-preferred option
+    at baseline. Then samples are binned by f_0_B (which is always >= 0.5 after
+    normalization, representing the frequency of the baseline-preferred option).
+
+    Bins are created using quantiles so each bin has approximately equal samples.
+
+    Args:
+        results: List of FrequencyResult objects
+        n_bins: Number of bins to create (each with ~equal sample count)
+
+    Returns:
+        Dictionary mapping bin_label -> {
+            'f_A_B': list of f_A(B) values,
+            'f_B_B': list of f_B(B) values,
+            'f_0_B': list of f_0(B) values (baseline),
+            'level_A': None (not applicable for baseline grouping),
+            'level_B': None (not applicable for baseline grouping),
+        }
+    """
+    import numpy as np
+
+    # First pass: normalize all f_0_B values to compute quantile-based bin edges
+    normalized_data = []
+    for r in results:
+        f_A_B, f_B_B, f_0_B = normalize_direction(r.f_A_B, r.f_B_B, r.f_0_B)
+        normalized_data.append((f_A_B, f_B_B, f_0_B))
+
+    all_f_0_B = np.array([d[2] for d in normalized_data])
+
+    # Create quantile-based bin edges (ensures ~equal samples per bin)
+    quantiles = np.linspace(0, 100, n_bins + 1)
+    bin_edges = np.percentile(all_f_0_B, quantiles)
+
+    # Ensure edges are unique (can happen with many identical values)
+    bin_edges = np.unique(bin_edges)
+    actual_n_bins = len(bin_edges) - 1
+
+    if actual_n_bins < n_bins:
+        print(
+            f"Note: Reduced to {actual_n_bins} bins due to data distribution "
+            f"(many samples have identical baseline values)"
+        )
+
+    # Initialize data structure for each bin
+    data_by_bin: Dict[str, Dict[str, any]] = {}
+    for i in range(actual_n_bins):
+        # Create label showing the interval
+        lower = bin_edges[i]
+        upper = bin_edges[i + 1]
+        # Use [lower, upper) notation, except for last bin which is [lower, upper]
+        if i == actual_n_bins - 1:
+            bin_label = f"[{lower:.2f}, {upper:.2f}]"
+        else:
+            bin_label = f"[{lower:.2f}, {upper:.2f})"
+        data_by_bin[bin_label] = {
+            "f_A_B": [],
+            "f_B_B": [],
+            "f_0_B": [],
+            "level_A": None,
+            "level_B": None,
+            "_bin_index": i,  # For sorting
+        }
+
+    # Second pass: assign each result to a bin
+    for f_A_B, f_B_B, f_0_B in normalized_data:
+        # Find which bin this belongs to
+        bin_idx = np.searchsorted(bin_edges[1:], f_0_B, side="right")
+        bin_idx = min(bin_idx, actual_n_bins - 1)  # Clamp to last bin
+
+        # Find the corresponding bin label
+        lower = bin_edges[bin_idx]
+        upper = bin_edges[bin_idx + 1]
+        if bin_idx == actual_n_bins - 1:
+            bin_label = f"[{lower:.2f}, {upper:.2f}]"
+        else:
+            bin_label = f"[{lower:.2f}, {upper:.2f})"
+
+        data_by_bin[bin_label]["f_A_B"].append(f_A_B)
+        data_by_bin[bin_label]["f_B_B"].append(f_B_B)
+        data_by_bin[bin_label]["f_0_B"].append(f_0_B)
+
+    # Remove empty bins (shouldn't happen with quantile-based edges, but just in case)
+    non_empty = {k: v for k, v in data_by_bin.items() if len(v["f_A_B"]) > 0}
+
+    # Sort by bin index and remove the helper field
+    sorted_bins = dict(
+        sorted(non_empty.items(), key=lambda x: x[1].get("_bin_index", 0))
+    )
+    for v in sorted_bins.values():
+        v.pop("_bin_index", None)
+
+    return sorted_bins
 
 
 def format_factor_label(factor: str, level_A: str, level_B: str) -> str:
@@ -660,9 +766,12 @@ def create_steerability_violin_plot(
         elif row_type == "models":
             row_label = "Model"
             dist_label = "factors and nudge types"
-        else:  # nudges
+        elif row_type == "nudges":
             row_label = "Nudge Type"
             dist_label = "factors and models"
+        else:  # baseline
+            row_label = "Baseline Preference"
+            dist_label = "factors, models, and nudge types"
 
         ax.set_title(
             f"Steerability by {row_label} {space_label}\n(Distribution across {dist_label})",
@@ -930,10 +1039,19 @@ Examples:
     parser.add_argument(
         "--rows",
         type=str,
-        choices=["factors", "models", "nudges"],
+        choices=["factors", "models", "nudges", "baseline"],
         default="factors",
-        help="What to show as rows: factors (default), models, or nudges. "
-        "Log odds space is forced for models/nudges.",
+        help="What to show as rows: factors (default), models, nudges, or baseline. "
+        "Log odds space is forced for non-factor rows. "
+        "For 'baseline', rows are bins of baseline bias magnitude.",
+    )
+
+    parser.add_argument(
+        "--n-bins",
+        type=int,
+        default=5,
+        help="Number of quantile-based bins when --rows=baseline (default: 5). "
+        "Each bin will have approximately equal sample counts.",
     )
 
     parser.add_argument(
@@ -954,7 +1072,7 @@ Examples:
     # Force log odds and relative mode for non-factor rows
     use_log_odds = args.log_odds
     use_relative = args.relative
-    if args.rows in ("models", "nudges"):
+    if args.rows in ("models", "nudges", "baseline"):
         if not use_log_odds:
             print(f"Note: Forcing log odds space for --rows={args.rows}")
             use_log_odds = True
@@ -968,6 +1086,8 @@ Examples:
     print("=" * 70)
     print(f"Results directories: {args.results_dirs}")
     print(f"Rows: {args.rows}")
+    if args.rows == "baseline":
+        print(f"Number of bins: {args.n_bins}")
     if args.factors:
         print(f"Factor filter: {args.factors}")
     if args.models:
@@ -1034,9 +1154,12 @@ Examples:
     elif args.rows == "models":
         data_by_row = collect_data_by_model(results)
         row_type_label = "Model"
-    else:  # nudges
+    elif args.rows == "nudges":
         data_by_row = collect_data_by_nudge_type(results)
         row_type_label = "Nudge Type"
+    else:  # baseline
+        data_by_row = collect_data_by_baseline_bin(results, n_bins=args.n_bins)
+        row_type_label = "Baseline Bias"
 
     # Print summary (always in frequency space for clarity)
     print(f"Data Summary by {row_type_label} (Frequency Space):")
