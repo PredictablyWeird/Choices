@@ -24,7 +24,7 @@ Usage:
     # Save to file
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
-        --output steerability_violins.pdf
+        --output steerability_factors.pdf
 
     # Show in log odds space
     uv run python -m choices.analysis.plot_steerability \
@@ -750,8 +750,8 @@ def create_steerability_violin_plot(
         label_B = "Nudged towards B"
     else:
         # When aggregating, A = less preferred at baseline, B = more preferred
-        label_A = "Nudge away from baseline"
-        label_B = "Nudge towards baseline"
+        label_A = "Nudge away from baseline pref."
+        label_B = "Nudge towards baseline pref."
 
     legend_elements = [
         Patch(facecolor=color_nudge_A, alpha=0.3, label=label_A),
@@ -885,7 +885,7 @@ Examples:
         "-o",
         type=str,
         default=None,
-        help="Output file path (default: steerability_violins.pdf)",
+        help="Output file path (default: steerability_violins_<rows>.pdf)",
     )
 
     parser.add_argument(
@@ -945,8 +945,11 @@ Examples:
 
     args = parser.parse_args()
 
-    # Determine output path
-    output_path = args.output if args.output else "steerability_violins.pdf"
+    # Determine output path (append row type to default filename)
+    if args.output:
+        output_path = args.output
+    else:
+        output_path = f"steerability_violins_{args.rows}.pdf"
 
     # Force log odds and relative mode for non-factor rows
     use_log_odds = args.log_odds
