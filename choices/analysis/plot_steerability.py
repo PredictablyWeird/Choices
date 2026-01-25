@@ -45,6 +45,16 @@ Usage:
     uv run python -m choices.analysis.plot_steerability \
         --results-dirs results \
         --log-odds --relative
+
+    # Show one row per model (forces log odds space)
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --rows models
+
+    # Show one row per nudge type (forces log odds space)
+    uv run python -m choices.analysis.plot_steerability \
+        --results-dirs results \
+        --rows nudges
 """
 
 import argparse
@@ -192,6 +202,78 @@ def collect_data_by_factor(
     return dict(data_by_factor)
 
 
+def collect_data_by_model(
+    results: List[FrequencyResult],
+) -> Dict[str, Dict[str, any]]:
+    """
+    Collect frequency data grouped by model.
+
+    Returns:
+        Dictionary mapping model -> {
+            'f_A_B': list of f_A(B) values across all factors/nudge types,
+            'f_B_B': list of f_B(B) values across all factors/nudge types,
+            'f_0_B': list of f_0(B) values (baseline),
+            'level_A': None (not applicable for model grouping),
+            'level_B': None (not applicable for model grouping),
+        }
+    """
+    from choices.analysis.utils import get_model_display_name
+
+    data_by_model: Dict[str, Dict[str, any]] = defaultdict(
+        lambda: {
+            "f_A_B": [],
+            "f_B_B": [],
+            "f_0_B": [],
+            "level_A": None,
+            "level_B": None,
+        }
+    )
+
+    for r in results:
+        # Use display name for cleaner labels
+        model_key = get_model_display_name(r.model)
+        data_by_model[model_key]["f_A_B"].append(r.f_A_B)
+        data_by_model[model_key]["f_B_B"].append(r.f_B_B)
+        data_by_model[model_key]["f_0_B"].append(r.f_0_B)
+
+    return dict(data_by_model)
+
+
+def collect_data_by_nudge_type(
+    results: List[FrequencyResult],
+) -> Dict[str, Dict[str, any]]:
+    """
+    Collect frequency data grouped by nudge type.
+
+    Returns:
+        Dictionary mapping nudge_type -> {
+            'f_A_B': list of f_A(B) values across all factors/models,
+            'f_B_B': list of f_B(B) values across all factors/models,
+            'f_0_B': list of f_0(B) values (baseline),
+            'level_A': None (not applicable for nudge type grouping),
+            'level_B': None (not applicable for nudge type grouping),
+        }
+    """
+    data_by_nudge: Dict[str, Dict[str, any]] = defaultdict(
+        lambda: {
+            "f_A_B": [],
+            "f_B_B": [],
+            "f_0_B": [],
+            "level_A": None,
+            "level_B": None,
+        }
+    )
+
+    for r in results:
+        # Format nudge type for display
+        nudge_key = r.nudge_type.replace("_", " ").title()
+        data_by_nudge[nudge_key]["f_A_B"].append(r.f_A_B)
+        data_by_nudge[nudge_key]["f_B_B"].append(r.f_B_B)
+        data_by_nudge[nudge_key]["f_0_B"].append(r.f_0_B)
+
+    return dict(data_by_nudge)
+
+
 def format_factor_label(factor: str, level_A: str, level_B: str) -> str:
     """Format factor name with level labels."""
     factor_display = factor.replace("_", " ").title()
@@ -229,42 +311,44 @@ def _split_violin_halves(parts, side: str, y_position: float):
 
 
 def create_steerability_violin_plot(
-    data_by_factor: Dict[str, Dict[str, List[float]]],
+    data_by_row: Dict[str, Dict[str, List[float]]],
     output_path: Optional[str] = None,
     title: Optional[str] = None,
     figsize: Tuple[float, float] = (12, None),
     log_odds: bool = False,
     percentiles: bool = False,
     relative: bool = False,
+    row_type: str = "factors",
 ) -> plt.Figure:
     """
-    Create violin plot showing steerability distributions for each factor.
+    Create violin plot showing steerability distributions.
 
-    For each factor, shows a split violin:
+    For each row, shows a split violin:
     - Left half (below row center): distribution when nudged towards A
     - Right half (above row center): distribution when nudged towards B
 
     Args:
-        data_by_factor: Dictionary mapping factor -> frequency data
+        data_by_row: Dictionary mapping row key -> frequency data
         output_path: Optional path to save the figure
         title: Optional custom title
         figsize: Figure size (width, height). If height is None, auto-calculated.
         log_odds: If True, data is in log odds space
         percentiles: If True, show median and 25/75 percentiles instead of mean
         relative: If True, values are relative to baseline
+        row_type: Type of rows - "factors", "models", or "nudges"
 
     Returns:
         The matplotlib Figure object
     """
-    factors = sorted(data_by_factor.keys())
-    n_factors = len(factors)
+    rows = sorted(data_by_row.keys())
+    n_rows = len(rows)
 
-    if n_factors == 0:
+    if n_rows == 0:
         print("No data to plot.")
         return None
 
-    # Calculate figure height based on number of factors
-    height = figsize[1] if figsize[1] else max(4, n_factors * 1.5)
+    # Calculate figure height based on number of rows
+    height = figsize[1] if figsize[1] else max(4, n_rows * 1.5)
     fig, ax = plt.subplots(figsize=(figsize[0], height))
 
     # Colors
@@ -272,18 +356,18 @@ def create_steerability_violin_plot(
     color_nudge_B = "#457B9D"  # Blue - nudging towards B
     color_baseline = "#2A9D8F"  # Teal - baseline marker
 
-    # Y positions for each factor
-    y_positions = np.arange(n_factors)
+    # Y positions for each row
+    y_positions = np.arange(n_rows)
 
-    # Process each factor separately to create split violins
-    for i, factor in enumerate(factors):
-        factor_data = data_by_factor[factor]
+    # Process each row separately to create split violins
+    for i, row_key in enumerate(rows):
+        row_data = data_by_row[row_key]
         y_pos = y_positions[i]
 
         # Create violin for nudge towards A (left/lower half)
-        if len(factor_data["f_A_B"]) >= 2:
+        if len(row_data["f_A_B"]) >= 2:
             parts_A = ax.violinplot(
-                [factor_data["f_A_B"]],
+                [row_data["f_A_B"]],
                 positions=[y_pos],
                 vert=False,
                 showmeans=False,
@@ -301,9 +385,9 @@ def create_steerability_violin_plot(
             _split_violin_halves(parts_A, "left", y_pos)
 
         # Create violin for nudge towards B (right/upper half)
-        if len(factor_data["f_B_B"]) >= 2:
+        if len(row_data["f_B_B"]) >= 2:
             parts_B = ax.violinplot(
-                [factor_data["f_B_B"]],
+                [row_data["f_B_B"]],
                 positions=[y_pos],
                 vert=False,
                 showmeans=False,
@@ -322,10 +406,10 @@ def create_steerability_violin_plot(
 
         # Add individual data points as dots
         # Scatter points for nudge A (below center line)
-        n_A = len(factor_data["f_A_B"])
+        n_A = len(row_data["f_A_B"])
         jitter_A = np.random.uniform(-0.25, -0.05, n_A)
         ax.scatter(
-            factor_data["f_A_B"],
+            row_data["f_A_B"],
             y_pos + jitter_A,
             color=color_nudge_A,
             alpha=0.7,
@@ -336,10 +420,10 @@ def create_steerability_violin_plot(
         )
 
         # Scatter points for nudge B (above center line)
-        n_B = len(factor_data["f_B_B"])
+        n_B = len(row_data["f_B_B"])
         jitter_B = np.random.uniform(0.05, 0.25, n_B)
         ax.scatter(
-            factor_data["f_B_B"],
+            row_data["f_B_B"],
             y_pos + jitter_B,
             color=color_nudge_B,
             alpha=0.7,
@@ -352,16 +436,16 @@ def create_steerability_violin_plot(
         # Add central tendency markers for nudge conditions
         if percentiles:
             # Use median and show 25/75 percentiles
-            center_nudge_A = np.median(factor_data["f_A_B"])
-            center_nudge_B = np.median(factor_data["f_B_B"])
-            p25_nudge_A = np.percentile(factor_data["f_A_B"], 25)
-            p75_nudge_A = np.percentile(factor_data["f_A_B"], 75)
-            p25_nudge_B = np.percentile(factor_data["f_B_B"], 25)
-            p75_nudge_B = np.percentile(factor_data["f_B_B"], 75)
+            center_nudge_A = np.median(row_data["f_A_B"])
+            center_nudge_B = np.median(row_data["f_B_B"])
+            p25_nudge_A = np.percentile(row_data["f_A_B"], 25)
+            p75_nudge_A = np.percentile(row_data["f_A_B"], 75)
+            p25_nudge_B = np.percentile(row_data["f_B_B"], 25)
+            p75_nudge_B = np.percentile(row_data["f_B_B"], 75)
         else:
             # Use mean
-            center_nudge_A = np.mean(factor_data["f_A_B"])
-            center_nudge_B = np.mean(factor_data["f_B_B"])
+            center_nudge_A = np.mean(row_data["f_A_B"])
+            center_nudge_B = np.mean(row_data["f_B_B"])
 
         # Central marker for nudge A (in lower half)
         # Add black outline for visibility (drawn first, behind)
@@ -450,9 +534,9 @@ def create_steerability_violin_plot(
         # Add baseline marker (median or mean f_0(B)) - skip in relative mode (always 0)
         if not relative:
             if percentiles:
-                center_baseline = np.median(factor_data["f_0_B"])
+                center_baseline = np.median(row_data["f_0_B"])
             else:
-                center_baseline = np.mean(factor_data["f_0_B"])
+                center_baseline = np.mean(row_data["f_0_B"])
 
             # Draw vertical line at baseline spanning the row (high zorder to be visible)
             ax.plot(
@@ -493,7 +577,7 @@ def create_steerability_violin_plot(
 
     # Remove y-axis tick labels - options will be shown on sides instead
     ax.set_yticks(y_positions)
-    ax.set_yticklabels([""] * len(factors))
+    ax.set_yticklabels([""] * len(rows))
 
     # Build x-axis label based on mode
     if relative and log_odds:
@@ -517,8 +601,20 @@ def create_steerability_violin_plot(
             space_label = "(Log Odds Space)"
         else:
             space_label = "(Frequency Space)"
+
+        # Build row type label
+        if row_type == "factors":
+            row_label = "Factor"
+            dist_label = "models and nudge types"
+        elif row_type == "models":
+            row_label = "Model"
+            dist_label = "factors and nudge types"
+        else:  # nudges
+            row_label = "Nudge Type"
+            dist_label = "factors and models"
+
         ax.set_title(
-            f"Steerability by Factor {space_label}\n(Distribution across models and nudge types)",
+            f"Steerability by {row_label} {space_label}\n(Distribution across {dist_label})",
             fontsize=14,
             fontweight="bold",
             pad=20,
@@ -528,10 +624,10 @@ def create_steerability_violin_plot(
     if log_odds or relative:
         # Auto-scale for log odds or relative mode, with some padding
         all_values = []
-        for factor_data in data_by_factor.values():
-            all_values.extend(factor_data["f_A_B"])
-            all_values.extend(factor_data["f_B_B"])
-            all_values.extend(factor_data["f_0_B"])
+        for rd in data_by_row.values():
+            all_values.extend(rd["f_A_B"])
+            all_values.extend(rd["f_B_B"])
+            all_values.extend(rd["f_0_B"])
         if all_values:
             min_val, max_val = min(all_values), max(all_values)
             padding = (max_val - min_val) * 0.1 if max_val != min_val else 0.1
@@ -539,43 +635,57 @@ def create_steerability_violin_plot(
     else:
         ax.set_xlim(-0.05, 1.05)
 
-    # Add option labels on left and right sides of each row (close to plot)
+    # Add option labels on left and right sides of each row (only for factors)
     x_min, x_max = ax.get_xlim()
     x_range = x_max - x_min
     label_offset = x_range * 0.02  # Small offset from plot edge
 
-    for i, factor in enumerate(factors):
-        y_pos = y_positions[i]
-        factor_data = data_by_factor[factor]
-        # Get level names from data (extracted from FrequencyResult)
-        level_A = factor_data.get("level_A") or "A"
-        level_B = factor_data.get("level_B") or "B"
+    if row_type == "factors":
+        for i, row_key in enumerate(rows):
+            y_pos = y_positions[i]
+            rd = data_by_row[row_key]
+            # Get level names from data (extracted from FrequencyResult)
+            level_A = rd.get("level_A") or "A"
+            level_B = rd.get("level_B") or "B"
 
-        # Left label (level A - towards which nudging decreases f(B))
-        ax.text(
-            x_min - label_offset,
-            y_pos,
-            level_A,
-            ha="right",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#E63946",  # Same as nudge A color
-            clip_on=False,  # Allow text outside plot area
-        )
+            # Left label (level A - towards which nudging decreases f(B))
+            ax.text(
+                x_min - label_offset,
+                y_pos,
+                level_A,
+                ha="right",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",  # Same as nudge A color
+                clip_on=False,  # Allow text outside plot area
+            )
 
-        # Right label (level B - towards which nudging increases f(B))
-        ax.text(
-            x_max + label_offset,
-            y_pos,
-            level_B,
-            ha="left",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#457B9D",  # Same as nudge B color
-            clip_on=False,  # Allow text outside plot area
-        )
+            # Right label (level B - towards which nudging increases f(B))
+            ax.text(
+                x_max + label_offset,
+                y_pos,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",  # Same as nudge B color
+                clip_on=False,  # Allow text outside plot area
+            )
+    else:
+        # For models/nudges, show row labels on the left side
+        for i, row_key in enumerate(rows):
+            y_pos = y_positions[i]
+            ax.text(
+                x_min - label_offset,
+                y_pos,
+                row_key,
+                ha="right",
+                va="center",
+                fontsize=10,
+                clip_on=False,
+            )
 
     # Create legend
     from matplotlib.patches import Patch
@@ -635,8 +745,8 @@ def create_steerability_violin_plot(
     ax.spines["right"].set_visible(False)
     ax.tick_params(axis="both", which="major", labelsize=10)
 
-    # Add light horizontal grid lines to separate factors
-    for i in range(n_factors - 1):
+    # Add light horizontal grid lines to separate rows
+    for i in range(n_rows - 1):
         ax.axhline(
             y=i + 0.5,
             color="lightgray",
@@ -646,7 +756,7 @@ def create_steerability_violin_plot(
             zorder=0,
         )
 
-    # Invert y-axis so first factor is at top
+    # Invert y-axis so first row is at top
     ax.invert_yaxis()
 
     # Adjust margins to make room for option labels on left and right
@@ -756,24 +866,45 @@ Examples:
         help="Compute effects relative to baseline (subtract baseline from each condition)",
     )
 
+    parser.add_argument(
+        "--rows",
+        type=str,
+        choices=["factors", "models", "nudges"],
+        default="factors",
+        help="What to show as rows: factors (default), models, or nudges. "
+        "Log odds space is forced for models/nudges.",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
     output_path = args.output if args.output else "steerability_violins.pdf"
+
+    # Force log odds and relative mode for non-factor rows
+    use_log_odds = args.log_odds
+    use_relative = args.relative
+    if args.rows in ("models", "nudges"):
+        if not use_log_odds:
+            print(f"Note: Forcing log odds space for --rows={args.rows}")
+            use_log_odds = True
+        if not use_relative:
+            print(f"Note: Forcing relative mode for --rows={args.rows}")
+            use_relative = True
 
     # Print header
     print("=" * 70)
     print("Steerability Violin Plot")
     print("=" * 70)
     print(f"Results directories: {args.results_dirs}")
+    print(f"Rows: {args.rows}")
     if args.factors:
         print(f"Factor filter: {args.factors}")
     if args.models:
         print(f"Model filter: {args.models}")
     if args.nudge_types:
         print(f"Nudge type filter: {args.nudge_types}")
-    print(f"Space: {'Log Odds' if args.log_odds else 'Frequency'}")
-    print(f"Relative: {'Yes' if args.relative else 'No'}")
+    print(f"Space: {'Log Odds' if use_log_odds else 'Frequency'}")
+    print(f"Relative: {'Yes' if use_relative else 'No'}")
     print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
     print(f"Output: {output_path}")
     print("=" * 70)
@@ -811,48 +942,57 @@ Examples:
     print(f"Computed {len(results)} result(s)")
     print()
 
-    # Collect data by factor
-    data_by_factor = collect_data_by_factor(results)
+    # Collect data based on row type
+    if args.rows == "factors":
+        data_by_row = collect_data_by_factor(results)
+        row_type_label = "Factor"
+    elif args.rows == "models":
+        data_by_row = collect_data_by_model(results)
+        row_type_label = "Model"
+    else:  # nudges
+        data_by_row = collect_data_by_nudge_type(results)
+        row_type_label = "Nudge Type"
 
     # Print summary (always in frequency space for clarity)
-    print("Data Summary by Factor (Frequency Space):")
+    print(f"Data Summary by {row_type_label} (Frequency Space):")
     print("-" * 70)
-    for factor in sorted(data_by_factor.keys()):
-        factor_data = data_by_factor[factor]
-        n_experiments = len(factor_data["f_0_B"])
-        avg_baseline = np.mean(factor_data["f_0_B"])
-        avg_nudge_A = np.mean(factor_data["f_A_B"])
-        avg_nudge_B = np.mean(factor_data["f_B_B"])
+    for row_key in sorted(data_by_row.keys()):
+        rd = data_by_row[row_key]
+        n_experiments = len(rd["f_0_B"])
+        avg_baseline = np.mean(rd["f_0_B"])
+        avg_nudge_A = np.mean(rd["f_A_B"])
+        avg_nudge_B = np.mean(rd["f_B_B"])
         print(
-            f"  {factor:<15} n={n_experiments:>3}  "
+            f"  {row_key:<25} n={n_experiments:>3}  "
             f"Baseline={avg_baseline:.3f}  "
             f"Nudge→A={avg_nudge_A:.3f}  "
             f"Nudge→B={avg_nudge_B:.3f}"
         )
     print()
 
-    # Transform to log odds if requested (do this before relative transform)
-    if args.log_odds:
+    # Transform to log odds if needed (do this before relative transform)
+    if use_log_odds:
         print("Transforming data to log odds space...")
-        data_by_factor = transform_data_to_log_odds(data_by_factor)
+        data_by_row = transform_data_to_log_odds(data_by_row)
         print()
 
     # Transform to relative values if requested (after log odds transform)
-    if args.relative:
+    if use_relative:
         print("Computing effects relative to baseline...")
-        data_by_factor = transform_data_to_relative(data_by_factor)
+        data_by_row = transform_data_to_relative(data_by_row)
         print()
 
     # Create plot
     figsize = (args.figsize[0], args.figsize[1] if args.figsize[1] else None)
     fig = create_steerability_violin_plot(
-        data_by_factor,
+        data_by_row,
         output_path=output_path,
         title=args.title,
         figsize=figsize,
-        log_odds=args.log_odds,
+        log_odds=use_log_odds,
         percentiles=args.percentiles,
-        relative=args.relative,
+        relative=use_relative,
+        row_type=args.rows,
     )
 
     if fig is None:
