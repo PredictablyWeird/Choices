@@ -60,7 +60,6 @@ from choices.analysis.create_summary import (
     compute_all_results,
     discover_experiments,
 )
-from choices.analysis.utils import FACTOR_LEVELS
 
 
 def freq_to_log_odds(
@@ -108,6 +107,8 @@ def transform_data_to_log_odds(
             "f_A_B": [freq_to_log_odds(f) for f in factor_data["f_A_B"]],
             "f_B_B": [freq_to_log_odds(f) for f in factor_data["f_B_B"]],
             "f_0_B": [freq_to_log_odds(f) for f in factor_data["f_0_B"]],
+            "level_A": factor_data.get("level_A"),
+            "level_B": factor_data.get("level_B"),
         }
     return transformed
 
@@ -148,13 +149,15 @@ def transform_data_to_relative(
             "f_A_B": relative_f_A_B,
             "f_B_B": relative_f_B_B,
             "f_0_B": relative_f_0_B,
+            "level_A": factor_data.get("level_A"),
+            "level_B": factor_data.get("level_B"),
         }
     return transformed
 
 
 def collect_data_by_factor(
     results: List[FrequencyResult],
-) -> Dict[str, Dict[str, List[float]]]:
+) -> Dict[str, Dict[str, any]]:
     """
     Collect frequency data grouped by factor.
 
@@ -163,16 +166,28 @@ def collect_data_by_factor(
             'f_A_B': list of f_A(B) values (freq of B when nudged towards A),
             'f_B_B': list of f_B(B) values (freq of B when nudged towards B),
             'f_0_B': list of f_0(B) values (baseline freq of B),
+            'level_A': name of level A (e.g., 'poor'),
+            'level_B': name of level B (e.g., 'rich'),
         }
     """
-    data_by_factor: Dict[str, Dict[str, List[float]]] = defaultdict(
-        lambda: {"f_A_B": [], "f_B_B": [], "f_0_B": []}
+    data_by_factor: Dict[str, Dict[str, any]] = defaultdict(
+        lambda: {
+            "f_A_B": [],
+            "f_B_B": [],
+            "f_0_B": [],
+            "level_A": None,
+            "level_B": None,
+        }
     )
 
     for r in results:
         data_by_factor[r.factor]["f_A_B"].append(r.f_A_B)
         data_by_factor[r.factor]["f_B_B"].append(r.f_B_B)
         data_by_factor[r.factor]["f_0_B"].append(r.f_0_B)
+        # Store level names (they should be consistent within a factor)
+        if data_by_factor[r.factor]["level_A"] is None:
+            data_by_factor[r.factor]["level_A"] = r.level_A
+            data_by_factor[r.factor]["level_B"] = r.level_B
 
     return dict(data_by_factor)
 
@@ -355,7 +370,7 @@ def create_steerability_violin_plot(
             [y_pos - 0.15],
             color="black",
             marker="|",
-            s=350,
+            s=550,
             linewidths=3,
             zorder=6,
         )
@@ -364,7 +379,7 @@ def create_steerability_violin_plot(
             [y_pos - 0.15],
             color=color_nudge_A,
             marker="|",
-            s=300,
+            s=500,
             linewidths=2.5,
             zorder=7,
         )
@@ -376,7 +391,7 @@ def create_steerability_violin_plot(
             [y_pos + 0.15],
             color="black",
             marker="|",
-            s=350,
+            s=550,
             linewidths=3,
             zorder=6,
         )
@@ -385,7 +400,7 @@ def create_steerability_violin_plot(
             [y_pos + 0.15],
             color=color_nudge_B,
             marker="|",
-            s=300,
+            s=500,
             linewidths=2.5,
             zorder=7,
         )
@@ -432,34 +447,35 @@ def create_steerability_violin_plot(
                 zorder=5,
             )
 
-        # Add baseline marker (median or mean f_0(B))
-        if percentiles:
-            center_baseline = np.median(factor_data["f_0_B"])
-        else:
-            center_baseline = np.mean(factor_data["f_0_B"])
+        # Add baseline marker (median or mean f_0(B)) - skip in relative mode (always 0)
+        if not relative:
+            if percentiles:
+                center_baseline = np.median(factor_data["f_0_B"])
+            else:
+                center_baseline = np.mean(factor_data["f_0_B"])
 
-        # Draw vertical line at baseline spanning the row (high zorder to be visible)
-        ax.plot(
-            [center_baseline, center_baseline],
-            [y_pos - 0.35, y_pos + 0.35],
-            color=color_baseline,
-            linestyle="--",
-            linewidth=2,
-            alpha=0.9,
-            zorder=8,
-        )
+            # Draw vertical line at baseline spanning the row (high zorder to be visible)
+            ax.plot(
+                [center_baseline, center_baseline],
+                [y_pos - 0.35, y_pos + 0.35],
+                color=color_baseline,
+                linestyle="--",
+                linewidth=2,
+                alpha=0.9,
+                zorder=8,
+            )
 
-        # Add diamond marker at center (highest zorder to always be on top)
-        ax.scatter(
-            [center_baseline],
-            [y_pos],
-            color=color_baseline,
-            marker="D",
-            s=100,
-            edgecolors="black",
-            linewidths=1.5,
-            zorder=9,
-        )
+            # Add diamond marker at center (highest zorder to always be on top)
+            ax.scatter(
+                [center_baseline],
+                [y_pos],
+                color=color_baseline,
+                marker="D",
+                s=100,
+                edgecolors="black",
+                linewidths=1.5,
+                zorder=9,
+            )
 
     # Add reference line at appropriate value
     # - relative mode: 0 (no effect)
@@ -475,18 +491,9 @@ def create_steerability_violin_plot(
         x=ref_value, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1
     )
 
-    # Create factor labels
-    factor_labels = []
-    for factor in factors:
-        levels = FACTOR_LEVELS.get(factor, (None, None))
-        if levels[0] and levels[1]:
-            factor_labels.append(format_factor_label(factor, levels[0], levels[1]))
-        else:
-            factor_labels.append(factor.replace("_", " ").title())
-
-    # Set labels and title
+    # Remove y-axis tick labels - options will be shown on sides instead
     ax.set_yticks(y_positions)
-    ax.set_yticklabels(factor_labels, fontsize=11)
+    ax.set_yticklabels([""] * len(factors))
 
     # Build x-axis label based on mode
     if relative and log_odds:
@@ -532,12 +539,49 @@ def create_steerability_violin_plot(
     else:
         ax.set_xlim(-0.05, 1.05)
 
+    # Add option labels on left and right sides of each row (close to plot)
+    x_min, x_max = ax.get_xlim()
+    x_range = x_max - x_min
+    label_offset = x_range * 0.02  # Small offset from plot edge
+
+    for i, factor in enumerate(factors):
+        y_pos = y_positions[i]
+        factor_data = data_by_factor[factor]
+        # Get level names from data (extracted from FrequencyResult)
+        level_A = factor_data.get("level_A") or "A"
+        level_B = factor_data.get("level_B") or "B"
+
+        # Left label (level A - towards which nudging decreases f(B))
+        ax.text(
+            x_min - label_offset,
+            y_pos,
+            level_A,
+            ha="right",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#E63946",  # Same as nudge A color
+            clip_on=False,  # Allow text outside plot area
+        )
+
+        # Right label (level B - towards which nudging increases f(B))
+        ax.text(
+            x_max + label_offset,
+            y_pos,
+            level_B,
+            ha="left",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#457B9D",  # Same as nudge B color
+            clip_on=False,  # Allow text outside plot area
+        )
+
     # Create legend
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
 
     central_label = "Median" if percentiles else "Mean"
-    baseline_label = "Baseline (=0)" if relative else f"{central_label} Baseline f₀(B)"
     legend_elements = [
         Patch(facecolor=color_nudge_A, alpha=0.3, label="Nudged towards A"),
         Patch(facecolor=color_nudge_B, alpha=0.3, label="Nudged towards B"),
@@ -546,22 +590,27 @@ def create_steerability_violin_plot(
             [0],
             marker="|",
             color=color_nudge_A,
-            markersize=12,
+            markersize=14,
             linewidth=0,
             markeredgewidth=2.5,
             label=f"{central_label} (nudged)",
         ),
-        Line2D(
-            [0],
-            [0],
-            marker="D",
-            color="w",
-            markerfacecolor=color_baseline,
-            markeredgecolor="black",
-            markersize=10,
-            label=baseline_label,
-        ),
     ]
+
+    # Only show baseline in legend when not in relative mode
+    if not relative:
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                marker="D",
+                color="w",
+                markerfacecolor=color_baseline,
+                markeredgecolor="black",
+                markersize=10,
+                label=f"{central_label} Baseline f₀(B)",
+            )
+        )
 
     if percentiles:
         legend_elements.append(
@@ -600,7 +649,9 @@ def create_steerability_violin_plot(
     # Invert y-axis so first factor is at top
     ax.invert_yaxis()
 
-    plt.tight_layout()
+    # Adjust margins to make room for option labels on left and right
+    plt.subplots_adjust(left=0.12, right=0.88)
+    plt.tight_layout(rect=[0.08, 0, 0.92, 1])
 
     # Save figure
     if output_path:
