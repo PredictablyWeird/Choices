@@ -454,11 +454,11 @@ def create_multi_model_effects_plot(
                 point_color_A = color_nudge_A
 
             if log_odds:
-                # Plot steerability_A (log odds)
+                # Plot negative of steerability_A (log odds) so more steerability towards A goes left
                 steer_A = nd.get("steerability_A")
                 if steer_A is not None:
                     ax.scatter(
-                        [steer_A],
+                        [-steer_A],
                         [y_A],
                         color=point_color_A,
                         marker=marker,
@@ -516,6 +516,7 @@ def create_multi_model_effects_plot(
         if show_geom_mean:
             if log_odds:
                 # For log odds, compute arithmetic mean of steerability values
+                # Note: steerability_A is negated for plotting (goes to left)
                 steer_A_values = [
                     nd.get("steerability_A")
                     for nd in row_data["nudge_data"]
@@ -530,7 +531,9 @@ def create_multi_model_effects_plot(
                 bar_height = 0.25
 
                 if steer_A_values:
-                    geom_mean_A = sum(steer_A_values) / len(steer_A_values)
+                    geom_mean_A = -sum(steer_A_values) / len(
+                        steer_A_values
+                    )  # Negate for plotting
                     ax.plot(
                         [geom_mean_A, geom_mean_A],
                         [y_pos - bar_height, y_pos],
@@ -582,12 +585,14 @@ def create_multi_model_effects_plot(
     if log_odds:
         # Reference line at 0 (no steerability)
         ax.axvline(x=0.0, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
-        # Auto-scale x-axis based on data
+        # Auto-scale x-axis based on data (steerability_A is negated for plotting)
         all_steer_values = []
         for row_data in data_by_model_reason_factor.values():
             for nd in row_data["nudge_data"]:
                 if nd.get("steerability_A") is not None:
-                    all_steer_values.append(nd["steerability_A"])
+                    all_steer_values.append(
+                        -nd["steerability_A"]
+                    )  # Negate for plotting
                 if nd.get("steerability_B") is not None:
                     all_steer_values.append(nd["steerability_B"])
         if all_steer_values:
@@ -660,56 +665,31 @@ def create_multi_model_effects_plot(
             clip_on=False,
         )
 
-        if log_odds:
-            # For log-odds mode: both labels on the right, A above, B below
-            ax.text(
-                x_max + label_offset,
-                y_pos - y_offset,
-                level_A,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#E63946",
-                clip_on=False,
-            )
-            ax.text(
-                x_max + label_offset,
-                y_pos + y_offset,
-                level_B,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#457B9D",
-                clip_on=False,
-            )
-        else:
-            # Left label (level A)
-            ax.text(
-                x_min - label_offset,
-                y_pos + 0.1,
-                level_A,
-                ha="right",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#E63946",
-                clip_on=False,
-            )
+        # Left label (level A) - always on left
+        ax.text(
+            x_min - label_offset,
+            y_pos + 0.1,
+            level_A,
+            ha="right",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#E63946",
+            clip_on=False,
+        )
 
-            # Right label (level B)
-            ax.text(
-                x_max + label_offset,
-                y_pos,
-                level_B,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#457B9D",
-                clip_on=False,
-            )
+        # Right label (level B) - always on right
+        ax.text(
+            x_max + label_offset,
+            y_pos,
+            level_B,
+            ha="left",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#457B9D",
+            clip_on=False,
+        )
 
     # Create legend
     from matplotlib.lines import Line2D
@@ -954,11 +934,11 @@ def create_model_effects_plot(
                 point_color_A = color_nudge_A
 
             if log_odds:
-                # Plot steerability_A (log odds)
+                # Plot negative of steerability_A (log odds) so more steerability towards A goes left
                 steer_A = nd.get("steerability_A")
                 if steer_A is not None:
                     ax.scatter(
-                        [steer_A],
+                        [-steer_A],
                         [y_A],
                         color=point_color_A,
                         marker=marker,
@@ -1017,6 +997,7 @@ def create_model_effects_plot(
         if show_geom_mean:
             if log_odds:
                 # For log odds, compute arithmetic mean of steerability values
+                # Note: steerability_A is negated for plotting (goes to left)
                 steer_A_values = [
                     nd.get("steerability_A")
                     for nd in factor_data["nudge_data"]
@@ -1031,7 +1012,9 @@ def create_model_effects_plot(
                 bar_height = 0.25  # Height of the vertical bar
 
                 if steer_A_values:
-                    geom_mean_A = sum(steer_A_values) / len(steer_A_values)
+                    geom_mean_A = -sum(steer_A_values) / len(
+                        steer_A_values
+                    )  # Negate for plotting
                     # Draw vertical bar for geometric mean of nudge towards A
                     # Positioned above the center line (y-axis is inverted, so subtract)
                     ax.plot(
@@ -1091,12 +1074,14 @@ def create_model_effects_plot(
     if log_odds:
         # Reference line at 0 (no steerability)
         ax.axvline(x=0.0, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
-        # Auto-scale x-axis based on data
+        # Auto-scale x-axis based on data (steerability_A is negated for plotting)
         all_steer_values = []
         for factor_data in data_by_factor.values():
             for nd in factor_data["nudge_data"]:
                 if nd.get("steerability_A") is not None:
-                    all_steer_values.append(nd["steerability_A"])
+                    all_steer_values.append(
+                        -nd["steerability_A"]
+                    )  # Negate for plotting
                 if nd.get("steerability_B") is not None:
                     all_steer_values.append(nd["steerability_B"])
         if all_steer_values:
@@ -1136,56 +1121,31 @@ def create_model_effects_plot(
         level_A = fd.get("level_A") or "A"
         level_B = fd.get("level_B") or "B"
 
-        if log_odds:
-            # For log-odds mode: both labels on the right, A above, B below
-            ax.text(
-                x_max + label_offset,
-                y_pos - y_offset,
-                level_A,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#E63946",
-                clip_on=False,
-            )
-            ax.text(
-                x_max + label_offset,
-                y_pos + y_offset,
-                level_B,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#457B9D",
-                clip_on=False,
-            )
-        else:
-            # Left label (level A)
-            ax.text(
-                x_min - label_offset,
-                y_pos,
-                level_A,
-                ha="right",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#E63946",
-                clip_on=False,
-            )
+        # Left label (level A) - always on left
+        ax.text(
+            x_min - label_offset,
+            y_pos,
+            level_A,
+            ha="right",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#E63946",
+            clip_on=False,
+        )
 
-            # Right label (level B)
-            ax.text(
-                x_max + label_offset,
-                y_pos,
-                level_B,
-                ha="left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color="#457B9D",
-                clip_on=False,
-            )
+        # Right label (level B) - always on right
+        ax.text(
+            x_max + label_offset,
+            y_pos,
+            level_B,
+            ha="left",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#457B9D",
+            clip_on=False,
+        )
 
     # Create legend
     from matplotlib.lines import Line2D
