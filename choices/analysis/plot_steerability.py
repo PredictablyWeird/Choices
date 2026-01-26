@@ -695,6 +695,41 @@ def create_steerability_violin_plot(
             else:
                 center_baseline = np.mean(row_data["f_0_B"])
 
+            # Check if there's variation in baseline (aggregating multiple models)
+            baseline_min = np.min(row_data["f_0_B"])
+            baseline_max = np.max(row_data["f_0_B"])
+            has_baseline_range = baseline_min != baseline_max
+
+            # Draw green handle bars (error bars) if there's baseline variation
+            if has_baseline_range:
+                # Draw horizontal error bar line
+                ax.plot(
+                    [baseline_min, baseline_max],
+                    [y_pos, y_pos],
+                    color=color_baseline,
+                    linewidth=2,
+                    alpha=0.9,
+                    zorder=7,
+                )
+                # Draw vertical "handles" at the ends
+                handle_height = 0.15
+                ax.plot(
+                    [baseline_min, baseline_min],
+                    [y_pos - handle_height, y_pos + handle_height],
+                    color=color_baseline,
+                    linewidth=2,
+                    alpha=0.9,
+                    zorder=7,
+                )
+                ax.plot(
+                    [baseline_max, baseline_max],
+                    [y_pos - handle_height, y_pos + handle_height],
+                    color=color_baseline,
+                    linewidth=2,
+                    alpha=0.9,
+                    zorder=7,
+                )
+
             # Draw vertical line at baseline spanning the row (high zorder to be visible)
             ax.plot(
                 [center_baseline, center_baseline],
@@ -891,6 +926,23 @@ def create_steerability_violin_plot(
                 label=f"{central_label} Baseline f₀(B)",
             )
         )
+        # Check if any row has baseline variation to show range legend
+        has_any_baseline_range = any(
+            np.min(rd["f_0_B"]) != np.max(rd["f_0_B"]) for rd in data_by_row.values()
+        )
+        if has_any_baseline_range:
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=color_baseline,
+                    linewidth=2,
+                    marker="|",
+                    markersize=8,
+                    markeredgewidth=2,
+                    label="Baseline Range (min-max)",
+                )
+            )
 
     if percentiles:
         legend_elements.append(
@@ -1069,10 +1121,10 @@ Examples:
     else:
         output_path = f"steerability_violins_{args.rows}.pdf"
 
-    # Force log odds and relative mode for non-factor rows
+    # Force log odds and relative mode for model/nudge rows (but not baseline)
     use_log_odds = args.log_odds
     use_relative = args.relative
-    if args.rows in ("models", "nudges", "baseline"):
+    if args.rows in ("models", "nudges"):
         if not use_log_odds:
             print(f"Note: Forcing log odds space for --rows={args.rows}")
             use_log_odds = True
