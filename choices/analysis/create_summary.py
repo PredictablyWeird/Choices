@@ -27,6 +27,10 @@ Usage:
     uv run python -m choices.analysis.create_summary --reasoning low medium high
     uv run python -m choices.analysis.create_summary --reasoning none before after
 
+    # Filter by baseline significance (whether f_0(B) differs from 0.5)
+    uv run python -m choices.analysis.create_summary --baseline-sig sig      # only biased baselines
+    uv run python -m choices.analysis.create_summary --baseline-sig not-sig  # only unbiased baselines
+
     # Sort by a specific column (ascending by default)
     uv run python -m choices.analysis.create_summary --sort steer_bias
     uv run python -m choices.analysis.create_summary --sort abs_effect --reverse
@@ -48,6 +52,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from choices.analysis.analyze_simple_nudging_results import (
+    binomial_test_vs_half,
     two_proportion_z_test,
 )
 from choices.analysis.nudge_effect_size import (
@@ -57,6 +62,7 @@ from choices.analysis.nudge_effect_size import (
 )
 from choices.analysis.steerability_metric import (
     compute_steerability_bias_from_counts,
+    wald_test_steerability_bias,
 )
 from choices.analysis.utils import (
     get_base_model_name,
@@ -189,6 +195,10 @@ class FrequencyResult:
     # Significance metrics (z-test comparing nudge to baseline)
     sig_A: bool  # True if f_A(A) differs significantly from f_0(A)
     sig_B: bool  # True if f_B(B) differs significantly from f_0(B)
+    # Baseline significance (binomial test vs 0.5)
+    sig_baseline_B: bool  # True if f_0(B) differs significantly from 0.5
+    # Steerability bias significance (bootstrap CI excludes 0)
+    sig_bias: bool  # True if steerability bias differs significantly from 0
     # Sample info
     n_comparisons: int  # Number of pairwise comparisons
     invalid_pct: float  # Percentage of invalid responses
@@ -488,10 +498,29 @@ def _compute_single_frequency_result(
     test_B = two_proportion_z_test(f_0_B, n_0_B, f_B_B, n_B_B, DEFAULT_ALPHA)
     sig_B = test_B["is_significant"]
 
+    # Test if baseline f_0(B) differs significantly from 0.5 (binomial test)
+    test_baseline_B = binomial_test_vs_half(c_0_B, n_0_B, DEFAULT_ALPHA)
+    sig_baseline_B = test_baseline_B["is_significant"]
+
     # Compute steerability metrics using counts (with Haldane-Anscombe correction)
     steerability_A, steerability_B, steerability_bias = (
         compute_steerability_bias_from_counts(c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B)
     )
+
+    # Test steerability bias significance using Wald test (fast analytical approach)
+    sig_bias = False
+    if steerability_bias is not None:
+        wald_result = wald_test_steerability_bias(
+            c_0_A,
+            c_0_B,
+            c_A_A,
+            c_A_B,
+            c_B_A,
+            c_B_B,
+            steerability_bias,
+            alpha=DEFAULT_ALPHA,
+        )
+        sig_bias = wald_result.get("is_significant", False)
 
     # Compute average steerability (signed)
     avg_steerability = None
@@ -545,6 +574,8 @@ def _compute_single_frequency_result(
         backfire_B=backfire_B,
         sig_A=sig_A,
         sig_B=sig_B,
+        sig_baseline_B=sig_baseline_B,
+        sig_bias=sig_bias,
         n_comparisons=n_comparisons,
         invalid_pct=invalid_pct,
     )
@@ -758,7 +789,7 @@ def format_table(
             else "N/A"
         )
         steer_bias_str = (
-            f"{r.steerability_bias:+.{decimals}f}"
+            f"{r.steerability_bias:+.{decimals}f}{'*' if r.sig_bias else ''}"
             if r.steerability_bias is not None
             else "N/A"
         )
@@ -857,6 +888,8 @@ def write_csv(
         "backfire_B",
         "sig_A",
         "sig_B",
+        "sig_baseline_B",
+        "sig_bias",
     ]
 
     with open(output_path, "w", newline="") as f:
@@ -889,6 +922,8 @@ def write_csv(
                     r.backfire_B,
                     r.sig_A,
                     r.sig_B,
+                    r.sig_baseline_B,
+                    r.sig_bias,
                 ]
             )
 
@@ -963,6 +998,17 @@ Examples:
     )
 
     parser.add_argument(
+        "--baseline-sig",
+        type=str,
+        choices=["any", "sig", "not-sig"],
+        default="any",
+        help="Filter by significance of f_0(B) vs 0.5: "
+        "'any' = no filter (default), "
+        "'sig' = only include cases where f_0(B) differs significantly from 0.5, "
+        "'not-sig' = only include cases where f_0(B) does NOT differ significantly from 0.5",
+    )
+
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -1025,6 +1071,13 @@ Examples:
         print(f"Nudge type filter: {args.nudge_types}")
     if args.reasoning:
         print(f"Reasoning condition filter: {args.reasoning}")
+    if args.baseline_sig != "any":
+        sig_desc = (
+            "significantly different from 0.5"
+            if args.baseline_sig == "sig"
+            else "NOT significantly different from 0.5"
+        )
+        print(f"Baseline significance filter: f_0(B) {sig_desc}")
     if args.sort:
         sort_desc = f"Sort by: {args.sort}"
         if args.reverse:
@@ -1046,6 +1099,12 @@ Examples:
     # Apply reasoning condition filter (post-computation since it's derived from results)
     if args.reasoning:
         results = [r for r in results if r.reasoning_condition in args.reasoning]
+
+    # Apply baseline significance filter
+    if args.baseline_sig == "sig":
+        results = [r for r in results if r.sig_baseline_B]
+    elif args.baseline_sig == "not-sig":
+        results = [r for r in results if not r.sig_baseline_B]
 
     print(f"Found {len(results)} complete experiments\n")
 

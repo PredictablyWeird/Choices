@@ -200,3 +200,82 @@ def compute_steerability_bias_from_frequencies(
     return compute_steerability_bias_from_counts(
         f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B, use_haldane_anscombe=False
     )
+
+
+def wald_test_steerability_bias(
+    c_0_A: float,
+    c_0_B: float,
+    c_A_A: float,
+    c_A_B: float,
+    c_B_A: float,
+    c_B_B: float,
+    steerability_bias: float,
+    alpha: float = 0.05,
+) -> dict:
+    """
+    Test if steerability bias differs significantly from 0 using Wald test.
+
+    Uses log-odds ratio variance approximation:
+    Var(log(a/b)) ≈ 1/a + 1/b
+
+    steerability_bias = steerability_B - steerability_A
+        = [log(c_B_B/c_B_A) - log(c_0_B/c_0_A)] - [log(c_A_A/c_A_B) - log(c_0_A/c_0_B)]
+
+    Variance is computed assuming independence between nudge conditions
+    (the baseline terms partially cancel in the variance calculation).
+
+    Args:
+        c_0_A, c_0_B: Baseline counts
+        c_A_A, c_A_B: Counts when nudged towards A
+        c_B_A, c_B_B: Counts when nudged towards B
+        steerability_bias: The computed steerability bias value
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with p_value, se, z_score, and is_significant
+    """
+    # Apply Haldane-Anscombe correction for variance calculation
+    c_0_A_adj = c_0_A + 0.5
+    c_0_B_adj = c_0_B + 0.5
+    c_A_A_adj = c_A_A + 0.5
+    c_A_B_adj = c_A_B + 0.5
+    c_B_A_adj = c_B_A + 0.5
+    c_B_B_adj = c_B_B + 0.5
+
+    # Variance of each log-odds term
+    # steerability_A = log(c_A_A/c_A_B) - log(c_0_A/c_0_B)
+    # steerability_B = log(c_B_B/c_B_A) - log(c_0_B/c_0_A)
+    # steerability_bias = steerability_B - steerability_A
+
+    # Var(log(a/b)) ≈ 1/a + 1/b
+    var_log_ratio_nudge_A = 1.0 / c_A_A_adj + 1.0 / c_A_B_adj
+    var_log_ratio_nudge_B = 1.0 / c_B_B_adj + 1.0 / c_B_A_adj
+    var_log_ratio_base = 1.0 / c_0_A_adj + 1.0 / c_0_B_adj
+
+    # Total variance (treating nudge conditions as independent)
+    # Baseline terms appear in both steerability_A and steerability_B with opposite signs
+    # so they contribute 2 * var_log_ratio_base to total variance
+    var_bias = var_log_ratio_nudge_A + var_log_ratio_nudge_B + 2 * var_log_ratio_base
+    se_bias = math.sqrt(var_bias)
+
+    # Wald test: z = bias / SE(bias)
+    if se_bias > 0:
+        z_score = steerability_bias / se_bias
+        # Two-tailed p-value using standard normal CDF
+        # p = 2 * (1 - Phi(|z|))
+        p_value = 2 * (1 - _norm_cdf(abs(z_score)))
+    else:
+        z_score = 0.0
+        p_value = 1.0
+
+    return {
+        "p_value": p_value,
+        "se": se_bias,
+        "z_score": z_score,
+        "is_significant": p_value < alpha,
+    }
+
+
+def _norm_cdf(x: float) -> float:
+    """Standard normal CDF using the error function."""
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
