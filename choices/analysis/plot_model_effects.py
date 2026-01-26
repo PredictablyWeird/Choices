@@ -670,14 +670,6 @@ def create_multi_model_effects_plot(
             )
         )
 
-    ax.legend(
-        handles=legend_elements,
-        loc="upper left",
-        bbox_to_anchor=(1.02, 1),
-        fontsize=9,
-        framealpha=0.9,
-    )
-
     # Style
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -686,13 +678,25 @@ def create_multi_model_effects_plot(
     # Invert y-axis so first row is at top
     ax.invert_yaxis()
 
-    # Adjust margins to make room for legend on right
-    plt.subplots_adjust(left=0.15, right=0.75)
-    plt.tight_layout(rect=[0.10, 0.02, 0.78, 0.98])
+    # Adjust subplot to make room for labels on left and legend on right
+    fig.subplots_adjust(left=0.18, right=0.58)
+
+    # Add legend outside plot area on the right
+    ax.legend(
+        handles=legend_elements,
+        loc="upper left",
+        bbox_to_anchor=(1.12, 1),
+        fontsize=9,
+        framealpha=0.9,
+    )
 
     # Save figure
     if output_path:
-        fig.savefig(output_path, bbox_inches="tight", dpi=150)
+        fig.savefig(
+            output_path,
+            bbox_inches="tight",
+            dpi=150,
+        )
         print(f"Saved plot to: {output_path}")
 
     return fig
@@ -1018,14 +1022,6 @@ def create_model_effects_plot(
             )
         )
 
-    ax.legend(
-        handles=legend_elements,
-        loc="upper left",
-        bbox_to_anchor=(1.02, 1),
-        fontsize=9,
-        framealpha=0.9,
-    )
-
     # Style
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -1034,13 +1030,25 @@ def create_model_effects_plot(
     # Invert y-axis so first factor is at top
     ax.invert_yaxis()
 
-    # Adjust margins to make room for legend on right
-    plt.subplots_adjust(left=0.12, right=0.75)
-    plt.tight_layout(rect=[0.08, 0.02, 0.78, 0.98])
+    # Adjust subplot to make room for labels on left and legend on right
+    fig.subplots_adjust(left=0.12, right=0.58)
+
+    # Add legend outside plot area on the right
+    ax.legend(
+        handles=legend_elements,
+        loc="upper left",
+        bbox_to_anchor=(1.12, 1),
+        fontsize=9,
+        framealpha=0.9,
+    )
 
     # Save figure
     if output_path:
-        fig.savefig(output_path, bbox_inches="tight", dpi=150)
+        fig.savefig(
+            output_path,
+            bbox_inches="tight",
+            dpi=150,
+        )
         print(f"Saved plot to: {output_path}")
 
     return fig
@@ -1128,7 +1136,7 @@ Examples:
         "--figsize",
         nargs=2,
         type=float,
-        default=[10, None],
+        default=[14, None],
         help="Figure size (width height). Height auto-calculated if not provided.",
     )
 
