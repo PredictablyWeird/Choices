@@ -11,6 +11,7 @@ This script creates a table showing AMCE (Average Marginal Component Effect) met
 - AMCE_B: AMCE of factor B (vs A) when nudged towards B
 - effect_A: AMCE_0 - AMCE_A (effect of nudging towards A)
 - effect_B: AMCE_B - AMCE_0 (effect of nudging towards B)
+- bias: effect_B - effect_A (asymmetry in nudge effects)
 
 The AMCE is computed using logistic regression with log-linear effect of N.
 
@@ -68,6 +69,7 @@ class AMCEResult:
     amce_B_se: float
     effect_A: float
     effect_B: float
+    bias: float
     sig_amce_0: bool
     sig_amce_A: bool
     sig_amce_B: bool
@@ -555,6 +557,9 @@ def _compute_single_amce_result(
 
     reasoning_condition = get_reasoning_condition(model, condition_dirs["base"])
 
+    # Calculate bias as effect_B - effect_A
+    bias = effect_B - effect_A
+
     return AMCEResult(
         model=model,
         reasoning_condition=reasoning_condition,
@@ -573,6 +578,7 @@ def _compute_single_amce_result(
         amce_B_se=amce_B_se,
         effect_A=effect_A,
         effect_B=effect_B,
+        bias=bias,
         sig_amce_0=sig_amce_0,
         sig_amce_A=sig_amce_A,
         sig_amce_B=sig_amce_B,
@@ -708,6 +714,7 @@ def sort_results(
         "amce_b": lambda r: r.amce_B,
         "effect_a": lambda r: r.effect_A,
         "effect_b": lambda r: r.effect_B,
+        "bias": lambda r: r.bias,
         "abs_effect_a": lambda r: abs(r.effect_A),
         "abs_effect_b": lambda r: abs(r.effect_B),
         "log_n_coef": lambda r: r.log_n_coef_0,
@@ -734,6 +741,7 @@ TABLE_COLUMNS = [
     ("AMCE_B", "amce_b"),
     ("effect_A", "effect_a"),
     ("effect_B", "effect_b"),
+    ("bias", "bias"),
     ("log(N)", "log_n"),
 ]
 
@@ -774,6 +782,7 @@ def format_table(
 
         effect_A_str = f"{r.effect_A:+.{decimals}f}{'*' if r.sig_effect_A else ''}"
         effect_B_str = f"{r.effect_B:+.{decimals}f}{'*' if r.sig_effect_B else ''}"
+        bias_str = f"{r.bias:+.{decimals}f}"
 
         all_values = {
             "model": model_name,
@@ -789,6 +798,7 @@ def format_table(
             "amce_b": amce_B_str,
             "effect_a": effect_A_str,
             "effect_b": effect_B_str,
+            "bias": bias_str,
             "log_n": f"{r.log_n_coef_0:+.{decimals}f}",
         }
 
@@ -847,6 +857,7 @@ def write_csv(
         "amce_B_se",
         "effect_A",
         "effect_B",
+        "bias",
         "sig_amce_0",
         "sig_amce_A",
         "sig_amce_B",
@@ -885,6 +896,7 @@ def write_csv(
                     r.amce_B_se,
                     r.effect_A,
                     r.effect_B,
+                    r.bias,
                     r.sig_amce_0,
                     r.sig_amce_A,
                     r.sig_amce_B,
@@ -1034,6 +1046,8 @@ AMCE values are on the log-odds scale. Positive values indicate preference for B
         avg_amce_0 = np.mean([r.amce_0 for r in model_results])
         avg_effect_A = np.mean([r.effect_A for r in model_results])
         avg_effect_B = np.mean([r.effect_B for r in model_results])
+        avg_bias = np.mean([r.bias for r in model_results])
+        avg_abs_bias = np.mean([abs(r.bias) for r in model_results])
         avg_log_n = np.mean([r.log_n_coef_0 for r in model_results])
 
         sig_amce_0_rate = np.mean([r.sig_amce_0 for r in model_results])
@@ -1045,6 +1059,7 @@ AMCE values are on the log-odds scale. Positive values indicate preference for B
             f"AMCE_0={avg_amce_0:+.{decimals}f} (sig={sig_amce_0_rate:.0%}), "
             f"effect_A={avg_effect_A:+.{decimals}f} (sig={sig_effect_A_rate:.0%}), "
             f"effect_B={avg_effect_B:+.{decimals}f} (sig={sig_effect_B_rate:.0%}), "
+            f"bias={avg_bias:+.{decimals}f} (|bias|={avg_abs_bias:.{decimals}f}), "
             f"log(N)={avg_log_n:+.{decimals}f}"
         )
 
@@ -1061,24 +1076,31 @@ AMCE values are on the log-odds scale. Positive values indicate preference for B
         avg_amce_0 = np.mean([r.amce_0 for r in factor_results])
         avg_effect_A = np.mean([r.effect_A for r in factor_results])
         avg_effect_B = np.mean([r.effect_B for r in factor_results])
+        avg_bias = np.mean([r.bias for r in factor_results])
+        avg_abs_bias = np.mean([abs(r.bias) for r in factor_results])
 
         print(
             f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"AMCE_0={avg_amce_0:+.{decimals}f}, "
             f"effect_A={avg_effect_A:+.{decimals}f}, "
-            f"effect_B={avg_effect_B:+.{decimals}f}"
+            f"effect_B={avg_effect_B:+.{decimals}f}, "
+            f"bias={avg_bias:+.{decimals}f} (|bias|={avg_abs_bias:.{decimals}f})"
         )
 
     print(f"\nOverall ({len(results)} experiments):")
     avg_amce_0 = np.mean([r.amce_0 for r in results])
     avg_effect_A = np.mean([r.effect_A for r in results])
     avg_effect_B = np.mean([r.effect_B for r in results])
+    avg_bias = np.mean([r.bias for r in results])
+    avg_abs_bias = np.mean([abs(r.bias) for r in results])
     avg_abs_effect = np.mean([abs(r.effect_A) + abs(r.effect_B) for r in results]) / 2
     avg_log_n = np.mean([r.log_n_coef_0 for r in results])
 
     print(f"  Avg AMCE_0 (baseline bias): {avg_amce_0:+.{decimals}f}")
     print(f"  Avg effect_A (nudge->A effect): {avg_effect_A:+.{decimals}f}")
     print(f"  Avg effect_B (nudge->B effect): {avg_effect_B:+.{decimals}f}")
+    print(f"  Avg bias (effect_B - effect_A): {avg_bias:+.{decimals}f}")
+    print(f"  Avg |bias| (magnitude of bias): {avg_abs_bias:.{decimals}f}")
     print(f"  Avg |effect| (steerability): {avg_abs_effect:.{decimals}f}")
     print(f"  Avg log(N) coefficient: {avg_log_n:+.{decimals}f}")
 
