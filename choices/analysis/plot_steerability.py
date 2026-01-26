@@ -537,6 +537,7 @@ def create_steerability_violin_plot(
     row_type: str = "factors",
     show_bias: bool = False,
     show_significance: bool = False,
+    single_model: bool = False,
 ) -> plt.Figure:
     """
     Create violin plot showing steerability distributions.
@@ -556,6 +557,7 @@ def create_steerability_violin_plot(
         row_type: Type of rows - "factors", "models", or "nudges"
         show_bias: If True, add a column showing steerability bias as violin plot
         show_significance: If True, color non-significant points in grey
+        single_model: If True, only show baseline average (not range) since data is from one model
 
     Returns:
         The matplotlib Figure object
@@ -802,9 +804,10 @@ def create_steerability_violin_plot(
                 center_baseline = np.mean(row_data["f_0_B"])
 
             # Check if there's variation in baseline (aggregating multiple models)
+            # Only show range if we have multiple models (not single_model mode)
             baseline_min = np.min(row_data["f_0_B"])
             baseline_max = np.max(row_data["f_0_B"])
-            has_baseline_range = baseline_min != baseline_max
+            has_baseline_range = baseline_min != baseline_max and not single_model
 
             # Draw green handle bars (error bars) if there's baseline variation
             if has_baseline_range:
@@ -1216,7 +1219,8 @@ def create_steerability_violin_plot(
             )
         )
         # Check if any row has baseline variation to show range legend
-        has_any_baseline_range = any(
+        # Only show if not in single_model mode
+        has_any_baseline_range = not single_model and any(
             np.min(rd["f_0_B"]) != np.max(rd["f_0_B"]) for rd in data_by_row.values()
         )
         if has_any_baseline_range:
@@ -1550,6 +1554,13 @@ Examples:
         data_by_row = transform_data_to_relative(data_by_row)
         print()
 
+    # Check if we have a single model (don't show baseline range in that case)
+    unique_models = set(r.model for r in results)
+    is_single_model = len(unique_models) == 1
+    if is_single_model:
+        print(f"Single model detected: {list(unique_models)[0]}")
+        print()
+
     # Create plot
     figsize = (args.figsize[0], args.figsize[1] if args.figsize[1] else None)
     fig = create_steerability_violin_plot(
@@ -1563,6 +1574,7 @@ Examples:
         row_type=args.rows,
         show_bias=args.bias,
         show_significance=args.significance,
+        single_model=is_single_model,
     )
 
     if fig is None:
