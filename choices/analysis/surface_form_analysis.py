@@ -57,6 +57,9 @@ from choices.analysis.plot_baseline_vs_nudged_frequency import (
 from choices.analysis.analyze_simple_nudging_results import (
     two_proportion_z_test,
 )
+from choices.analysis.steerability_metric import (
+    compute_odds,
+)
 from choices.analysis.utils import (
     compute_factor_frequencies_with_counts,
     get_model_color,
@@ -84,12 +87,17 @@ class SurfaceFormDataPoint:
     f_0: float  # Baseline frequency (no nudge)
     f_c: float  # Frequency when nudged towards this option
     effect_size: float  # f_c - f_0
+    # Steerability (log-odds space)
+    steerability: Optional[float]  # log10(odds_nudged) - log10(odds_base)
     # Significance (two-proportion z-test comparing nudge to baseline)
     is_significant: bool  # True if effect differs significantly from 0
     p_value: float  # p-value from the test
-    # Sample sizes
+    # Sample sizes and counts
     n_base: int
     n_nudged: int
+    # Win counts (for steerability computation)
+    wins_base: int  # wins for this option in base condition
+    wins_nudged: int  # wins for this option when nudged towards it
 
 
 # Condition colors for the two nudge types
@@ -103,6 +111,42 @@ CONDITION_MARKERS = {
     "normal": "o",  # circle
     "baseline": "s",  # square
 }
+
+
+def compute_single_steerability(
+    wins_base: int,
+    losses_base: int,
+    wins_nudged: int,
+    losses_nudged: int,
+) -> Optional[float]:
+    """
+    Compute steerability for a single option: log10(odds_nudged) - log10(odds_base).
+
+    Uses Haldane-Anscombe correction (add 0.5) to handle zero counts.
+
+    Args:
+        wins_base: Wins for this option in base condition
+        losses_base: Losses for this option in base condition (i.e., wins for other option)
+        wins_nudged: Wins for this option when nudged towards it
+        losses_nudged: Losses for this option when nudged towards it
+
+    Returns:
+        Steerability value, or None if computation fails
+    """
+    import math
+
+    try:
+        odds_base = compute_odds(wins_base, losses_base, use_haldane_anscombe=True)
+        odds_nudged = compute_odds(
+            wins_nudged, losses_nudged, use_haldane_anscombe=True
+        )
+
+        if odds_base <= 0 or odds_nudged <= 0:
+            return None
+
+        return math.log10(odds_nudged) - math.log10(odds_base)
+    except (ValueError, ZeroDivisionError):
+        return None
 
 
 def discover_nudge_pairs(
@@ -375,9 +419,18 @@ def compute_data_points_for_pair(
         # Create data points for option A - NORMAL nudge
         f_0_A = base_stats.get(level_A, {}).get("freq", 0.5)
         n_base_A = base_stats.get(level_A, {}).get("n", 0)
+        wins_base_A = base_stats.get(level_A, {}).get("wins", 0)
+        wins_base_B = base_stats.get(level_B, {}).get("wins", 0)
 
         f_c_normal_A = normal_A_stats.get(level_A, {}).get("freq", 0.5)
         n_normal_A = normal_A_stats.get(level_A, {}).get("n", 0)
+        wins_normal_A_A = normal_A_stats.get(level_A, {}).get("wins", 0)
+        wins_normal_A_B = normal_A_stats.get(level_B, {}).get("wins", 0)
+
+        # Compute steerability for normal nudge A
+        steer_normal_A = compute_single_steerability(
+            wins_base_A, wins_base_B, wins_normal_A_A, wins_normal_A_B
+        )
 
         # Test significance for normal nudge A
         test_normal_A = two_proportion_z_test(
@@ -396,16 +449,26 @@ def compute_data_points_for_pair(
                 f_0=f_0_A,
                 f_c=f_c_normal_A,
                 effect_size=f_c_normal_A - f_0_A,
+                steerability=steer_normal_A,
                 is_significant=test_normal_A["is_significant"],
                 p_value=test_normal_A["p_value"],
                 n_base=n_base_A,
                 n_nudged=n_normal_A,
+                wins_base=wins_base_A,
+                wins_nudged=wins_normal_A_A,
             )
         )
 
         # Create data points for option A - BASELINE nudge
         f_c_baseline_A = baseline_A_stats.get(level_A, {}).get("freq", 0.5)
         n_baseline_A = baseline_A_stats.get(level_A, {}).get("n", 0)
+        wins_baseline_A_A = baseline_A_stats.get(level_A, {}).get("wins", 0)
+        wins_baseline_A_B = baseline_A_stats.get(level_B, {}).get("wins", 0)
+
+        # Compute steerability for baseline nudge A
+        steer_baseline_A = compute_single_steerability(
+            wins_base_A, wins_base_B, wins_baseline_A_A, wins_baseline_A_B
+        )
 
         # Test significance for baseline nudge A
         test_baseline_A = two_proportion_z_test(
@@ -424,10 +487,13 @@ def compute_data_points_for_pair(
                 f_0=f_0_A,
                 f_c=f_c_baseline_A,
                 effect_size=f_c_baseline_A - f_0_A,
+                steerability=steer_baseline_A,
                 is_significant=test_baseline_A["is_significant"],
                 p_value=test_baseline_A["p_value"],
                 n_base=n_base_A,
                 n_nudged=n_baseline_A,
+                wins_base=wins_base_A,
+                wins_nudged=wins_baseline_A_A,
             )
         )
 
@@ -437,6 +503,13 @@ def compute_data_points_for_pair(
 
         f_c_normal_B = normal_B_stats.get(level_B, {}).get("freq", 0.5)
         n_normal_B = normal_B_stats.get(level_B, {}).get("n", 0)
+        wins_normal_B_A = normal_B_stats.get(level_A, {}).get("wins", 0)
+        wins_normal_B_B = normal_B_stats.get(level_B, {}).get("wins", 0)
+
+        # Compute steerability for normal nudge B
+        steer_normal_B = compute_single_steerability(
+            wins_base_B, wins_base_A, wins_normal_B_B, wins_normal_B_A
+        )
 
         # Test significance for normal nudge B
         test_normal_B = two_proportion_z_test(
@@ -455,16 +528,26 @@ def compute_data_points_for_pair(
                 f_0=f_0_B,
                 f_c=f_c_normal_B,
                 effect_size=f_c_normal_B - f_0_B,
+                steerability=steer_normal_B,
                 is_significant=test_normal_B["is_significant"],
                 p_value=test_normal_B["p_value"],
                 n_base=n_base_B,
                 n_nudged=n_normal_B,
+                wins_base=wins_base_B,
+                wins_nudged=wins_normal_B_B,
             )
         )
 
         # Create data points for option B - BASELINE nudge
         f_c_baseline_B = baseline_B_stats.get(level_B, {}).get("freq", 0.5)
         n_baseline_B = baseline_B_stats.get(level_B, {}).get("n", 0)
+        wins_baseline_B_A = baseline_A_stats.get(level_A, {}).get("wins", 0)
+        wins_baseline_B_B = baseline_B_stats.get(level_B, {}).get("wins", 0)
+
+        # Compute steerability for baseline nudge B
+        steer_baseline_B = compute_single_steerability(
+            wins_base_B, wins_base_A, wins_baseline_B_B, wins_baseline_B_A
+        )
 
         # Test significance for baseline nudge B
         test_baseline_B = two_proportion_z_test(
@@ -483,10 +566,13 @@ def compute_data_points_for_pair(
                 f_0=f_0_B,
                 f_c=f_c_baseline_B,
                 effect_size=f_c_baseline_B - f_0_B,
+                steerability=steer_baseline_B,
                 is_significant=test_baseline_B["is_significant"],
                 p_value=test_baseline_B["p_value"],
                 n_base=n_base_B,
                 n_nudged=n_baseline_B,
+                wins_base=wins_base_B,
+                wins_nudged=wins_baseline_B_B,
             )
         )
 
@@ -795,14 +881,14 @@ def print_statistics(
     baseline_points = [dp for dp in data_points if dp.condition == "baseline"]
 
     # Data summary table (with significance markers: * = p<0.05)
-    print("\n" + "=" * 130)
+    print("\n" + "=" * 145)
     print("Data Summary (* = p<0.05)")
-    print("=" * 130)
+    print("=" * 145)
     print(
         f"{'Model':<20} {'Reas':<6} {'Factor':<12} {'Nudge':<18} "
-        f"{'Option':<10} {'Cond':<10} {'f_0':>8} {'f_c':>8} {'Effect':>10}"
+        f"{'Option':<10} {'Cond':<10} {'f_0':>8} {'f_c':>8} {'Effect':>10} {'Steer':>10}"
     )
-    print("-" * 130)
+    print("-" * 145)
     for dp in sorted(
         data_points,
         key=lambda x: (
@@ -816,6 +902,7 @@ def print_statistics(
     ):
         # Format effect with significance marker
         effect_str = f"{dp.effect_size:+.3f}{'*' if dp.is_significant else ''}"
+        steer_str = f"{dp.steerability:+.3f}" if dp.steerability is not None else "N/A"
         print(
             f"{get_model_display_name(dp.model):<20} "
             f"{dp.reasoning_condition:<6} "
@@ -825,13 +912,14 @@ def print_statistics(
             f"{dp.condition:<10} "
             f"{dp.f_0:>8.3f} "
             f"{dp.f_c:>8.3f} "
-            f"{effect_str:>10}"
+            f"{effect_str:>10} "
+            f"{steer_str:>10}"
         )
 
     # Statistics by condition
-    print("\n" + "=" * 115)
+    print("\n" + "=" * 145)
     print("Statistics by Condition")
-    print("=" * 115)
+    print("=" * 145)
 
     for condition, points in [("normal", normal_points), ("baseline", baseline_points)]:
         if not points:
@@ -839,23 +927,39 @@ def print_statistics(
         avg_f0 = np.mean([dp.f_0 for dp in points])
         avg_fc = np.mean([dp.f_c for dp in points])
         avg_effect = np.mean([dp.effect_size for dp in points])
+        avg_magnitude = np.mean([abs(dp.effect_size) for dp in points])
+        steer_points = [dp for dp in points if dp.steerability is not None]
+        avg_steer = (
+            np.mean([dp.steerability for dp in steer_points]) if steer_points else None
+        )
+        avg_abs_steer = (
+            np.mean([abs(dp.steerability) for dp in steer_points])
+            if steer_points
+            else None
+        )
         positive_count = sum(1 for dp in points if dp.effect_size > 0)
         sig_count = sum(1 for dp in points if dp.is_significant)
+        steer_str = (
+            f", avg steer={avg_steer:+.3f}, avg |steer|={avg_abs_steer:.3f}"
+            if avg_steer is not None
+            else ""
+        )
         print(
             f"  {condition.capitalize()}: "
             f"n={len(points)}, "
             f"avg f₀={avg_f0:.3f}, "
             f"avg f_c={avg_fc:.3f}, "
             f"avg effect={avg_effect:+.3f}, "
+            f"avg |effect|={avg_magnitude:.3f}{steer_str}, "
             f"positive={positive_count}/{len(points)}, "
             f"significant={sig_count}/{len(points)} ({100*sig_count/len(points):.0f}%)"
         )
 
     # Statistics by additional group if specified
     if groups:
-        print("\n" + "=" * 115)
+        print("\n" + "=" * 145)
         print(f"Statistics by {groups.title()}")
-        print("=" * 115)
+        print("=" * 145)
 
         def print_group_stats(group_name, points):
             # Separate by condition
@@ -865,37 +969,80 @@ def print_statistics(
             print(f"  {group_name}:")
 
             # Normal condition stats
+            avg_abs_steer_n = None
             if normal_pts:
                 avg_effect_n = np.mean([dp.effect_size for dp in normal_pts])
                 avg_mag_n = np.mean([abs(dp.effect_size) for dp in normal_pts])
+                steer_n = [dp for dp in normal_pts if dp.steerability is not None]
+                avg_steer_n = (
+                    np.mean([dp.steerability for dp in steer_n]) if steer_n else None
+                )
+                avg_abs_steer_n = (
+                    np.mean([abs(dp.steerability) for dp in steer_n])
+                    if steer_n
+                    else None
+                )
                 sig_n = sum(1 for dp in normal_pts if dp.is_significant)
+                steer_str = (
+                    f", avg steer={avg_steer_n:+.3f}, avg |steer|={avg_abs_steer_n:.3f}"
+                    if avg_steer_n is not None
+                    else ""
+                )
                 print(
                     f"    Normal:   n={len(normal_pts):>3}, "
                     f"avg effect={avg_effect_n:+.3f}, "
-                    f"avg |effect|={avg_mag_n:.3f}, "
+                    f"avg |effect|={avg_mag_n:.3f}{steer_str}, "
                     f"sig={sig_n}/{len(normal_pts)} ({100*sig_n/len(normal_pts):.0f}%)"
                 )
             else:
                 avg_mag_n = None
 
             # Baseline condition stats
+            avg_abs_steer_b = None
             if baseline_pts:
                 avg_effect_b = np.mean([dp.effect_size for dp in baseline_pts])
                 avg_mag_b = np.mean([abs(dp.effect_size) for dp in baseline_pts])
+                steer_b = [dp for dp in baseline_pts if dp.steerability is not None]
+                avg_steer_b = (
+                    np.mean([dp.steerability for dp in steer_b]) if steer_b else None
+                )
+                avg_abs_steer_b = (
+                    np.mean([abs(dp.steerability) for dp in steer_b])
+                    if steer_b
+                    else None
+                )
                 sig_b = sum(1 for dp in baseline_pts if dp.is_significant)
+                steer_str = (
+                    f", avg steer={avg_steer_b:+.3f}, avg |steer|={avg_abs_steer_b:.3f}"
+                    if avg_steer_b is not None
+                    else ""
+                )
                 print(
                     f"    Baseline: n={len(baseline_pts):>3}, "
                     f"avg effect={avg_effect_b:+.3f}, "
-                    f"avg |effect|={avg_mag_b:.3f}, "
+                    f"avg |effect|={avg_mag_b:.3f}{steer_str}, "
                     f"sig={sig_b}/{len(baseline_pts)} ({100*sig_b/len(baseline_pts):.0f}%)"
                 )
             else:
                 avg_mag_b = None
 
-            # Ratio of baseline to normal magnitude
+            # Ratio of baseline to normal magnitude (frequency space)
             if avg_mag_n is not None and avg_mag_b is not None and avg_mag_n > 0:
                 ratio = avg_mag_b / avg_mag_n
-                print(f"    Baseline/Normal magnitude ratio: {ratio:.2f}x")
+                print(
+                    f"    Baseline/Normal |effect| ratio (frequency space): {ratio:.2f}x"
+                )
+
+            # Ratio of baseline to normal steerability (log-odds space)
+            if (
+                avg_abs_steer_n is not None
+                and avg_abs_steer_b is not None
+                and avg_abs_steer_n > 0
+            ):
+                steer_ratio = avg_abs_steer_b / avg_abs_steer_n
+                print(
+                    f"    Baseline/Normal |steer| ratio (log-odds space): {steer_ratio:.2f}x"
+                )
 
         if groups == "model":
             group_dict = {}
@@ -941,17 +1088,22 @@ def print_statistics(
                 print_group_stats(reasoning, points)
 
     # Overall statistics
-    print("\n" + "=" * 115)
+    print("\n" + "=" * 145)
     print("Overall Statistics")
-    print("=" * 115)
+    print("=" * 145)
 
     x_all = [dp.f_0 for dp in data_points]
     y_all = [dp.f_c for dp in data_points]
     effects = [dp.effect_size for dp in data_points]
+    steer_points = [dp for dp in data_points if dp.steerability is not None]
+    steers = [dp.steerability for dp in steer_points]
 
     avg_f0 = np.mean(x_all)
     avg_fc = np.mean(y_all)
     avg_effect = np.mean(effects)
+    avg_magnitude = np.mean([abs(e) for e in effects])
+    avg_steer = np.mean(steers) if steers else None
+    avg_abs_steer = np.mean([abs(s) for s in steers]) if steers else None
     positive_count = sum(1 for e in effects if e > 0)
     sig_count = sum(1 for dp in data_points if dp.is_significant)
 
@@ -965,6 +1117,10 @@ def print_statistics(
     print(f"  Average baseline frequency (f₀): {avg_f0:.3f}")
     print(f"  Average nudged frequency (f_c): {avg_fc:.3f}")
     print(f"  Average effect size (f_c - f₀): {avg_effect:+.3f}")
+    print(f"  Average |effect| (frequency space): {avg_magnitude:.3f}")
+    if avg_steer is not None:
+        print(f"  Average steerability (log-odds space): {avg_steer:+.3f}")
+        print(f"  Average |steerability| (log-odds space): {avg_abs_steer:.3f}")
     print(
         f"  Positive effects: {positive_count}/{len(data_points)} "
         f"({100*positive_count/len(data_points):.1f}%)"
@@ -978,23 +1134,44 @@ def print_statistics(
 
     # Comparison between normal and baseline (if both present)
     if normal_points and baseline_points:
-        print("\n" + "-" * 115)
+        print("\n" + "-" * 145)
         print("Normal vs Baseline Comparison")
-        print("-" * 115)
+        print("-" * 145)
 
         normal_effects = [dp.effect_size for dp in normal_points]
         baseline_effects = [dp.effect_size for dp in baseline_points]
         normal_sig = sum(1 for dp in normal_points if dp.is_significant)
         baseline_sig = sum(1 for dp in baseline_points if dp.is_significant)
 
+        # Steerability metrics
+        normal_steers = [
+            dp.steerability for dp in normal_points if dp.steerability is not None
+        ]
+        baseline_steers = [
+            dp.steerability for dp in baseline_points if dp.steerability is not None
+        ]
+
         avg_normal = np.mean(normal_effects)
         avg_baseline = np.mean(baseline_effects)
         avg_mag_normal = np.mean([abs(e) for e in normal_effects])
         avg_mag_baseline = np.mean([abs(e) for e in baseline_effects])
 
+        avg_steer_normal = np.mean(normal_steers) if normal_steers else None
+        avg_steer_baseline = np.mean(baseline_steers) if baseline_steers else None
+        avg_abs_steer_normal = (
+            np.mean([abs(s) for s in normal_steers]) if normal_steers else None
+        )
+        avg_abs_steer_baseline = (
+            np.mean([abs(s) for s in baseline_steers]) if baseline_steers else None
+        )
+
         print(
             f"  Normal nudge avg effect: {avg_normal:+.3f}, avg |effect|: {avg_mag_normal:.3f}"
         )
+        if avg_steer_normal is not None:
+            print(
+                f"  Normal nudge avg steer: {avg_steer_normal:+.3f}, avg |steer|: {avg_abs_steer_normal:.3f}"
+            )
         print(
             f"  Normal nudge significant: {normal_sig}/{len(normal_points)} "
             f"({100*normal_sig/len(normal_points):.0f}%)"
@@ -1002,23 +1179,51 @@ def print_statistics(
         print(
             f"  Baseline nudge avg effect: {avg_baseline:+.3f}, avg |effect|: {avg_mag_baseline:.3f}"
         )
+        if avg_steer_baseline is not None:
+            print(
+                f"  Baseline nudge avg steer: {avg_steer_baseline:+.3f}, avg |steer|: {avg_abs_steer_baseline:.3f}"
+            )
         print(
             f"  Baseline nudge significant: {baseline_sig}/{len(baseline_points)} "
             f"({100*baseline_sig/len(baseline_points):.0f}%)"
         )
 
-        # Magnitude ratio
+        # Magnitude ratio (frequency space)
         if avg_mag_normal > 0:
             ratio = avg_mag_baseline / avg_mag_normal
-            print(f"  Baseline/Normal magnitude ratio: {ratio:.2f}x")
+            print(f"  Baseline/Normal |effect| ratio (frequency space): {ratio:.2f}x")
+
+        # Steerability ratio (log-odds space)
+        if (
+            avg_abs_steer_normal is not None
+            and avg_abs_steer_baseline is not None
+            and avg_abs_steer_normal > 0
+        ):
+            steer_ratio = avg_abs_steer_baseline / avg_abs_steer_normal
+            print(
+                f"  Baseline/Normal |steer| ratio (log-odds space): {steer_ratio:.2f}x"
+            )
 
         print(
             f"  Effect difference (normal - baseline): {avg_normal - avg_baseline:+.3f}"
         )
+        if avg_steer_normal is not None and avg_steer_baseline is not None:
+            print(
+                f"  Steerability difference (normal - baseline): {avg_steer_normal - avg_steer_baseline:+.3f}"
+            )
 
         # Independent t-test comparing effect sizes
         t_compare, p_compare = stats.ttest_ind(normal_effects, baseline_effects)
-        print(f"  Independent t-test: t = {t_compare:.3f} (p = {p_compare:.4f})")
+        print(
+            f"  Independent t-test (effect): t = {t_compare:.3f} (p = {p_compare:.4f})"
+        )
+
+        # Independent t-test comparing steerabilities
+        if normal_steers and baseline_steers:
+            t_steer, p_steer = stats.ttest_ind(normal_steers, baseline_steers)
+            print(
+                f"  Independent t-test (steer): t = {t_steer:.3f} (p = {p_steer:.4f})"
+            )
 
         # Interpretation
         if p_compare < 0.05:
