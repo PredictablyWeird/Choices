@@ -476,7 +476,7 @@ def create_steerability_violin_plot(
     percentiles: bool = False,
     relative: bool = False,
     row_type: str = "factors",
-    show_histogram: bool = False,
+    show_bias: bool = False,
 ) -> plt.Figure:
     """
     Create violin plot showing steerability distributions.
@@ -494,7 +494,7 @@ def create_steerability_violin_plot(
         percentiles: If True, show median and 25/75 percentiles instead of mean
         relative: If True, values are relative to baseline
         row_type: Type of rows - "factors", "models", or "nudges"
-        show_histogram: If True, add a histogram column showing steerability bias
+        show_bias: If True, add a column showing steerability bias as violin plot
 
     Returns:
         The matplotlib Figure object
@@ -509,10 +509,10 @@ def create_steerability_violin_plot(
     # Calculate figure height based on number of rows
     height = figsize[1] if figsize[1] else max(4, n_rows * 1.5)
 
-    # Create figure with optional histogram column
-    if show_histogram:
-        # Use gridspec for width ratio: violin plot gets 3 parts, histogram gets 1 part
-        fig, (ax, ax_hist) = plt.subplots(
+    # Create figure with optional bias column
+    if show_bias:
+        # Use gridspec for width ratio: violin plot gets 3 parts, bias gets 1 part
+        fig, (ax, ax_bias) = plt.subplots(
             1,
             2,
             figsize=(figsize[0] * 1.35, height),
@@ -520,7 +520,7 @@ def create_steerability_violin_plot(
         )
     else:
         fig, ax = plt.subplots(figsize=(figsize[0], height))
-        ax_hist = None
+        ax_bias = None
 
     # Colors
     color_nudge_A = "#E63946"  # Red - nudging towards A
@@ -871,8 +871,8 @@ def create_steerability_violin_plot(
             )
 
             # Right label (level B - towards which nudging increases f(B))
-            # Skip right label if histogram is shown (would overlap)
-            if not show_histogram:
+            # Skip right label if bias column is shown (would overlap)
+            if not show_bias:
                 ax.text(
                     x_max + label_offset,
                     y_pos,
@@ -898,8 +898,8 @@ def create_steerability_violin_plot(
                 clip_on=False,
             )
 
-    # Draw histogram column if enabled
-    if show_histogram and ax_hist is not None:
+    # Draw steerability bias column if enabled
+    if show_bias and ax_bias is not None:
         # Compute steerability bias for each row
         # steerability_A = log10(odds(A|nudge_A)) - log10(odds(A|baseline))
         # steerability_B = log10(odds(B|nudge_B)) - log10(odds(B|baseline))
@@ -953,118 +953,105 @@ def create_steerability_violin_plot(
             """
             return rel_B_B + rel_A_B
 
-        # Choose appropriate computation based on data space
-        all_msb_values = []
+        # Compute bias values for each row and collect all values for axis limits
+        bias_by_row = {}
+        all_bias_values = []
         for row_key in rows:
             rd = data_by_row[row_key]
             if relative:
-                # Data is relative to baseline (log odds differences)
-                msb_values = [
+                bias_values = [
                     compute_steerability_bias_from_relative(f_A, f_B)
                     for f_A, f_B in zip(rd["f_A_B"], rd["f_B_B"])
                 ]
             elif log_odds:
-                # Data is in absolute log odds space
-                msb_values = [
+                bias_values = [
                     compute_steerability_bias_from_log_odds(f_A, f_B, f_0)
                     for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
                 ]
             else:
-                # Data is in frequency space
-                msb_values = [
+                bias_values = [
                     compute_steerability_bias_from_freq(f_A, f_B, f_0)
                     for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
                 ]
-            all_msb_values.extend(msb_values)
+            bias_by_row[row_key] = bias_values
+            all_bias_values.extend(bias_values)
 
-        # Determine common bin edges for all histograms
-        all_msb = np.array(all_msb_values)
-        msb_min, msb_max = np.min(all_msb), np.max(all_msb)
-        # Add padding
-        msb_range = msb_max - msb_min if msb_max != msb_min else 0.1
-        msb_padding = msb_range * 0.05
-        hist_xlim = (msb_min - msb_padding, msb_max + msb_padding)
-        n_hist_bins = 15
+        # Determine x-axis limits with padding
+        all_bias = np.array(all_bias_values)
+        bias_min, bias_max = np.min(all_bias), np.max(all_bias)
+        bias_range = bias_max - bias_min if bias_max != bias_min else 0.1
+        bias_padding = bias_range * 0.1
+        bias_xlim = (bias_min - bias_padding, bias_max + bias_padding)
 
-        # Draw histogram for each row
+        # Bias violin color
+        bias_color = "#7B68EE"  # Medium slate blue
+
+        # Draw violin and scatter for each row
         for i, row_key in enumerate(rows):
-            rd = data_by_row[row_key]
-            if relative:
-                msb_values = [
-                    compute_steerability_bias_from_relative(f_A, f_B)
-                    for f_A, f_B in zip(rd["f_A_B"], rd["f_B_B"])
-                ]
-            elif log_odds:
-                msb_values = [
-                    compute_steerability_bias_from_log_odds(f_A, f_B, f_0)
-                    for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
-                ]
-            else:
-                msb_values = [
-                    compute_steerability_bias_from_freq(f_A, f_B, f_0)
-                    for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
-                ]
+            bias_values = bias_by_row[row_key]
             y_pos = y_positions[i]
 
-            # Create horizontal histogram using barh
-            # Compute histogram
-            counts, bin_edges = np.histogram(
-                msb_values, bins=n_hist_bins, range=hist_xlim
+            # Draw violin if enough data points
+            if len(bias_values) >= 2:
+                parts = ax_bias.violinplot(
+                    [bias_values],
+                    positions=[y_pos],
+                    vert=False,
+                    showmeans=False,
+                    showmedians=False,
+                    showextrema=False,
+                    widths=0.7,
+                )
+                for pc in parts["bodies"]:
+                    pc.set_facecolor(bias_color)
+                    pc.set_edgecolor(bias_color)
+                    pc.set_alpha(0.3)
+
+            # Draw scatter points with jitter
+            n_points = len(bias_values)
+            jitter = np.random.uniform(-0.2, 0.2, n_points)
+            ax_bias.scatter(
+                bias_values,
+                y_pos + jitter,
+                color=bias_color,
+                alpha=0.7,
+                s=20,
+                edgecolors="white",
+                linewidths=0.5,
+                zorder=3,
             )
-            # Normalize counts to fit within row height (max bar height = 0.4)
-            max_count = max(counts) if max(counts) > 0 else 1
-            bar_heights = counts / max_count * 0.4
 
-            # Draw bars centered on y_pos
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-            bin_width = bin_edges[1] - bin_edges[0]
-
-            # Use single neutral color (purple) for all bars
-            hist_color = "#7B68EE"  # Medium slate blue
-            for j, (center, height) in enumerate(zip(bin_centers, bar_heights)):
-                if height > 0:
-                    ax_hist.barh(
-                        y_pos,
-                        bin_width,
-                        height=height,
-                        left=center - bin_width / 2,
-                        color=hist_color,
-                        alpha=0.6,
-                        edgecolor="white",
-                        linewidth=0.3,
-                    )
-
-            # Add mean marker as a simple vertical line segment
-            mean_msb = np.mean(msb_values)
-            ax_hist.plot(
-                [mean_msb, mean_msb],
-                [y_pos - 0.35, y_pos + 0.35],
+            # Add mean marker
+            mean_bias = np.mean(bias_values)
+            ax_bias.scatter(
+                [mean_bias],
+                [y_pos],
                 color="black",
-                linestyle="-",
-                linewidth=1.5,
-                alpha=0.8,
-                zorder=10,
+                marker="|",
+                s=400,
+                linewidths=2,
+                zorder=5,
             )
 
-        # Configure histogram axis
-        ax_hist.axvline(x=0, color="gray", linestyle=":", linewidth=1, alpha=0.5)
-        ax_hist.set_xlim(hist_xlim)
-        ax_hist.set_ylim(ax.get_ylim())
-        ax_hist.set_yticks([])
-        ax_hist.invert_yaxis()
+        # Configure bias axis
+        ax_bias.axvline(x=0, color="gray", linestyle=":", linewidth=1, alpha=0.5)
+        ax_bias.set_xlim(bias_xlim)
+        ax_bias.set_ylim(ax.get_ylim())
+        ax_bias.set_yticks([])
+        ax_bias.invert_yaxis()
 
         # Steerability bias is always in log odds space
-        ax_hist.set_xlabel("Steerability Bias\n(Δ Log₁₀ Odds)", fontsize=10)
+        ax_bias.set_xlabel("Steerability Bias\n(Δ Log₁₀ Odds)", fontsize=10)
 
-        # Style histogram axis
-        ax_hist.spines["top"].set_visible(False)
-        ax_hist.spines["right"].set_visible(False)
-        ax_hist.spines["left"].set_visible(False)
-        ax_hist.tick_params(axis="x", which="major", labelsize=9)
+        # Style bias axis
+        ax_bias.spines["top"].set_visible(False)
+        ax_bias.spines["right"].set_visible(False)
+        ax_bias.spines["left"].set_visible(False)
+        ax_bias.tick_params(axis="x", which="major", labelsize=9)
 
         # Add grid lines to match main plot
         for i in range(n_rows - 1):
-            ax_hist.axhline(
+            ax_bias.axhline(
                 y=i + 0.5,
                 color="lightgray",
                 linestyle="-",
@@ -1173,8 +1160,8 @@ def create_steerability_violin_plot(
     ax.invert_yaxis()
 
     # Adjust margins to make room for option labels on left and right
-    if show_histogram:
-        # With histogram, we need different margins and more space between plots
+    if show_bias:
+        # With bias column, we need different margins and more space between plots
         plt.subplots_adjust(left=0.10, right=0.98, wspace=0.15)
         plt.tight_layout(rect=[0.06, 0, 1.0, 1])
     else:
@@ -1310,9 +1297,9 @@ Examples:
     )
 
     parser.add_argument(
-        "--histogram",
+        "--bias",
         action="store_true",
-        help="Add a histogram column showing steerability bias (f_B_B - f_A_B) distribution",
+        help="Add a column showing steerability bias distribution as violin plot with data points",
     )
 
     args = parser.parse_args()
@@ -1353,7 +1340,7 @@ Examples:
     print(f"Space: {'Log Odds' if use_log_odds else 'Frequency'}")
     print(f"Relative: {'Yes' if use_relative else 'No'}")
     print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
-    print(f"Histogram: {'Yes' if args.histogram else 'No'}")
+    print(f"Bias column: {'Yes' if args.bias else 'No'}")
     print(f"Output: {output_path}")
     print("=" * 70)
     print()
@@ -1456,7 +1443,7 @@ Examples:
         percentiles=args.percentiles,
         relative=use_relative,
         row_type=args.rows,
-        show_histogram=args.histogram,
+        show_bias=args.bias,
     )
 
     if fig is None:
