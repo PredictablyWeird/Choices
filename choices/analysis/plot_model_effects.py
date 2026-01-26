@@ -179,19 +179,21 @@ def collect_data_by_factor(
 def select_best_factor_per_model(
     results: List[FrequencyResult],
     selection: str = "steer_bias",
-) -> Dict[Tuple[str, str], Tuple[str, float]]:
+) -> Dict[Tuple[str, str], Tuple[str, float, Optional[float]]]:
     """
     For each (model, reasoning_condition), select the factor with the largest metric.
 
     Args:
         results: List of FrequencyResult objects
         selection: Metric to use for selection:
-            - "steer_bias": highest average magnitude of steerability bias
-            - "steerability": highest average magnitude of steerability
-            - "effect": highest average magnitude of effect size
+            - "steer_bias": abs of average steerability bias (preserves sign before abs)
+            - "abs_steer_bias": average of absolute steerability bias values
+            - "steerability": average of absolute steerability values
+            - "effect": average of absolute effect size values
 
     Returns:
-        Dictionary mapping (model, reasoning_condition) -> (best_factor, metric_value)
+        Dictionary mapping (model, reasoning_condition) -> (best_factor, abs_value, signed_value)
+        signed_value is the original signed average for steer_bias, None for other selections
     """
     # Group results by (model, reasoning_condition, factor)
     by_model_reason_factor: Dict[Tuple[str, str, str], List[FrequencyResult]] = (
@@ -201,10 +203,27 @@ def select_best_factor_per_model(
         by_model_reason_factor[(r.model, r.reasoning_condition, r.factor)].append(r)
 
     # Compute average metric for each (model, reasoning_condition, factor)
-    model_reason_factor_metrics: Dict[Tuple[str, str, str], float] = {}
+    # Store both absolute value (for selection) and signed value (for display)
+    model_reason_factor_metrics: Dict[
+        Tuple[str, str, str], Tuple[float, Optional[float]]
+    ] = {}
     for (model, reasoning, factor), factor_results in by_model_reason_factor.items():
         if selection == "steer_bias":
-            # Average magnitude of steerability bias
+            # Average steerability bias first, then take absolute value
+            values = [
+                r.steerability_bias
+                for r in factor_results
+                if r.steerability_bias is not None
+            ]
+            if values:
+                avg_bias = sum(values) / len(values)
+                model_reason_factor_metrics[(model, reasoning, factor)] = (
+                    abs(avg_bias),
+                    avg_bias,
+                )
+            continue
+        elif selection == "abs_steer_bias":
+            # Average of absolute steerability bias values
             values = [
                 abs(r.steerability_bias)
                 for r in factor_results
@@ -224,25 +243,33 @@ def select_best_factor_per_model(
             raise ValueError(f"Unknown selection metric: {selection}")
 
         if values:
-            model_reason_factor_metrics[(model, reasoning, factor)] = sum(values) / len(
-                values
-            )
+            avg_val = sum(values) / len(values)
+            model_reason_factor_metrics[(model, reasoning, factor)] = (avg_val, None)
 
     # For each (model, reasoning_condition), find the factor with the largest metric
-    best_by_model_reason: Dict[Tuple[str, str], Tuple[str, float]] = {}
+    best_by_model_reason: Dict[Tuple[str, str], Tuple[str, float, Optional[float]]] = {}
     model_reason_keys = set(
         (model, reasoning) for model, reasoning, _ in model_reason_factor_metrics.keys()
     )
 
     for model, reasoning in model_reason_keys:
         best_factor = None
-        best_value = -1
-        for (m, r, factor), value in model_reason_factor_metrics.items():
-            if m == model and r == reasoning and value > best_value:
-                best_value = value
+        best_abs_value = -1
+        best_signed_value = None
+        for (m, r, factor), (
+            abs_val,
+            signed_val,
+        ) in model_reason_factor_metrics.items():
+            if m == model and r == reasoning and abs_val > best_abs_value:
+                best_abs_value = abs_val
+                best_signed_value = signed_val
                 best_factor = factor
         if best_factor is not None:
-            best_by_model_reason[(model, reasoning)] = (best_factor, best_value)
+            best_by_model_reason[(model, reasoning)] = (
+                best_factor,
+                best_abs_value,
+                best_signed_value,
+            )
 
     return best_by_model_reason
 
@@ -481,6 +508,7 @@ def create_multi_model_effects_plot(
     # Title
     selection_labels = {
         "steer_bias": "Steerability Bias",
+        "abs_steer_bias": "|Steerability Bias|",
         "steerability": "Steerability",
         "effect": "Effect Size",
     }
@@ -644,7 +672,8 @@ def create_multi_model_effects_plot(
 
     ax.legend(
         handles=legend_elements,
-        loc="upper right",
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1),
         fontsize=9,
         framealpha=0.9,
     )
@@ -657,9 +686,9 @@ def create_multi_model_effects_plot(
     # Invert y-axis so first row is at top
     ax.invert_yaxis()
 
-    # Adjust margins
-    plt.subplots_adjust(left=0.15, right=0.88)
-    plt.tight_layout(rect=[0.10, 0.02, 0.92, 0.98])
+    # Adjust margins to make room for legend on right
+    plt.subplots_adjust(left=0.15, right=0.75)
+    plt.tight_layout(rect=[0.10, 0.02, 0.78, 0.98])
 
     # Save figure
     if output_path:
@@ -991,7 +1020,8 @@ def create_model_effects_plot(
 
     ax.legend(
         handles=legend_elements,
-        loc="upper right",
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1),
         fontsize=9,
         framealpha=0.9,
     )
@@ -1004,9 +1034,9 @@ def create_model_effects_plot(
     # Invert y-axis so first factor is at top
     ax.invert_yaxis()
 
-    # Adjust margins
-    plt.subplots_adjust(left=0.12, right=0.88)
-    plt.tight_layout(rect=[0.08, 0.02, 0.92, 0.98])
+    # Adjust margins to make room for legend on right
+    plt.subplots_adjust(left=0.12, right=0.75)
+    plt.tight_layout(rect=[0.08, 0.02, 0.78, 0.98])
 
     # Save figure
     if output_path:
@@ -1068,15 +1098,15 @@ Examples:
         "--reasoning",
         nargs="+",
         default=None,
-        help="Reasoning condition(s) to filter by (required for multi-model mode, can specify multiple)",
+        help="Reasoning condition(s) to filter by (optional, can specify multiple for multi-model mode)",
     )
 
     parser.add_argument(
         "--selection",
         type=str,
-        choices=["steer_bias", "steerability", "effect"],
+        choices=["steer_bias", "abs_steer_bias", "steerability", "effect"],
         default="steer_bias",
-        help="Selection metric for multi-model mode (default: steer_bias)",
+        help="Selection metric for multi-model mode: steer_bias (default), abs_steer_bias, steerability, effect",
     )
 
     parser.add_argument(
@@ -1130,12 +1160,10 @@ Examples:
     if reasoning_conditions is None:
         if single_model_mode:
             reasoning_conditions = [get_default_reasoning_condition(args.model)]
-        else:
-            print("Error: --reasoning is required for multi-model mode")
-            return
+        # For multi-model mode, None means "all" - will be handled later
 
     # For single model mode, only use first reasoning condition
-    if single_model_mode and len(reasoning_conditions) > 1:
+    if single_model_mode and reasoning_conditions and len(reasoning_conditions) > 1:
         print("Warning: Multiple reasoning conditions given for single model mode.")
         print(f"Using only the first: {reasoning_conditions[0]}")
         reasoning_conditions = [reasoning_conditions[0]]
@@ -1159,7 +1187,10 @@ Examples:
     else:
         print("Mode: Multi-model (best factor per model)")
         print(f"Selection: {args.selection}")
-    print(f"Reasoning condition(s): {', '.join(reasoning_conditions)}")
+    if reasoning_conditions:
+        print(f"Reasoning condition(s): {', '.join(reasoning_conditions)}")
+    else:
+        print("Reasoning condition(s): all")
     print(f"Results directories: {args.results_dirs}")
     if args.factors:
         print(f"Factor filter: {args.factors}")
@@ -1189,16 +1220,19 @@ Examples:
 
     print(f"Found {len(results)} result(s)")
 
-    # Filter by reasoning condition(s)
-    results = [r for r in results if r.reasoning_condition in reasoning_conditions]
-    print(
-        f"After reasoning filter ({', '.join(reasoning_conditions)}): {len(results)} result(s)"
-    )
+    # Filter by reasoning condition(s) if specified
+    if reasoning_conditions:
+        results = [r for r in results if r.reasoning_condition in reasoning_conditions]
+        print(
+            f"After reasoning filter ({', '.join(reasoning_conditions)}): {len(results)} result(s)"
+        )
+    else:
+        # For multi-model mode without reasoning filter, get all unique conditions
+        reasoning_conditions = sorted(set(r.reasoning_condition for r in results))
+        print(f"Using all reasoning conditions: {', '.join(reasoning_conditions)}")
 
     if not results:
-        print(
-            f"No results found for reasoning condition(s): {', '.join(reasoning_conditions)}"
-        )
+        print("No results found after filtering.")
         return
 
     print()
@@ -1242,18 +1276,22 @@ Examples:
             best_by_model_reason.keys(),
             key=lambda x: (get_model_display_name(x[0]), x[1]),
         ):
-            factor, value = best_by_model_reason[(model, reasoning)]
+            factor, abs_value, signed_value = best_by_model_reason[(model, reasoning)]
             if len(reasoning_conditions) > 1:
                 label = f"{get_model_display_name(model)} ({reasoning})"
             else:
                 label = get_model_display_name(model)
-            print(f"  {label:<40} {factor:<15} ({value:.3f})")
+            # Show signed value if available, otherwise show absolute value
+            if signed_value is not None:
+                print(f"  {label:<40} {factor:<15} ({signed_value:+.3f})")
+            else:
+                print(f"  {label:<40} {factor:<15} ({abs_value:.3f})")
         print()
 
         # Collect data for the selected (model, reasoning, factor) tuples
         model_reason_factor_tuples = [
             (model, reasoning, factor)
-            for (model, reasoning), (factor, _) in best_by_model_reason.items()
+            for (model, reasoning), (factor, _, _) in best_by_model_reason.items()
         ]
         data_by_model_reason_factor = collect_data_for_multi_model(
             results, model_reason_factor_tuples
