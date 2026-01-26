@@ -52,6 +52,12 @@ Usage:
         --model gpt-4o-mini \
         --results-dirs results \
         --output model_effects.pdf
+
+    # Plot log odds steerability instead of baseline preference
+    uv run python -m choices.analysis.plot_model_effects \
+        --model claude-3-5-sonnet-latest \
+        --results-dirs results \
+        --log-odds
 """
 
 import argparse
@@ -140,6 +146,8 @@ def collect_data_by_factor(
                 'f_B_B': float,  # freq of B when nudged towards B
                 'sig_A': bool,   # significance flag for nudge towards A
                 'sig_B': bool,   # significance flag for nudge towards B
+                'steerability_A': Optional[float],  # log odds steerability towards A
+                'steerability_B': Optional[float],  # log odds steerability towards B
             },
             'f_0_B': float,      # baseline freq of B (should be same for all nudges)
             'level_A': str,
@@ -163,6 +171,8 @@ def collect_data_by_factor(
                 "f_B_B": r.f_B_B,
                 "sig_A": r.sig_A,
                 "sig_B": r.sig_B,
+                "steerability_A": r.steerability_A,
+                "steerability_B": r.steerability_B,
             }
         )
         # Store baseline (should be consistent across nudge types for same factor)
@@ -315,6 +325,8 @@ def collect_data_for_multi_model(
                 "f_B_B": r.f_B_B,
                 "sig_A": r.sig_A,
                 "sig_B": r.sig_B,
+                "steerability_A": r.steerability_A,
+                "steerability_B": r.steerability_B,
             }
         )
         if data[key]["f_0_B"] is None:
@@ -334,6 +346,7 @@ def create_multi_model_effects_plot(
     figsize: Tuple[float, float] = (10, None),
     show_significance: bool = False,
     show_geom_mean: bool = False,
+    log_odds: bool = False,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for multiple models.
@@ -348,6 +361,7 @@ def create_multi_model_effects_plot(
         figsize: Figure size (width, height). Height auto-calculated if None.
         show_significance: If True, show non-significant points in grey
         show_geom_mean: If True, show geometric mean markers
+        log_odds: If True, plot log odds steerability instead of baseline preference
 
     Returns:
         The matplotlib Figure object
@@ -403,28 +417,29 @@ def create_multi_model_effects_plot(
             zorder=0,
         )
 
-        # Draw vertical dashed line at baseline
-        ax.plot(
-            [f_0_B, f_0_B],
-            [y_pos - 0.35, y_pos + 0.35],
-            color=color_baseline,
-            linestyle="--",
-            linewidth=2,
-            alpha=0.9,
-            zorder=8,
-        )
+        if not log_odds:
+            # Draw vertical dashed line at baseline
+            ax.plot(
+                [f_0_B, f_0_B],
+                [y_pos - 0.35, y_pos + 0.35],
+                color=color_baseline,
+                linestyle="--",
+                linewidth=2,
+                alpha=0.9,
+                zorder=8,
+            )
 
-        # Draw green diamond at baseline
-        ax.scatter(
-            [f_0_B],
-            [y_pos],
-            color=color_baseline,
-            marker="D",
-            s=120,
-            edgecolors="black",
-            linewidths=1.5,
-            zorder=9,
-        )
+            # Draw green diamond at baseline
+            ax.scatter(
+                [f_0_B],
+                [y_pos],
+                color=color_baseline,
+                marker="D",
+                s=120,
+                edgecolors="black",
+                linewidths=1.5,
+                zorder=9,
+            )
 
         # Plot each nudge type with its own symbol
         for nd in row_data["nudge_data"]:
@@ -438,16 +453,31 @@ def create_multi_model_effects_plot(
             else:
                 point_color_A = color_nudge_A
 
-            ax.scatter(
-                [nd["f_A_B"]],
-                [y_A],
-                color=point_color_A,
-                marker=marker,
-                s=80,
-                edgecolors="white",
-                linewidths=0.5,
-                zorder=5,
-            )
+            if log_odds:
+                # Plot steerability_A (log odds)
+                steer_A = nd.get("steerability_A")
+                if steer_A is not None:
+                    ax.scatter(
+                        [steer_A],
+                        [y_A],
+                        color=point_color_A,
+                        marker=marker,
+                        s=80,
+                        edgecolors="white",
+                        linewidths=0.5,
+                        zorder=5,
+                    )
+            else:
+                ax.scatter(
+                    [nd["f_A_B"]],
+                    [y_A],
+                    color=point_color_A,
+                    marker=marker,
+                    s=80,
+                    edgecolors="white",
+                    linewidths=0.5,
+                    zorder=5,
+                )
 
             # Nudge towards B (below center line) - BLUE
             y_B = y_pos + y_offset
@@ -456,54 +486,127 @@ def create_multi_model_effects_plot(
             else:
                 point_color_B = color_nudge_B
 
-            ax.scatter(
-                [nd["f_B_B"]],
-                [y_B],
-                color=point_color_B,
-                marker=marker,
-                s=80,
-                edgecolors="white",
-                linewidths=0.5,
-                zorder=5,
-            )
+            if log_odds:
+                # Plot steerability_B (log odds)
+                steer_B = nd.get("steerability_B")
+                if steer_B is not None:
+                    ax.scatter(
+                        [steer_B],
+                        [y_B],
+                        color=point_color_B,
+                        marker=marker,
+                        s=80,
+                        edgecolors="white",
+                        linewidths=0.5,
+                        zorder=5,
+                    )
+            else:
+                ax.scatter(
+                    [nd["f_B_B"]],
+                    [y_B],
+                    color=point_color_B,
+                    marker=marker,
+                    s=80,
+                    edgecolors="white",
+                    linewidths=0.5,
+                    zorder=5,
+                )
 
         # Compute and draw geometric mean markers
         if show_geom_mean:
-            f_A_B_values = [nd["f_A_B"] for nd in row_data["nudge_data"]]
-            f_B_B_values = [nd["f_B_B"] for nd in row_data["nudge_data"]]
+            if log_odds:
+                # For log odds, compute arithmetic mean of steerability values
+                steer_A_values = [
+                    nd.get("steerability_A")
+                    for nd in row_data["nudge_data"]
+                    if nd.get("steerability_A") is not None
+                ]
+                steer_B_values = [
+                    nd.get("steerability_B")
+                    for nd in row_data["nudge_data"]
+                    if nd.get("steerability_B") is not None
+                ]
 
-            bar_height = 0.25
+                bar_height = 0.25
 
-            if f_A_B_values:
-                geom_mean_A = geometric_mean_freq(f_A_B_values)
-                ax.plot(
-                    [geom_mean_A, geom_mean_A],
-                    [y_pos - bar_height, y_pos],
-                    color=color_nudge_A,
-                    linewidth=2,
-                    solid_capstyle="round",
-                    zorder=6,
-                )
+                if steer_A_values:
+                    geom_mean_A = sum(steer_A_values) / len(steer_A_values)
+                    ax.plot(
+                        [geom_mean_A, geom_mean_A],
+                        [y_pos - bar_height, y_pos],
+                        color=color_nudge_A,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
 
-            if f_B_B_values:
-                geom_mean_B = geometric_mean_freq(f_B_B_values)
-                ax.plot(
-                    [geom_mean_B, geom_mean_B],
-                    [y_pos, y_pos + bar_height],
-                    color=color_nudge_B,
-                    linewidth=2,
-                    solid_capstyle="round",
-                    zorder=6,
-                )
+                if steer_B_values:
+                    geom_mean_B = sum(steer_B_values) / len(steer_B_values)
+                    ax.plot(
+                        [geom_mean_B, geom_mean_B],
+                        [y_pos, y_pos + bar_height],
+                        color=color_nudge_B,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+            else:
+                f_A_B_values = [nd["f_A_B"] for nd in row_data["nudge_data"]]
+                f_B_B_values = [nd["f_B_B"] for nd in row_data["nudge_data"]]
 
-    # Add reference line at 0.5 (no preference)
-    ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+                bar_height = 0.25
+
+                if f_A_B_values:
+                    geom_mean_A = geometric_mean_freq(f_A_B_values)
+                    ax.plot(
+                        [geom_mean_A, geom_mean_A],
+                        [y_pos - bar_height, y_pos],
+                        color=color_nudge_A,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+
+                if f_B_B_values:
+                    geom_mean_B = geometric_mean_freq(f_B_B_values)
+                    ax.plot(
+                        [geom_mean_B, geom_mean_B],
+                        [y_pos, y_pos + bar_height],
+                        color=color_nudge_B,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+
+    # Add reference line
+    if log_odds:
+        # Reference line at 0 (no steerability)
+        ax.axvline(x=0.0, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        # Auto-scale x-axis based on data
+        all_steer_values = []
+        for row_data in data_by_model_reason_factor.values():
+            for nd in row_data["nudge_data"]:
+                if nd.get("steerability_A") is not None:
+                    all_steer_values.append(nd["steerability_A"])
+                if nd.get("steerability_B") is not None:
+                    all_steer_values.append(nd["steerability_B"])
+        if all_steer_values:
+            x_min = min(all_steer_values)
+            x_max = max(all_steer_values)
+            x_range = x_max - x_min
+            ax.set_xlim(x_min - 0.1 * x_range, x_max + 0.1 * x_range)
+        else:
+            ax.set_xlim(-1.0, 1.0)
+        ax.set_xlabel("Log Odds Steerability", fontsize=12)
+    else:
+        # Reference line at 0.5 (no preference)
+        ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        ax.set_xlim(-0.05, 1.05)
+        ax.set_xlabel("Frequency of Choosing B", fontsize=12)
 
     # Configure axes
-    ax.set_xlim(-0.05, 1.05)
     ax.set_yticks(y_positions)
     ax.set_yticklabels([""] * n_rows)
-    ax.set_xlabel("Frequency of Choosing B", fontsize=12)
 
     # Title
     selection_labels = {
@@ -557,67 +660,98 @@ def create_multi_model_effects_plot(
             clip_on=False,
         )
 
-        # Left label (level A)
-        ax.text(
-            x_min - label_offset,
-            y_pos + 0.1,
-            level_A,
-            ha="right",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#E63946",
-            clip_on=False,
-        )
+        if log_odds:
+            # For log-odds mode: both labels on the right, A above, B below
+            ax.text(
+                x_max + label_offset,
+                y_pos - y_offset,
+                level_A,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",
+                clip_on=False,
+            )
+            ax.text(
+                x_max + label_offset,
+                y_pos + y_offset,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",
+                clip_on=False,
+            )
+        else:
+            # Left label (level A)
+            ax.text(
+                x_min - label_offset,
+                y_pos + 0.1,
+                level_A,
+                ha="right",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",
+                clip_on=False,
+            )
 
-        # Right label (level B)
-        ax.text(
-            x_max + label_offset,
-            y_pos,
-            level_B,
-            ha="left",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#457B9D",
-            clip_on=False,
-        )
+            # Right label (level B)
+            ax.text(
+                x_max + label_offset,
+                y_pos,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",
+                clip_on=False,
+            )
 
     # Create legend
     from matplotlib.lines import Line2D
 
-    legend_elements = [
-        Line2D(
-            [0],
-            [0],
-            marker="D",
-            color="w",
-            markerfacecolor=color_baseline,
-            markeredgecolor="black",
-            markersize=10,
-            label="Baseline f₀(B)",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            markerfacecolor=color_nudge_A,
-            markeredgecolor="white",
-            markersize=8,
-            label="Nudge towards A",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            markerfacecolor=color_nudge_B,
-            markeredgecolor="white",
-            markersize=8,
-            label="Nudge towards B",
-        ),
-    ]
+    legend_elements = []
+    if not log_odds:
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                marker="D",
+                color="w",
+                markerfacecolor=color_baseline,
+                markeredgecolor="black",
+                markersize=10,
+                label="Baseline f₀(B)",
+            )
+        )
+    legend_elements.extend(
+        [
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=color_nudge_A,
+                markeredgecolor="white",
+                markersize=8,
+                label="Nudge towards A" if not log_odds else "Steerability towards A",
+            ),
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=color_nudge_B,
+                markeredgecolor="white",
+                markersize=8,
+                label="Nudge towards B" if not log_odds else "Steerability towards B",
+            ),
+        ]
+    )
 
     if show_geom_mean:
         legend_elements.extend(
@@ -710,12 +844,13 @@ def create_model_effects_plot(
     figsize: Tuple[float, float] = (10, None),
     show_significance: bool = False,
     show_geom_mean: bool = False,
+    log_odds: bool = False,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for a single model.
 
     For each factor (row):
-    - Green diamond marks baseline preference
+    - Green diamond marks baseline preference (unless log_odds=True)
     - Each nudge type is shown with a different symbol
     - Points above row center: effects when nudging towards A
     - Points below row center: effects when nudging towards B
@@ -728,6 +863,7 @@ def create_model_effects_plot(
         figsize: Figure size (width, height). Height auto-calculated if None.
         show_significance: If True, show non-significant points in grey
         show_geom_mean: If True, show geometric mean markers
+        log_odds: If True, plot log odds steerability instead of baseline preference
 
     Returns:
         The matplotlib Figure object
@@ -779,29 +915,30 @@ def create_model_effects_plot(
             zorder=0,
         )
 
-        # Draw vertical dashed line at baseline
-        ax.plot(
-            [f_0_B, f_0_B],
-            [y_pos - 0.35, y_pos + 0.35],
-            color=color_baseline,
-            linestyle="--",
-            linewidth=2,
-            alpha=0.9,
-            zorder=8,
-        )
+        if not log_odds:
+            # Draw vertical dashed line at baseline
+            ax.plot(
+                [f_0_B, f_0_B],
+                [y_pos - 0.35, y_pos + 0.35],
+                color=color_baseline,
+                linestyle="--",
+                linewidth=2,
+                alpha=0.9,
+                zorder=8,
+            )
 
-        # Draw green diamond at baseline
-        ax.scatter(
-            [f_0_B],
-            [y_pos],
-            color=color_baseline,
-            marker="D",
-            s=120,
-            edgecolors="black",
-            linewidths=1.5,
-            zorder=9,
-            label="Baseline" if i == 0 else None,
-        )
+            # Draw green diamond at baseline
+            ax.scatter(
+                [f_0_B],
+                [y_pos],
+                color=color_baseline,
+                marker="D",
+                s=120,
+                edgecolors="black",
+                linewidths=1.5,
+                zorder=9,
+                label="Baseline" if i == 0 else None,
+            )
 
         # Plot each nudge type with its own symbol
         for nd in factor_data["nudge_data"]:
@@ -816,16 +953,31 @@ def create_model_effects_plot(
             else:
                 point_color_A = color_nudge_A
 
-            ax.scatter(
-                [nd["f_A_B"]],
-                [y_A],
-                color=point_color_A,
-                marker=marker,
-                s=80,
-                edgecolors="white",
-                linewidths=0.5,
-                zorder=5,
-            )
+            if log_odds:
+                # Plot steerability_A (log odds)
+                steer_A = nd.get("steerability_A")
+                if steer_A is not None:
+                    ax.scatter(
+                        [steer_A],
+                        [y_A],
+                        color=point_color_A,
+                        marker=marker,
+                        s=80,
+                        edgecolors="white",
+                        linewidths=0.5,
+                        zorder=5,
+                    )
+            else:
+                ax.scatter(
+                    [nd["f_A_B"]],
+                    [y_A],
+                    color=point_color_A,
+                    marker=marker,
+                    s=80,
+                    edgecolors="white",
+                    linewidths=0.5,
+                    zorder=5,
+                )
 
             # Nudge towards B (below center line, visually on bottom) - BLUE
             # Note: y-axis is inverted, so add offset to go down
@@ -835,58 +987,135 @@ def create_model_effects_plot(
             else:
                 point_color_B = color_nudge_B
 
-            ax.scatter(
-                [nd["f_B_B"]],
-                [y_B],
-                color=point_color_B,
-                marker=marker,
-                s=80,
-                edgecolors="white",
-                linewidths=0.5,
-                zorder=5,
-            )
+            if log_odds:
+                # Plot steerability_B (log odds)
+                steer_B = nd.get("steerability_B")
+                if steer_B is not None:
+                    ax.scatter(
+                        [steer_B],
+                        [y_B],
+                        color=point_color_B,
+                        marker=marker,
+                        s=80,
+                        edgecolors="white",
+                        linewidths=0.5,
+                        zorder=5,
+                    )
+            else:
+                ax.scatter(
+                    [nd["f_B_B"]],
+                    [y_B],
+                    color=point_color_B,
+                    marker=marker,
+                    s=80,
+                    edgecolors="white",
+                    linewidths=0.5,
+                    zorder=5,
+                )
 
         # Compute and draw geometric mean markers (computed in log odds space)
         if show_geom_mean:
-            f_A_B_values = [nd["f_A_B"] for nd in factor_data["nudge_data"]]
-            f_B_B_values = [nd["f_B_B"] for nd in factor_data["nudge_data"]]
+            if log_odds:
+                # For log odds, compute arithmetic mean of steerability values
+                steer_A_values = [
+                    nd.get("steerability_A")
+                    for nd in factor_data["nudge_data"]
+                    if nd.get("steerability_A") is not None
+                ]
+                steer_B_values = [
+                    nd.get("steerability_B")
+                    for nd in factor_data["nudge_data"]
+                    if nd.get("steerability_B") is not None
+                ]
 
-            bar_height = 0.25  # Height of the vertical bar
+                bar_height = 0.25  # Height of the vertical bar
 
-            if f_A_B_values:
-                geom_mean_A = geometric_mean_freq(f_A_B_values)
-                # Draw vertical bar for geometric mean of nudge towards A
-                # Positioned above the center line (y-axis is inverted, so subtract)
-                ax.plot(
-                    [geom_mean_A, geom_mean_A],
-                    [y_pos - bar_height, y_pos],
-                    color=color_nudge_A,
-                    linewidth=2,
-                    solid_capstyle="round",
-                    zorder=6,
-                )
+                if steer_A_values:
+                    geom_mean_A = sum(steer_A_values) / len(steer_A_values)
+                    # Draw vertical bar for geometric mean of nudge towards A
+                    # Positioned above the center line (y-axis is inverted, so subtract)
+                    ax.plot(
+                        [geom_mean_A, geom_mean_A],
+                        [y_pos - bar_height, y_pos],
+                        color=color_nudge_A,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
 
-            if f_B_B_values:
-                geom_mean_B = geometric_mean_freq(f_B_B_values)
-                # Draw vertical bar for geometric mean of nudge towards B
-                # Positioned below the center line (y-axis is inverted, so add)
-                ax.plot(
-                    [geom_mean_B, geom_mean_B],
-                    [y_pos, y_pos + bar_height],
-                    color=color_nudge_B,
-                    linewidth=2,
-                    solid_capstyle="round",
-                    zorder=6,
-                )
+                if steer_B_values:
+                    geom_mean_B = sum(steer_B_values) / len(steer_B_values)
+                    # Draw vertical bar for geometric mean of nudge towards B
+                    # Positioned below the center line (y-axis is inverted, so add)
+                    ax.plot(
+                        [geom_mean_B, geom_mean_B],
+                        [y_pos, y_pos + bar_height],
+                        color=color_nudge_B,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+            else:
+                f_A_B_values = [nd["f_A_B"] for nd in factor_data["nudge_data"]]
+                f_B_B_values = [nd["f_B_B"] for nd in factor_data["nudge_data"]]
 
-    # Add reference line at 0.5 (no preference)
-    ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+                bar_height = 0.25  # Height of the vertical bar
+
+                if f_A_B_values:
+                    geom_mean_A = geometric_mean_freq(f_A_B_values)
+                    # Draw vertical bar for geometric mean of nudge towards A
+                    # Positioned above the center line (y-axis is inverted, so subtract)
+                    ax.plot(
+                        [geom_mean_A, geom_mean_A],
+                        [y_pos - bar_height, y_pos],
+                        color=color_nudge_A,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+
+                if f_B_B_values:
+                    geom_mean_B = geometric_mean_freq(f_B_B_values)
+                    # Draw vertical bar for geometric mean of nudge towards B
+                    # Positioned below the center line (y-axis is inverted, so add)
+                    ax.plot(
+                        [geom_mean_B, geom_mean_B],
+                        [y_pos, y_pos + bar_height],
+                        color=color_nudge_B,
+                        linewidth=2,
+                        solid_capstyle="round",
+                        zorder=6,
+                    )
+
+    # Add reference line
+    if log_odds:
+        # Reference line at 0 (no steerability)
+        ax.axvline(x=0.0, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        # Auto-scale x-axis based on data
+        all_steer_values = []
+        for factor_data in data_by_factor.values():
+            for nd in factor_data["nudge_data"]:
+                if nd.get("steerability_A") is not None:
+                    all_steer_values.append(nd["steerability_A"])
+                if nd.get("steerability_B") is not None:
+                    all_steer_values.append(nd["steerability_B"])
+        if all_steer_values:
+            x_min = min(all_steer_values)
+            x_max = max(all_steer_values)
+            x_range = x_max - x_min
+            ax.set_xlim(x_min - 0.1 * x_range, x_max + 0.1 * x_range)
+        else:
+            ax.set_xlim(-1.0, 1.0)
+        ax.set_xlabel("Log Odds Steerability", fontsize=12)
+    else:
+        # Reference line at 0.5 (no preference)
+        ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        ax.set_xlim(-0.05, 1.05)
+        ax.set_xlabel("Frequency of Choosing B", fontsize=12)
 
     # Configure axes
-    ax.set_xlim(-0.05, 1.05)
     ax.set_yticks(y_positions)
     ax.set_yticklabels([""] * n_factors)
-    ax.set_xlabel("Frequency of Choosing B", fontsize=12)
 
     # Title
     ax.set_title(
@@ -907,67 +1136,98 @@ def create_model_effects_plot(
         level_A = fd.get("level_A") or "A"
         level_B = fd.get("level_B") or "B"
 
-        # Left label (level A)
-        ax.text(
-            x_min - label_offset,
-            y_pos,
-            level_A,
-            ha="right",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#E63946",
-            clip_on=False,
-        )
+        if log_odds:
+            # For log-odds mode: both labels on the right, A above, B below
+            ax.text(
+                x_max + label_offset,
+                y_pos - y_offset,
+                level_A,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",
+                clip_on=False,
+            )
+            ax.text(
+                x_max + label_offset,
+                y_pos + y_offset,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",
+                clip_on=False,
+            )
+        else:
+            # Left label (level A)
+            ax.text(
+                x_min - label_offset,
+                y_pos,
+                level_A,
+                ha="right",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",
+                clip_on=False,
+            )
 
-        # Right label (level B)
-        ax.text(
-            x_max + label_offset,
-            y_pos,
-            level_B,
-            ha="left",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#457B9D",
-            clip_on=False,
-        )
+            # Right label (level B)
+            ax.text(
+                x_max + label_offset,
+                y_pos,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",
+                clip_on=False,
+            )
 
     # Create legend
     from matplotlib.lines import Line2D
 
-    legend_elements = [
-        Line2D(
-            [0],
-            [0],
-            marker="D",
-            color="w",
-            markerfacecolor=color_baseline,
-            markeredgecolor="black",
-            markersize=10,
-            label="Baseline f₀(B)",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            markerfacecolor=color_nudge_A,
-            markeredgecolor="white",
-            markersize=8,
-            label="Nudge towards A",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            markerfacecolor=color_nudge_B,
-            markeredgecolor="white",
-            markersize=8,
-            label="Nudge towards B",
-        ),
-    ]
+    legend_elements = []
+    if not log_odds:
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                marker="D",
+                color="w",
+                markerfacecolor=color_baseline,
+                markeredgecolor="black",
+                markersize=10,
+                label="Baseline f₀(B)",
+            )
+        )
+    legend_elements.extend(
+        [
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=color_nudge_A,
+                markeredgecolor="white",
+                markersize=8,
+                label="Nudge towards A" if not log_odds else "Steerability towards A",
+            ),
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=color_nudge_B,
+                markeredgecolor="white",
+                markersize=8,
+                label="Nudge towards B" if not log_odds else "Steerability towards B",
+            ),
+        ]
+    )
 
     # Add geometric mean legend entries if enabled
     if show_geom_mean:
@@ -1158,6 +1418,12 @@ Examples:
         help="Show geometric mean of nudge effects as vertical bars",
     )
 
+    parser.add_argument(
+        "--log-odds",
+        action="store_true",
+        help="Plot log odds steerability instead of baseline preference",
+    )
+
     args = parser.parse_args()
 
     # Determine mode
@@ -1204,6 +1470,7 @@ Examples:
         print(f"Factor filter: {args.factors}")
     print(f"Significance: {'Yes' if args.significance else 'No'}")
     print(f"Geom. mean: {'Yes' if args.geom_mean else 'No'}")
+    print(f"Log odds: {'Yes' if args.log_odds else 'No'}")
     print(f"Output: {output_path}")
     print("=" * 70)
     print()
@@ -1273,6 +1540,7 @@ Examples:
             figsize=figsize,
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
+            log_odds=args.log_odds,
         )
     else:
         # Multi-model mode: show best factor per (model, reasoning) combination
@@ -1313,6 +1581,7 @@ Examples:
             figsize=figsize,
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
+            log_odds=args.log_odds,
         )
 
     if fig is None:
