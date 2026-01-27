@@ -298,6 +298,7 @@ def create_multi_model_effects_plot(
     show_significance: bool = False,
     show_geom_mean: bool = False,
     log_odds: bool = False,
+    show_title: bool = True,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for multiple models.
@@ -313,6 +314,7 @@ def create_multi_model_effects_plot(
         show_significance: If True, show non-significant points in grey
         show_geom_mean: If True, show geometric mean markers
         log_odds: If True, plot log odds steerability instead of baseline preference
+        show_title: If True, show the plot title
 
     Returns:
         The matplotlib Figure object
@@ -576,37 +578,38 @@ def create_multi_model_effects_plot(
     ax.set_yticklabels([""] * n_rows)
 
     # Title - different for single factor mode
-    if single_factor_mode:
-        # Get the single factor name
-        single_factor = list(unique_factors)[0]
-        if len(reasoning_conditions) == 1:
-            reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+    if show_title:
+        if single_factor_mode:
+            # Get the single factor name
+            single_factor = list(unique_factors)[0]
+            if len(reasoning_conditions) == 1:
+                reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+            else:
+                reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
+            ax.set_title(
+                f"Nudge Effects by Model: {single_factor}\n" f"{reasoning_str}",
+                fontsize=14,
+                fontweight="bold",
+                pad=20,
+            )
         else:
-            reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
-        ax.set_title(
-            f"Nudge Effects by Model: {single_factor}\n" f"{reasoning_str}",
-            fontsize=14,
-            fontweight="bold",
-            pad=20,
-        )
-    else:
-        selection_labels = {
-            "steer_bias": "Steerability Bias",
-            "abs_steer_bias": "|Steerability Bias|",
-            "steerability": "Steerability",
-            "effect": "Effect Size",
-        }
-        if len(reasoning_conditions) == 1:
-            reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
-        else:
-            reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
-        ax.set_title(
-            f"Nudge Effects by Model (best factor by {selection_labels.get(selection, selection)})\n"
-            f"{reasoning_str}",
-            fontsize=14,
-            fontweight="bold",
-            pad=20,
-        )
+            selection_labels = {
+                "steer_bias": "Steerability Bias",
+                "abs_steer_bias": "|Steerability Bias|",
+                "steerability": "Steerability",
+                "effect": "Effect Size",
+            }
+            if len(reasoning_conditions) == 1:
+                reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+            else:
+                reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
+            ax.set_title(
+                f"Nudge Effects by Model (best factor by {selection_labels.get(selection, selection)})\n"
+                f"{reasoning_str}",
+                fontsize=14,
+                fontweight="bold",
+                pad=20,
+            )
 
     # Add labels on left and right sides
     x_min, x_max = ax.get_xlim()
@@ -626,9 +629,20 @@ def create_multi_model_effects_plot(
         # Position above the first row (y=0, but need to go negative since y-axis is inverted)
         header_y = -0.6
 
-        # Left header: "<- {option_A}" in bold red, arrow ending at x=0
+        # Use actual axis limits for positioning (handles both frequency and log-odds modes)
+        if log_odds:
+            # For log-odds: left is negative (towards A), right is positive (towards B)
+            # Use the center of the plot with some offset
+            left_x = x_min + 0.05 * x_range
+            right_x = x_max - 0.05 * x_range
+        else:
+            # For frequency: left at 0, right at 1
+            left_x = 0.0
+            right_x = 1.0
+
+        # Left header: "<- {option_A}" in bold red
         ax.text(
-            0.0,
+            left_x,
             header_y,
             f"\u2190 {level_A}",
             ha="left",
@@ -639,9 +653,9 @@ def create_multi_model_effects_plot(
             clip_on=False,
         )
 
-        # Right header: "{option_B} ->" in bold blue, arrow ending at x=1
+        # Right header: "{option_B} ->" in bold blue
         ax.text(
-            1.0,
+            right_x,
             header_y,
             f"{level_B} \u2192",
             ha="right",
@@ -848,6 +862,7 @@ def create_model_effects_plot(
     show_significance: bool = False,
     show_geom_mean: bool = False,
     log_odds: bool = False,
+    show_title: bool = True,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for a single model.
@@ -867,6 +882,7 @@ def create_model_effects_plot(
         show_significance: If True, show non-significant points in grey
         show_geom_mean: If True, show geometric mean markers
         log_odds: If True, plot log odds steerability instead of baseline preference
+        show_title: If True, show the plot title
 
     Returns:
         The matplotlib Figure object
@@ -1126,12 +1142,13 @@ def create_model_effects_plot(
     ax.set_yticklabels([""] * n_factors)
 
     # Title
-    ax.set_title(
-        f"Nudge Effects: {model_name} ({reasoning_condition})",
-        fontsize=14,
-        fontweight="bold",
-        pad=20,
-    )
+    if show_title:
+        ax.set_title(
+            f"Nudge Effects: {model_name} ({reasoning_condition})",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
 
     # Add factor labels with level names on left and right sides
     x_min, x_max = ax.get_xlim()
@@ -1407,6 +1424,12 @@ Examples:
         help="Plot log odds steerability instead of baseline preference",
     )
 
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Suppress the plot title (for paper figures)",
+    )
+
     args = parser.parse_args()
 
     # Determine mode
@@ -1530,6 +1553,7 @@ Examples:
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
             log_odds=args.log_odds,
+            show_title=not args.no_title,
         )
     else:
         # Multi-model mode: show best factor per (model, reasoning) combination
@@ -1571,6 +1595,7 @@ Examples:
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
             log_odds=args.log_odds,
+            show_title=not args.no_title,
         )
 
     if fig is None:
