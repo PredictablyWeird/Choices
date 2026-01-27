@@ -1138,24 +1138,53 @@ Examples:
 
     from collections import defaultdict
 
+    import math
+
+    # Helper to compute 95% CI for a list of values
+    def compute_ci(values: List[float]) -> Tuple[float, float, float]:
+        """
+        Compute mean and 95% CI for a list of values.
+
+        Returns (mean, ci_low, ci_high).
+        """
+        n = len(values)
+        if n == 0:
+            return (0.0, 0.0, 0.0)
+        mean = sum(values) / n
+        if n == 1:
+            return (mean, mean, mean)
+        # Compute standard deviation
+        variance = sum((x - mean) ** 2 for x in values) / (n - 1)
+        std = math.sqrt(variance)
+        se = std / math.sqrt(n)
+        ci_low = mean - 1.96 * se
+        ci_high = mean + 1.96 * se
+        return (mean, ci_low, ci_high)
+
     # Helper to compute steerability stats
     def get_steer_stats(
         result_list: List[FrequencyResult],
     ) -> Tuple[
         Optional[float],
         Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_bias
         float,
         Optional[float],
         float,
         float,
         float,
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for base_bias
     ]:
         """
-        Returns (avg_steer, avg_bias, avg_effect, avg_abs_steer,
-                 sig_rate, sig_backfire_rate, backfire_rate).
+        Returns (avg_steer, avg_bias, avg_bias_ci, avg_effect, avg_abs_steer,
+                 sig_rate, sig_backfire_rate, backfire_rate, base_bias, base_bias_ci).
+        - avg_bias_ci: (ci_low, ci_high) for |steer_bias|
         - sig_rate: fraction of nudges with significant change
         - sig_backfire_rate: fraction of significant nudges that backfired (as % of sig cases)
         - backfire_rate: fraction of nudges that backfired (regardless of significance)
+        - base_bias: average of max(f_0(B), f_0(A)) over all runs
+        - base_bias_ci: (ci_low, ci_high) for base_bias
         """
         steer_results = [r for r in result_list if r.avg_steerability is not None]
         bias_results = [r for r in result_list if r.steerability_bias is not None]
@@ -1165,11 +1194,15 @@ Examples:
             if steer_results
             else None
         )
-        avg_bias = (
-            sum(abs(r.steerability_bias) for r in bias_results) / len(bias_results)
-            if bias_results
-            else None
-        )
+
+        # Compute avg_bias with CI
+        avg_bias = None
+        avg_bias_ci = None
+        if bias_results:
+            abs_bias_values = [abs(r.steerability_bias) for r in bias_results]
+            avg_bias, ci_low, ci_high = compute_ci(abs_bias_values)
+            avg_bias_ci = (ci_low, ci_high)
+
         avg_effect = (
             sum(r.abs_effect for r in result_list) / len(result_list)
             if result_list
@@ -1180,6 +1213,15 @@ Examples:
             if abs_steer_results
             else None
         )
+
+        # Compute base_bias: average of max(f_0(B), f_0(A)) = max(f_0_B, 1 - f_0_B)
+        base_bias = None
+        base_bias_ci = None
+        if result_list:
+            base_bias_values = [max(r.f_0_B, 1 - r.f_0_B) for r in result_list]
+            base_bias, ci_low, ci_high = compute_ci(base_bias_values)
+            base_bias_ci = (ci_low, ci_high)
+
         # Each result has 2 nudges (towards A and towards B), so total nudges = 2 * n
         total_nudges = 2 * len(result_list)
 
@@ -1205,11 +1247,14 @@ Examples:
         return (
             avg_steer,
             avg_bias,
+            avg_bias_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
             sig_backfire_rate,
             backfire_rate,
+            base_bias,
+            base_bias_ci,
         )
 
     # By model and reasoning condition
@@ -1225,11 +1270,14 @@ Examples:
         (
             avg_steer,
             avg_bias,
+            avg_bias_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
             sig_backfire_rate,
             backfire_rate,
+            base_bias,
+            base_bias_ci,
         ) = get_steer_stats(model_results)
 
         display_name = (
@@ -1247,6 +1295,12 @@ Examples:
         sig_str = f"sig={sig_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
+        # Format base_bias with CI
+        if base_bias is not None and base_bias_ci is not None:
+            base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+        else:
+            base_bias_str = "base_bias=N/A"
+
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
             steer_str = (
@@ -1254,14 +1308,14 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1273,15 +1327,15 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # By reasoning condition
@@ -1296,11 +1350,14 @@ Examples:
         (
             avg_steer,
             avg_bias,
+            avg_bias_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
             sig_backfire_rate,
             backfire_rate,
+            base_bias,
+            base_bias_ci,
         ) = get_steer_stats(reasoning_results)
 
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
@@ -1312,6 +1369,12 @@ Examples:
         sig_str = f"sig={sig_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
+        # Format base_bias with CI
+        if base_bias is not None and base_bias_ci is not None:
+            base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+        else:
+            base_bias_str = "base_bias=N/A"
+
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
             steer_str = (
@@ -1319,14 +1382,14 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1338,15 +1401,15 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # By factor (single factor by definition)
@@ -1360,11 +1423,14 @@ Examples:
         (
             avg_steer,
             avg_bias,
+            avg_bias_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
             sig_backfire_rate,
             backfire_rate,
+            base_bias,
+            base_bias_ci,
         ) = get_steer_stats(factor_results)
         # Get level info
         level_A = factor_results[0].level_A if factor_results else "?"
@@ -1381,10 +1447,13 @@ Examples:
             else "avg_steer=N/A"
         )
         # Compute raw (non-absolute) steerability bias for factors
-        bias_results = [r for r in factor_results if r.steerability_bias is not None]
+        bias_results_factor = [
+            r for r in factor_results if r.steerability_bias is not None
+        ]
         raw_avg_bias = (
-            sum(r.steerability_bias for r in bias_results) / len(bias_results)
-            if bias_results
+            sum(r.steerability_bias for r in bias_results_factor)
+            / len(bias_results_factor)
+            if bias_results_factor
             else None
         )
         raw_bias_str = (
@@ -1392,11 +1461,16 @@ Examples:
             if raw_avg_bias is not None
             else "steer_bias=N/A"
         )
-        abs_bias_str = (
-            f"|steer_bias|={avg_bias:.{decimals}f}"
-            if avg_bias is not None
-            else "|steer_bias|=N/A"
-        )
+        # Format |steer_bias| with CI
+        if avg_bias is not None and avg_bias_ci is not None:
+            abs_bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+        else:
+            abs_bias_str = "|steer_bias|=N/A"
+        # Format base_bias with CI
+        if base_bias is not None and base_bias_ci is not None:
+            base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+        else:
+            base_bias_str = "base_bias=N/A"
         sig_str = f"sig={sig_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
         # Compute sig rates towards each level (considering all nudges)
@@ -1425,7 +1499,7 @@ Examples:
         print(
             f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_bias_str}, {abs_bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
+            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_bias_str}, {abs_bias_str}, {base_bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
         )
 
     # By nudge type
@@ -1437,11 +1511,14 @@ Examples:
         (
             avg_steer,
             avg_bias,
+            avg_bias_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
             sig_backfire_rate,
             backfire_rate,
+            base_bias,
+            base_bias_ci,
         ) = get_steer_stats(nudge_results)
 
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
@@ -1453,6 +1530,12 @@ Examples:
         sig_str = f"sig={sig_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
+        # Format base_bias with CI
+        if base_bias is not None and base_bias_ci is not None:
+            base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+        else:
+            base_bias_str = "base_bias=N/A"
+
         if n_factors > 1:
             # Multiple factors: only show steerability metrics
             steer_str = (
@@ -1460,14 +1543,14 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1479,15 +1562,15 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            bias_str = (
-                f"|steer_bias|={avg_bias:.{decimals}f}"
-                if avg_bias is not None
-                else "|steer_bias|=N/A"
-            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # Overall statistics
@@ -1496,9 +1579,12 @@ Examples:
         _,
         _,
         _,
+        _,
         overall_sig_rate,
         overall_sig_backfire_rate,
         overall_backfire_rate,
+        _,
+        _,
     ) = get_steer_stats(results)
     total_nudges = 2 * len(results)
 
