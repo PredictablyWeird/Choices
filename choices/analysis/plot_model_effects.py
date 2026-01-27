@@ -532,10 +532,16 @@ def create_multi_model_effects_plot(
                         zorder=6,
                     )
 
-    # Add reference line
+    # Check if all rows have the same factor (single factor mode)
+    unique_factors = set(factor for _, _, factor in rows)
+    single_factor_mode = len(unique_factors) == 1
+
+    # Add reference line and grid
     if log_odds:
         # Reference line at 0 (no steerability)
-        ax.axvline(x=0.0, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        ax.axvline(
+            x=0.0, color="gray", linestyle="-", linewidth=1.5, alpha=0.7, zorder=1
+        )
         # Auto-scale x-axis based on data (steerability_A is negated for plotting)
         all_steer_values = []
         for row_data in data_by_model_reason_factor.values():
@@ -556,32 +562,51 @@ def create_multi_model_effects_plot(
         ax.set_xlabel("Log Odds Steerability", fontsize=12)
     else:
         # Reference line at 0.5 (no preference)
-        ax.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5, zorder=1)
+        ax.axvline(
+            x=0.5, color="gray", linestyle=":", linewidth=1.5, alpha=0.5, zorder=1
+        )
         ax.set_xlim(-0.05, 1.05)
         ax.set_xlabel("Frequency of Choosing B", fontsize=12)
+
+    # Add vertical grid lines
+    ax.xaxis.grid(True, linestyle=":", linewidth=1.0, alpha=0.5, zorder=0)
 
     # Configure axes
     ax.set_yticks(y_positions)
     ax.set_yticklabels([""] * n_rows)
 
-    # Title
-    selection_labels = {
-        "steer_bias": "Steerability Bias",
-        "abs_steer_bias": "|Steerability Bias|",
-        "steerability": "Steerability",
-        "effect": "Effect Size",
-    }
-    if len(reasoning_conditions) == 1:
-        reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+    # Title - different for single factor mode
+    if single_factor_mode:
+        # Get the single factor name
+        single_factor = list(unique_factors)[0]
+        if len(reasoning_conditions) == 1:
+            reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+        else:
+            reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
+        ax.set_title(
+            f"Nudge Effects by Model: {single_factor}\n" f"{reasoning_str}",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
     else:
-        reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
-    ax.set_title(
-        f"Nudge Effects by Model (best factor by {selection_labels.get(selection, selection)})\n"
-        f"{reasoning_str}",
-        fontsize=14,
-        fontweight="bold",
-        pad=20,
-    )
+        selection_labels = {
+            "steer_bias": "Steerability Bias",
+            "abs_steer_bias": "|Steerability Bias|",
+            "steerability": "Steerability",
+            "effect": "Effect Size",
+        }
+        if len(reasoning_conditions) == 1:
+            reasoning_str = f"Reasoning: {reasoning_conditions[0]}"
+        else:
+            reasoning_str = f"Reasoning: {', '.join(reasoning_conditions)}"
+        ax.set_title(
+            f"Nudge Effects by Model (best factor by {selection_labels.get(selection, selection)})\n"
+            f"{reasoning_str}",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
 
     # Add labels on left and right sides
     x_min, x_max = ax.get_xlim()
@@ -590,6 +615,42 @@ def create_multi_model_effects_plot(
 
     # Check if we have multiple reasoning conditions to show in labels
     show_reasoning_in_label = len(reasoning_conditions) > 1
+
+    # If single factor mode, add header labels above the first row
+    if single_factor_mode and n_rows > 0:
+        first_row = rows[0]
+        rd = data_by_model_reason_factor[first_row]
+        level_A = rd.get("level_A") or "A"
+        level_B = rd.get("level_B") or "B"
+
+        # Position above the first row (y=0, but need to go negative since y-axis is inverted)
+        header_y = -0.6
+
+        # Left header: "<- {option_A}" in bold red, arrow ending at x=0
+        ax.text(
+            0.0,
+            header_y,
+            f"\u2190 {level_A}",
+            ha="left",
+            va="center",
+            fontsize=11,
+            fontweight="bold",
+            color="#E63946",
+            clip_on=False,
+        )
+
+        # Right header: "{option_B} ->" in bold blue, arrow ending at x=1
+        ax.text(
+            1.0,
+            header_y,
+            f"{level_B} \u2192",
+            ha="right",
+            va="center",
+            fontsize=11,
+            fontweight="bold",
+            color="#457B9D",
+            clip_on=False,
+        )
 
     for i, (model, reasoning, factor) in enumerate(rows):
         y_pos = y_positions[i]
@@ -604,9 +665,15 @@ def create_multi_model_effects_plot(
         else:
             model_label = model_display
 
+        # In single factor mode, center the model name; otherwise offset it
+        if single_factor_mode:
+            model_y_offset = 0
+        else:
+            model_y_offset = -0.25
+
         ax.text(
             x_min - label_offset,
-            y_pos - 0.25,
+            y_pos + model_y_offset,
             model_label,
             ha="right",
             va="center",
@@ -616,31 +683,33 @@ def create_multi_model_effects_plot(
             clip_on=False,
         )
 
-        # Left label (level A) - always on left
-        ax.text(
-            x_min - label_offset,
-            y_pos + 0.1,
-            level_A,
-            ha="right",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#E63946",
-            clip_on=False,
-        )
+        # Only show per-row option labels if NOT in single factor mode
+        if not single_factor_mode:
+            # Left label (level A) - always on left
+            ax.text(
+                x_min - label_offset,
+                y_pos + 0.1,
+                level_A,
+                ha="right",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#E63946",
+                clip_on=False,
+            )
 
-        # Right label (level B) - always on right
-        ax.text(
-            x_max + label_offset,
-            y_pos,
-            level_B,
-            ha="left",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#457B9D",
-            clip_on=False,
-        )
+            # Right label (level B) - always on right
+            ax.text(
+                x_max + label_offset,
+                y_pos,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="#457B9D",
+                clip_on=False,
+            )
 
     # Create legend
     from matplotlib.lines import Line2D
@@ -738,6 +807,9 @@ def create_multi_model_effects_plot(
     # Style
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    if single_factor_mode:
+        ax.spines["left"].set_visible(False)
+        ax.tick_params(axis="y", which="both", left=False)
     ax.tick_params(axis="both", which="major", labelsize=10)
 
     # Invert y-axis so first row is at top
@@ -1359,6 +1431,12 @@ Examples:
     elif single_model_mode:
         safe_model = args.model.replace("/", "_").replace(":", "_")
         output_path = f"model_effects_{safe_model}.pdf"
+    elif args.factors and len(args.factors) == 1:
+        # Single factor specified - use factor name in filename
+        safe_factor = (
+            args.factors[0].replace("/", "_").replace(":", "_").replace(" ", "_")
+        )
+        output_path = f"model_effects_multi_{safe_factor}.pdf"
     else:
         output_path = f"model_effects_multi_{args.selection}.pdf"
 
