@@ -739,6 +739,7 @@ async def run_nudging_experiments(
     nudge_brackets: Optional[str] = None,
     nudge_name: Optional[str] = None,
     save_dir: str = "results",
+    target_group: Optional[str] = None,
 ) -> Dict[str, ExperimentResults]:
     """
     Run nudging experiments for all groups in the factor.
@@ -759,6 +760,8 @@ async def run_nudging_experiments(
         nudge_brackets: Bracket style (None = use nudge type default)
         nudge_name: Override directory name for results (defaults to nudge_type)
         save_dir: Base directory for saving results (default: "results")
+        target_group: If specified, only run this condition. Use 'base' for base only,
+                      or a group value (e.g., 'male') for that nudge only.
 
     Returns:
         Dictionary mapping group values to experiment results
@@ -769,7 +772,24 @@ async def run_nudging_experiments(
         )
 
     factor = BINARY_FACTORS[factor_name]
-    group_values = factor.values
+
+    # Determine which conditions to run based on target_group
+    if target_group == "base":
+        # Only run base condition
+        group_values = []
+        run_base = True
+    elif target_group:
+        # Only run nudge towards specific group
+        if target_group not in factor.values:
+            raise ValueError(
+                f"Unknown target group: {target_group}. Available for {factor_name}: {factor.values} (or 'base')"
+            )
+        group_values = [target_group]
+        run_base = False
+    else:
+        # Run everything
+        group_values = factor.values
+        run_base = True
 
     # Use nudge_name for directory, default to nudge_type
     effective_nudge_name = nudge_name if nudge_name else nudge_type
@@ -778,45 +798,49 @@ async def run_nudging_experiments(
     print(f"Nudge type: {nudge_type}")
     print(f"Results directory name: {effective_nudge_name}")
     print(f"Output directory: {save_dir}")
-    print(f"Groups to test: {group_values}")
+    if target_group:
+        print(f"Target condition: {target_group}")
+    else:
+        print(f"Groups to test: {group_values}")
     print("=" * 80)
 
     results = {}
     experiment_name = f"simple_{factor_name}"
 
-    # First, run base condition (no nudge)
-    print("\nRunning BASE condition (no nudge)")
-    print("-" * 80)
+    # First, run base condition (no nudge) if requested
+    if run_base:
+        print("\nRunning BASE condition (no nudge)")
+        print("-" * 80)
 
-    variables, prompt_config, analysis_config = create_nudged_simple_config(
-        factor_name=factor_name,
-        nudge_type="base",
-        n_values_key=n_values,
-        reasoning=reasoning,
-        setup=setup,
-        nudge_position=nudge_position,
-        nudge_brackets=nudge_brackets,
-    )
+        variables, prompt_config, analysis_config = create_nudged_simple_config(
+            factor_name=factor_name,
+            nudge_type="base",
+            n_values_key=n_values,
+            reasoning=reasoning,
+            setup=setup,
+            nudge_position=nudge_position,
+            nudge_brackets=nudge_brackets,
+        )
 
-    base_results = await run_nudged_simple_experiment(
-        name=experiment_name,
-        variables=variables,
-        prompt_config=prompt_config,
-        analysis_config=analysis_config,
-        nudge_type="base",
-        model=model,
-        max_requests=max_requests,
-        requests_per_edge=requests_per_edge,
-        seed=seed,
-        save_dir=save_dir,
-        verbose=True,
-        reasoning=reasoning,
-        save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
-        max_retries=max_retries,
-    )
-    results["base"] = base_results
+        base_results = await run_nudged_simple_experiment(
+            name=experiment_name,
+            variables=variables,
+            prompt_config=prompt_config,
+            analysis_config=analysis_config,
+            nudge_type="base",
+            model=model,
+            max_requests=max_requests,
+            requests_per_edge=requests_per_edge,
+            seed=seed,
+            save_dir=save_dir,
+            verbose=True,
+            reasoning=reasoning,
+            save_nudge_dir=effective_nudge_name,  # Save base in the nudge directory
+            max_retries=max_retries,
+        )
+        results["base"] = base_results
 
-    print("\nCompleted BASE condition")
+        print("\nCompleted BASE condition")
 
     # Run experiment for each group
     for target_group in group_values:
@@ -924,6 +948,8 @@ Examples:
   uv run python -m choices.experiments.nudging.simple --factor gender --nudge custom --nudge_text "Always save {group}"
   uv run python -m choices.experiments.nudging.simple --factor wealth --nudge few_shot_3
   uv run python -m choices.experiments.nudging.simple --factor wealth --nudge always_save --setup hospital
+  uv run python -m choices.experiments.nudging.simple --factor gender --nudge emotional --target-group male  # Only male nudge
+  uv run python -m choices.experiments.nudging.simple --factor gender --nudge emotional --target-group base  # Only base condition
   uv run python -m choices.experiments.nudging.simple --list-nudges
   uv run python -m choices.experiments.nudging.simple --list-factors
   uv run python -m choices.experiments.nudging.simple --list-setups
@@ -1055,6 +1081,13 @@ Examples:
         help="Base directory for saving results (default: results)",
     )
 
+    parser.add_argument(
+        "--target-group",
+        type=str,
+        default=None,
+        help="Run only this specific condition. Use 'base' for base condition only, or a group value (e.g., 'male') for that nudge only.",
+    )
+
     args = parser.parse_args()
 
     if args.list_nudges:
@@ -1084,6 +1117,7 @@ Examples:
                 nudge_brackets=args.nudge_brackets,
                 nudge_name=args.override_nudge_save_name,
                 save_dir=args.save_dir,
+                target_group=args.target_group,
             )
         )
     else:
