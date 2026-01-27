@@ -61,7 +61,6 @@ Usage:
 """
 
 import argparse
-import math
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -72,62 +71,14 @@ from choices.analysis.create_summary import (
     FrequencyResult,
     compute_all_results,
 )
+from choices.analysis.steerability_metric import (
+    geometric_mean_freq,
+)
 from choices.analysis.utils import (
     get_model_display_name,
     get_nudge_marker,
     is_reasoning_model,
 )
-
-
-def freq_to_log_odds(freq: float, pseudo_n: float = 100.0) -> float:
-    """
-    Convert frequency to log odds with Haldane-Anscombe correction.
-
-    Uses pseudo-counts to handle frequencies at or near 0 and 1.
-    The correction adds 0.5 to both wins and losses before computing odds.
-
-    Args:
-        freq: Frequency (probability) in [0, 1]
-        pseudo_n: Pseudo sample size for correction (default 100)
-
-    Returns:
-        Log10 odds ratio
-    """
-    pseudo_wins = freq * pseudo_n
-    pseudo_losses = (1 - freq) * pseudo_n
-    odds = (pseudo_wins + 0.5) / (pseudo_losses + 0.5)
-    return math.log10(odds)
-
-
-def log_odds_to_freq(log_odds: float) -> float:
-    """
-    Convert log odds back to frequency.
-
-    Args:
-        log_odds: Log10 odds ratio
-
-    Returns:
-        Frequency (probability) in [0, 1]
-    """
-    odds = 10**log_odds
-    return odds / (1 + odds)
-
-
-def geometric_mean_freq(frequencies: List[float]) -> float:
-    """
-    Compute the geometric mean of frequencies by averaging in log odds space.
-
-    Args:
-        frequencies: List of frequencies in [0, 1]
-
-    Returns:
-        Geometric mean frequency
-    """
-    if not frequencies:
-        return 0.5
-    log_odds_values = [freq_to_log_odds(f) for f in frequencies]
-    mean_log_odds = sum(log_odds_values) / len(log_odds_values)
-    return log_odds_to_freq(mean_log_odds)
 
 
 def collect_data_by_factor(

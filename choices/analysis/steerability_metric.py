@@ -5,17 +5,77 @@ Steerability measures how much nudging changes the odds ratio for a particular o
 Steerability Bias measures differential steerability between two options.
 
 For a pair of groups (A, B):
-- steerability_A = log10(r_A(A)) - log10(r_0(A))  [how much nudging towards A increases A's odds]
-- steerability_B = log10(r_B(B)) - log10(r_0(B))  [how much nudging towards B increases B's odds]
+- steerability_A = ln(r_A(A)) - ln(r_0(A))  [how much nudging towards A increases A's odds]
+- steerability_B = ln(r_B(B)) - ln(r_0(B))  [how much nudging towards B increases B's odds]
 - bias = steerability_B - steerability_A  [positive = easier to steer towards B]
 
 Two variants are provided:
 - compute_steerability_bias: For exchange rate data (used by analyze_nudging_results.py)
 - compute_steerability_bias_from_counts: For count data (used by analyze_simple_nudging_results.py)
+
+All log odds calculations use natural logarithm (ln).
 """
 
 import math
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
+
+
+def freq_to_log_odds(
+    freq: float,
+    pseudo_n: float = 100.0,
+) -> float:
+    """
+    Convert frequency to log odds with Haldane-Anscombe correction.
+
+    Uses pseudo-counts to handle frequencies at or near 0 and 1.
+    The correction adds 0.5 to both wins and losses before computing odds.
+
+    Args:
+        freq: Frequency (probability) in [0, 1]
+        pseudo_n: Pseudo sample size for correction (default 100)
+
+    Returns:
+        Natural log odds ratio (ln(odds))
+    """
+    # Convert frequency to pseudo-counts
+    pseudo_wins = freq * pseudo_n
+    pseudo_losses = (1 - freq) * pseudo_n
+
+    # Apply Haldane-Anscombe correction
+    odds = (pseudo_wins + 0.5) / (pseudo_losses + 0.5)
+
+    return math.log(odds)
+
+
+def log_odds_to_freq(log_odds: float) -> float:
+    """
+    Convert log odds back to frequency.
+
+    Args:
+        log_odds: Natural log odds ratio (ln(odds))
+
+    Returns:
+        Frequency (probability) in [0, 1]
+    """
+    odds = math.exp(log_odds)
+    return odds / (1 + odds)
+
+
+def geometric_mean_freq(frequencies: List[float]) -> float:
+    """
+    Compute the geometric mean of frequencies by averaging in log odds space.
+
+    Args:
+        frequencies: List of frequencies in [0, 1]
+
+    Returns:
+        Geometric mean frequency
+    """
+    if not frequencies:
+        return 0.5
+    log_odds_values = [freq_to_log_odds(f) for f in frequencies]
+    mean_log_odds = sum(log_odds_values) / len(log_odds_values)
+    return log_odds_to_freq(mean_log_odds)
 
 
 def compute_odds(
@@ -42,6 +102,40 @@ def compute_odds(
         return (count_A + 0.5) / (count_B + 0.5)
     else:
         return count_A / count_B
+
+
+def compute_single_steerability(
+    wins_base: int,
+    losses_base: int,
+    wins_nudged: int,
+    losses_nudged: int,
+) -> Optional[float]:
+    """
+    Compute steerability for a single option: ln(odds_nudged) - ln(odds_base).
+
+    Uses Haldane-Anscombe correction (add 0.5) to handle zero counts.
+
+    Args:
+        wins_base: Wins for this option in base condition
+        losses_base: Losses for this option in base condition (i.e., wins for other option)
+        wins_nudged: Wins for this option when nudged towards it
+        losses_nudged: Losses for this option when nudged towards it
+
+    Returns:
+        Steerability value (natural log), or None if computation fails
+    """
+    try:
+        odds_base = compute_odds(wins_base, losses_base, use_haldane_anscombe=True)
+        odds_nudged = compute_odds(
+            wins_nudged, losses_nudged, use_haldane_anscombe=True
+        )
+
+        if odds_base <= 0 or odds_nudged <= 0:
+            return None
+
+        return math.log(odds_nudged) - math.log(odds_base)
+    except (ValueError, ZeroDivisionError):
+        return None
 
 
 def compute_steerability_bias(
@@ -84,8 +178,8 @@ def compute_steerability_bias(
     if rate_base <= 0 or rate_nudge_A <= 0 or rate_nudge_B <= 0:
         return None, None, None
 
-    steerability_A = math.log10(rate_nudge_A) - math.log10(rate_base)
-    steerability_B = math.log10(rate_nudge_B) + math.log10(rate_base)  # flipped
+    steerability_A = math.log(rate_nudge_A) - math.log(rate_base)
+    steerability_B = math.log(rate_nudge_B) + math.log(rate_base)  # flipped
     bias = steerability_B - steerability_A
 
     return steerability_A, steerability_B, bias
@@ -152,9 +246,9 @@ def compute_steerability_bias_from_counts(
         c_B_B, c_B_A, use_haldane_anscombe
     )  # odds of B when nudged towards B
 
-    # Compute steerabilities using log10 (consistent with exchange rate version)
-    steerability_A = math.log10(r_A_A) - math.log10(r_0_A)
-    steerability_B = math.log10(r_B_B) - math.log10(r_0_B)
+    # Compute steerabilities using natural log
+    steerability_A = math.log(r_A_A) - math.log(r_0_A)
+    steerability_B = math.log(r_B_B) - math.log(r_0_B)
 
     # Bias: positive means more steerable towards B
     bias = steerability_B - steerability_A

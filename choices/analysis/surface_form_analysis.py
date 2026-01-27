@@ -58,7 +58,7 @@ from choices.analysis.analyze_simple_nudging_results import (
     two_proportion_z_test,
 )
 from choices.analysis.steerability_metric import (
-    compute_odds,
+    compute_single_steerability,
 )
 from choices.analysis.utils import (
     compute_factor_frequencies_with_counts,
@@ -88,7 +88,7 @@ class SurfaceFormDataPoint:
     f_c: float  # Frequency when nudged towards this option
     effect_size: float  # f_c - f_0
     # Steerability (log-odds space)
-    steerability: Optional[float]  # log10(odds_nudged) - log10(odds_base)
+    steerability: Optional[float]  # ln(odds_nudged) - ln(odds_base)
     # Significance (two-proportion z-test comparing nudge to baseline)
     is_significant: bool  # True if effect differs significantly from 0
     p_value: float  # p-value from the test
@@ -111,42 +111,6 @@ CONDITION_MARKERS = {
     "normal": "o",  # circle
     "baseline": "s",  # square
 }
-
-
-def compute_single_steerability(
-    wins_base: int,
-    losses_base: int,
-    wins_nudged: int,
-    losses_nudged: int,
-) -> Optional[float]:
-    """
-    Compute steerability for a single option: log10(odds_nudged) - log10(odds_base).
-
-    Uses Haldane-Anscombe correction (add 0.5) to handle zero counts.
-
-    Args:
-        wins_base: Wins for this option in base condition
-        losses_base: Losses for this option in base condition (i.e., wins for other option)
-        wins_nudged: Wins for this option when nudged towards it
-        losses_nudged: Losses for this option when nudged towards it
-
-    Returns:
-        Steerability value, or None if computation fails
-    """
-    import math
-
-    try:
-        odds_base = compute_odds(wins_base, losses_base, use_haldane_anscombe=True)
-        odds_nudged = compute_odds(
-            wins_nudged, losses_nudged, use_haldane_anscombe=True
-        )
-
-        if odds_base <= 0 or odds_nudged <= 0:
-            return None
-
-        return math.log10(odds_nudged) - math.log10(odds_base)
-    except (ValueError, ZeroDivisionError):
-        return None
 
 
 def discover_nudge_pairs(

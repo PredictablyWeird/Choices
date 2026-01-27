@@ -68,7 +68,6 @@ Usage:
 """
 
 import argparse
-import math
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -80,33 +79,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
     discover_experiments,
 )
-
-
-def freq_to_log_odds(
-    freq: float,
-    pseudo_n: float = 100.0,
-) -> float:
-    """
-    Convert frequency to log odds with Haldane-Anscombe correction.
-
-    Uses pseudo-counts to handle frequencies at or near 0 and 1.
-    The correction adds 0.5 to both wins and losses before computing odds.
-
-    Args:
-        freq: Frequency (probability) in [0, 1]
-        pseudo_n: Pseudo sample size for correction (default 100)
-
-    Returns:
-        Log10 odds ratio
-    """
-    # Convert frequency to pseudo-counts
-    pseudo_wins = freq * pseudo_n
-    pseudo_losses = (1 - freq) * pseudo_n
-
-    # Apply Haldane-Anscombe correction
-    odds = (pseudo_wins + 0.5) / (pseudo_losses + 0.5)
-
-    return math.log10(odds)
+from choices.analysis.steerability_metric import freq_to_log_odds
 
 
 def transform_data_to_log_odds(
@@ -996,8 +969,8 @@ def create_steerability_violin_plot(
     # Draw steerability bias column if enabled
     if show_bias and ax_bias is not None:
         # Compute steerability bias for each row
-        # steerability_A = log10(odds(A|nudge_A)) - log10(odds(A|baseline))
-        # steerability_B = log10(odds(B|nudge_B)) - log10(odds(B|baseline))
+        # steerability_A = ln(odds(A|nudge_A)) - ln(odds(A|baseline))
+        # steerability_B = ln(odds(B|nudge_B)) - ln(odds(B|baseline))
         # bias = steerability_B - steerability_A
         # Positive bias = more steerable towards B (right side of violin)
 
@@ -1024,7 +997,7 @@ def create_steerability_violin_plot(
         ) -> float:
             """Compute steerability bias from log odds data.
 
-            When data is in log odds space (log10(odds of B)):
+            When data is in log odds space (ln(odds of B)):
             - steerability_A = log_odds(A|nudge_A) - log_odds(A|baseline)
                             = -lo_A_B - (-lo_0_B) = lo_0_B - lo_A_B
             - steerability_B = log_odds(B|nudge_B) - log_odds(B|baseline)
