@@ -538,6 +538,110 @@ def compute_all_data_points(
     return data_points
 
 
+def create_grouped_bar_chart(
+    data_points: List[SurfaceFormDataPoint],
+    output_path: Optional[str] = None,
+    title: Optional[str] = None,
+    figsize: Tuple[float, float] = (10, 6),
+) -> Optional[Tuple[plt.Figure, plt.Axes]]:
+    """
+    Create a grouped bar chart comparing normal vs irrelevant nudge effect magnitudes by model.
+
+    Shows |effect| for normal and irrelevant nudges side by side for each model,
+    with the irrelevant/normal ratio annotated.
+    """
+    if not data_points:
+        print("No data points to plot!")
+        return None
+
+    # Group by (model, reasoning_condition)
+    model_data: Dict[Tuple[str, str], Dict[str, List[float]]] = {}
+    for dp in data_points:
+        key = (dp.model, dp.reasoning_condition)
+        if key not in model_data:
+            model_data[key] = {"normal": [], "baseline": []}
+        model_data[key][dp.condition].append(abs(dp.effect_size))
+
+    # Compute averages and prepare plot data
+    models = []
+    normal_means = []
+    baseline_means = []
+    ratios = []
+
+    # Custom sort: group by model, then non-reasoning before reasoning
+    # Reasoning order: off/none (non-reasoning) before low/before (reasoning)
+    def sort_key(item):
+        model, reasoning = item[0]
+        # Map reasoning conditions to sort order (non-reasoning=0, reasoning=1)
+        reasoning_order = {"off": 0, "none": 0, "low": 1, "before": 1}.get(reasoning, 2)
+        return (model, reasoning_order)
+
+    for (model, reasoning), effects in sorted(model_data.items(), key=sort_key):
+        if effects["normal"] and effects["baseline"]:
+            models.append(f"{get_model_display_name(model)}\n({reasoning})")
+            n_mean = np.mean(effects["normal"])
+            b_mean = np.mean(effects["baseline"])
+            normal_means.append(n_mean)
+            baseline_means.append(b_mean)
+            ratios.append(b_mean / n_mean if n_mean > 0 else 0)
+
+    if not models:
+        print("No complete model data found!")
+        return None
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=figsize)
+
+    x = np.arange(len(models))
+    width = 0.35
+
+    _bars1 = ax.bar(
+        x - width / 2,
+        normal_means,
+        width,
+        label="Informative",
+        color="#E63946",
+        alpha=0.8,
+        edgecolor="white",
+        linewidth=1,
+    )
+    _bars2 = ax.bar(
+        x + width / 2,
+        baseline_means,
+        width,
+        label="Irrelevant",
+        color="#457B9D",
+        alpha=0.8,
+        edgecolor="white",
+        linewidth=1,
+    )
+
+    # Styling
+    ax.set_ylabel("Average |Effect Size|", fontsize=12)
+    ax.set_xlabel("Model", fontsize=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, fontsize=10)
+    ax.legend(loc="upper right", fontsize=10)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_ylim(0, max(normal_means + baseline_means) * 1.15)
+
+    if title:
+        ax.set_title(title, fontsize=14, fontweight="bold")
+    else:
+        ax.set_title(
+            "Informative vs Irrelevant Nudge Effects", fontsize=14, fontweight="bold"
+        )
+
+    plt.tight_layout()
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight", dpi=150)
+        print(f"\nSaved bar chart to: {output_path}")
+
+    return fig, ax
+
+
 def create_scatter_plot(
     data_points: List[SurfaceFormDataPoint],
     groups: Optional[str] = None,
@@ -1033,6 +1137,92 @@ def print_statistics(
         else:
             print("  -> No significant difference between normal and baseline nudges.")
 
+        # Filtered analysis: only cases where informative nudge had substantial effect
+        # This addresses the issue that models with many small effects have misleading ratios
+        print("\n" + "-" * 115)
+        print(
+            "Filtered Analysis: Effect Ratios by Model (only cases where |normal effect| > threshold)"
+        )
+        print("-" * 115)
+        print(
+            "(When informative nudges have little effect, both conditions look similar, inflating ratios toward 1.0)"
+        )
+
+        # Group data points by (model, reasoning, factor, nudge_type, option) to pair normal vs baseline
+        pairs: Dict[tuple, Dict[str, float]] = {}
+        for dp in data_points:
+            key = (
+                dp.model,
+                dp.reasoning_condition,
+                dp.factor,
+                dp.nudge_type,
+                dp.option,
+            )
+            if key not in pairs:
+                pairs[key] = {}
+            pairs[key][dp.condition] = abs(dp.effect_size)
+
+        # Filter to complete pairs only
+        complete_pairs = [
+            (k, v) for k, v in pairs.items() if "normal" in v and "baseline" in v
+        ]
+
+        thresholds = [0.0, 0.05, 0.10]
+
+        for threshold in thresholds:
+            print(f"\n  Threshold: |normal effect| > {threshold}")
+
+            # Group by model
+            model_stats: Dict[tuple, Dict[str, list]] = {}
+            for (
+                model,
+                reasoning,
+                factor,
+                nudge_type,
+                option,
+            ), effects in complete_pairs:
+                key = (model, reasoning)
+                if key not in model_stats:
+                    model_stats[key] = {"normal": [], "baseline": [], "diffs": []}
+
+                normal_eff = effects["normal"]
+                baseline_eff = effects["baseline"]
+
+                # Only include if normal effect exceeds threshold
+                if normal_eff > threshold:
+                    model_stats[key]["normal"].append(normal_eff)
+                    model_stats[key]["baseline"].append(baseline_eff)
+                    model_stats[key]["diffs"].append(normal_eff - baseline_eff)
+
+            # Print header
+            print(
+                f"  {'Model':<30} {'N':<5} {'Avg Norm':<10} {'Avg Irrel':<10} {'Diff':<10} {'Ratio':<8}"
+            )
+
+            # Sort: group by model, non-reasoning before reasoning
+            def sort_key(item):
+                model, reasoning = item[0]
+                reasoning_order = {"off": 0, "none": 0, "low": 1, "before": 1}.get(
+                    reasoning, 2
+                )
+                return (model, reasoning_order)
+
+            for (model, reasoning), model_data in sorted(
+                model_stats.items(), key=sort_key
+            ):
+                if not model_data["normal"]:
+                    continue
+                n = len(model_data["normal"])
+                avg_normal = sum(model_data["normal"]) / n
+                avg_baseline = sum(model_data["baseline"]) / n
+                avg_diff = sum(model_data["diffs"]) / n
+                ratio = avg_baseline / avg_normal if avg_normal > 0 else 0
+
+                display_name = f"{get_model_display_name(model)} ({reasoning})"
+                print(
+                    f"  {display_name:<30} {n:<5} {avg_normal:<10.3f} {avg_baseline:<10.3f} {avg_diff:+10.3f} {ratio:.2f}x"
+                )
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1151,6 +1341,12 @@ Examples:
         help="Don't show the y=x diagonal line",
     )
 
+    parser.add_argument(
+        "--bar-chart",
+        action="store_true",
+        help="Create grouped bar chart instead of scatter plot",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
@@ -1217,15 +1413,23 @@ Examples:
         return
 
     # Create plot
-    result = create_scatter_plot(
-        data_points=data_points,
-        groups=args.groups,
-        output_path=output_path,
-        title=args.title,
-        figsize=tuple(args.figsize),
-        n_bins=args.n_bins,
-        show_diagonal=not args.no_diagonal,
-    )
+    if args.bar_chart:
+        result = create_grouped_bar_chart(
+            data_points=data_points,
+            output_path=output_path,
+            title=args.title,
+            figsize=tuple(args.figsize),
+        )
+    else:
+        result = create_scatter_plot(
+            data_points=data_points,
+            groups=args.groups,
+            output_path=output_path,
+            title=args.title,
+            figsize=tuple(args.figsize),
+            n_bins=args.n_bins,
+            show_diagonal=not args.no_diagonal,
+        )
 
     if result is None:
         return
