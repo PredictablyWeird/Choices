@@ -863,6 +863,8 @@ def create_model_effects_plot(
     show_geom_mean: bool = False,
     log_odds: bool = False,
     show_title: bool = True,
+    show_baselines: bool = False,
+    show_legend: bool = True,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for a single model.
@@ -883,6 +885,8 @@ def create_model_effects_plot(
         show_geom_mean: If True, show geometric mean markers
         log_odds: If True, plot log odds steerability instead of baseline preference
         show_title: If True, show the plot title
+        show_baselines: If True (and log_odds=True), show baseline bars in right column
+        show_legend: If True, show the legend
 
     Returns:
         The matplotlib Figure object
@@ -897,7 +901,14 @@ def create_model_effects_plot(
     # Calculate figure height based on number of factors
     height = figsize[1] if figsize[1] else max(4, n_factors * 1.2)
 
-    fig, ax = plt.subplots(figsize=(figsize[0], height))
+    # Create figure with optional baseline column
+    if log_odds and show_baselines:
+        fig, (ax, ax_baseline) = plt.subplots(
+            1, 2, figsize=(figsize[0], height), gridspec_kw={"width_ratios": [4, 1]}
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(figsize[0], height))
+        ax_baseline = None
 
     # Colors - based on nudge direction
     color_nudge_A = "#E63946"  # Red - nudging towards A
@@ -1161,11 +1172,11 @@ def create_model_effects_plot(
         level_A = fd.get("level_A") or "A"
         level_B = fd.get("level_B") or "B"
 
-        # Left label (level A) - always on left
+        # Left label (level A) with left-pointing arrow - always on left
         ax.text(
             x_min - label_offset,
             y_pos,
-            level_A,
+            f"{level_A} ←",
             ha="right",
             va="center",
             fontsize=10,
@@ -1174,11 +1185,11 @@ def create_model_effects_plot(
             clip_on=False,
         )
 
-        # Right label (level B) - always on right
+        # Right label (level B) with right-pointing arrow - always on right
         ax.text(
             x_max + label_offset,
             y_pos,
-            level_B,
+            f"→ {level_B}",
             ha="left",
             va="center",
             fontsize=10,
@@ -1285,22 +1296,77 @@ def create_model_effects_plot(
     # Style
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(axis="y", which="both", left=False)
     ax.tick_params(axis="both", which="major", labelsize=10)
+
+    # Add vertical grid lines
+    ax.xaxis.grid(True, linestyle="-", alpha=0.3, zorder=0)
 
     # Invert y-axis so first factor is at top
     ax.invert_yaxis()
 
+    # Draw baseline bar column if enabled (only for log_odds mode)
+    if ax_baseline is not None:
+        color_baseline = "#2A9D8F"  # Teal - baseline marker
+
+        for i, factor in enumerate(factors):
+            y_pos = y_positions[i]
+            fd = data_by_factor[factor]
+            f_0_B = fd["f_0_B"]
+
+            # Draw horizontal bar from 0 to baseline value
+            # Bar extends from 0.5 (neutral) in the direction of baseline
+            bar_height = 0.35
+            ax_baseline.barh(
+                y_pos,
+                f_0_B - 0.5,  # Length from center
+                left=0.5,  # Start at center
+                height=bar_height,
+                color=color_baseline,
+                alpha=0.7,
+                edgecolor="none",
+            )
+
+            # Add text label showing the baseline value
+            ax_baseline.text(
+                f_0_B + 0.02 if f_0_B >= 0.5 else f_0_B - 0.02,
+                y_pos,
+                f"{f_0_B:.2f}",
+                ha="left" if f_0_B >= 0.5 else "right",
+                va="center",
+                fontsize=10,
+                color=color_baseline,
+                fontweight="bold",
+            )
+
+        # Style the baseline axis
+        ax_baseline.set_xlim(0, 1)
+        ax_baseline.set_ylim(ax.get_ylim())  # Match main plot y-limits
+        ax_baseline.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5)
+        ax_baseline.spines["top"].set_visible(False)
+        ax_baseline.spines["right"].set_visible(False)
+        ax_baseline.spines["left"].set_visible(False)
+        ax_baseline.spines["bottom"].set_visible(False)
+        ax_baseline.set_yticks([])
+        ax_baseline.set_xticks([])
+        ax_baseline.set_xlabel("Baseline pref.", fontsize=10)
+
     # Adjust subplot to make room for labels on left and legend on right
-    fig.subplots_adjust(left=0.12, right=0.58)
+    if ax_baseline is not None:
+        fig.subplots_adjust(left=0.12, right=0.70 if show_legend else 0.85, wspace=0.50)
+    else:
+        fig.subplots_adjust(left=0.12, right=0.58 if show_legend else 0.85)
 
     # Add legend outside plot area on the right
-    ax.legend(
-        handles=legend_elements,
-        loc="upper left",
-        bbox_to_anchor=(1.12, 1),
-        fontsize=9,
-        framealpha=0.9,
-    )
+    if show_legend:
+        ax.legend(
+            handles=legend_elements,
+            loc="upper left",
+            bbox_to_anchor=(1.12, 1),
+            fontsize=9,
+            framealpha=0.9,
+        )
 
     # Save figure
     if output_path:
@@ -1427,7 +1493,19 @@ Examples:
     parser.add_argument(
         "--no-title",
         action="store_true",
-        help="Suppress the plot title (for paper figures)",
+        help="Suppress the plot title",
+    )
+
+    parser.add_argument(
+        "--baselines",
+        action="store_true",
+        help="Show baseline preferences in a separate column (single model + log-odds mode only)",
+    )
+
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Paper mode: suppress title and legend for publication figures",
     )
 
     args = parser.parse_args()
@@ -1553,7 +1631,9 @@ Examples:
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
             log_odds=args.log_odds,
-            show_title=not args.no_title,
+            show_title=not args.no_title and not args.paper,
+            show_baselines=args.baselines,
+            show_legend=not args.paper,
         )
     else:
         # Multi-model mode: show best factor per (model, reasoning) combination
