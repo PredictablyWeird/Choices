@@ -59,6 +59,7 @@ class NormalizedResult:
     steerability_against: float  # Steerability when nudging against baseline pref
     sig_towards: bool  # Significance of nudge towards
     sig_against: bool  # Significance of nudge against
+    sig_baseline: bool  # Whether baseline preference is significant
     model: str
     reasoning_condition: str
     factor: str
@@ -110,6 +111,7 @@ def normalize_result(r: FrequencyResult) -> NormalizedResult:
         steerability_against=steer_against,
         sig_towards=sig_towards,
         sig_against=sig_against,
+        sig_baseline=r.sig_baseline_B,
         model=r.model,
         reasoning_condition=r.reasoning_condition,
         factor=r.factor,
@@ -691,6 +693,11 @@ Examples:
         action="store_true",
         help="Don't display the plot (only save to file)",
     )
+    parser.add_argument(
+        "--sig-baseline-only",
+        action="store_true",
+        help="Only include cases with significant baseline preference",
+    )
 
     args = parser.parse_args()
 
@@ -708,6 +715,8 @@ Examples:
         print(f"Nudge type filter: {args.nudge_types}")
     if args.reasoning_conditions:
         print(f"Reasoning filter: {args.reasoning_conditions}")
+    if args.sig_baseline_only:
+        print("Sig baseline only: Yes")
     print(f"Plot type: {args.plot_type}")
     print(f"Bins: {args.bins or 'continuous'}")
     print(f"Output: {output_path}")
@@ -741,6 +750,19 @@ Examples:
     print("Normalizing results...")
     normalized = [normalize_result(r) for r in results]
     print(f"Normalized {len(normalized)} result(s)")
+
+    # Filter by baseline significance if requested
+    if args.sig_baseline_only:
+        n_before = len(normalized)
+        normalized = [r for r in normalized if r.sig_baseline]
+        print(
+            f"After sig-baseline filter: {len(normalized)} result(s) (removed {n_before - len(normalized)})"
+        )
+
+    if not normalized:
+        print("No results after filtering.")
+        return
+
     print()
 
     baselines = np.array([r.baseline_pref for r in normalized])
