@@ -1412,6 +1412,83 @@ Examples:
                 f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
+    # Combined reasoning condition groups
+    combined_groups = [
+        ("none+off", ["none", "off"]),
+        ("before+low", ["before", "low"]),
+    ]
+    for combo_name, combo_conditions in combined_groups:
+        combo_results = [
+            r for r in results if r.reasoning_condition in combo_conditions
+        ]
+        if not combo_results:
+            continue
+        n_factors = len(set(r.factor for r in combo_results))
+        (
+            avg_steer,
+            avg_bias,
+            avg_bias_ci,
+            avg_effect,
+            avg_abs_steer,
+            sig_rate,
+            sig_backfire_rate,
+            backfire_rate,
+            base_bias,
+            base_bias_ci,
+        ) = get_steer_stats(combo_results)
+
+        effect_str = f"|effect|={avg_effect:.{decimals}f}"
+        abs_steer_str = (
+            f"|steer|={avg_abs_steer:.{decimals}f}"
+            if avg_abs_steer is not None
+            else "|steer|=N/A"
+        )
+        sig_str = f"sig={sig_rate:.1%}"
+        backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
+
+        # Format base_bias with CI
+        if base_bias is not None and base_bias_ci is not None:
+            base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+        else:
+            base_bias_str = "base_bias=N/A"
+
+        if n_factors > 1:
+            # Multiple factors: only show steerability metrics
+            steer_str = (
+                f"avg_steer={avg_steer:.{decimals}f}"
+                if avg_steer is not None
+                else "avg_steer=N/A"
+            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
+            print(
+                f"  {combo_name}: n={len(combo_results)}, {effect_str}, "
+                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+            )
+        else:
+            # Single factor: show frequency metrics and steerability
+            avg_f_0_B = sum(r.f_0_B for r in combo_results) / len(combo_results)
+            avg_f_A_B = sum(r.f_A_B for r in combo_results) / len(combo_results)
+            avg_f_B_B = sum(r.f_B_B for r in combo_results) / len(combo_results)
+            steer_str = (
+                f"avg_steer={avg_steer:.{decimals}f}"
+                if avg_steer is not None
+                else "avg_steer=N/A"
+            )
+            # Format |steer_bias| with CI
+            if avg_bias is not None and avg_bias_ci is not None:
+                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            else:
+                bias_str = "|steer_bias|=N/A"
+            print(
+                f"  {combo_name}: n={len(combo_results)}, "
+                f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+            )
+
     # By factor (single factor by definition)
     factors = set(r.factor for r in results)
     print(f"\nFactors ({len(factors)}):")
