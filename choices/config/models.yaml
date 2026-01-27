@@ -113,6 +113,11 @@ llama-33-70b:
   model_type: openrouter
   display_name: "Llama 3.3 70B"
 
+llama-4-maverick:
+  model_name: "openrouter/meta-llama/llama-4-maverick"
+  model_type: openrouter
+  display_name: "Llama 4 Maverick"
+
 gemma-3-12b:
   model_name: "openrouter/google/gemma-3-12b-it"
   model_type: openrouter

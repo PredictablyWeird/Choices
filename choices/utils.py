@@ -990,10 +990,9 @@ async def generate_responses(
                 return bool(answer_pattern.search(content))
             else:
                 # Non-reasoning mode: check for exactly one choice with word boundaries
+                # Case-sensitive to avoid matching article "a" as option "A"
                 choice_patterns = [
-                    re.compile(
-                        rf"(?:^|[^\w])({re.escape(c)})(?:[^\w]|$)", re.IGNORECASE
-                    )
+                    re.compile(rf"(?:^|[^\w])({re.escape(c)})(?:[^\w]|$)")
                     for c in valid_choices
                 ]
                 matches = [bool(pattern.search(content)) for pattern in choice_patterns]

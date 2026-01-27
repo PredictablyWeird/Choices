@@ -1154,7 +1154,7 @@ Examples:
         Returns (avg_steer, avg_bias, avg_effect, avg_abs_steer,
                  sig_rate, sig_backfire_rate, backfire_rate).
         - sig_rate: fraction of nudges with significant change
-        - sig_backfire_rate: fraction of nudges that backfired significantly
+        - sig_backfire_rate: fraction of significant nudges that backfired (as % of sig cases)
         - backfire_rate: fraction of nudges that backfired (regardless of significance)
         """
         steer_results = [r for r in result_list if r.avg_steerability is not None]
@@ -1189,15 +1189,14 @@ Examples:
         sig_count = sum(int(r.sig_A) + int(r.sig_B) for r in result_list)
         sig_rate = sig_count / total_nudges if total_nudges > 0 else 0.0
 
-        # Compute significant backfire rate: fraction of nudges that backfired significantly
+        # Compute significant backfire rate: fraction of significant nudges that backfired
         # Only count backfires that are also statistically significant
+        # Rate is relative to sig_count (significant cases), not total_nudges
         sig_backfire_count = sum(
             int(r.backfire_A and r.sig_A) + int(r.backfire_B and r.sig_B)
             for r in result_list
         )
-        sig_backfire_rate = (
-            sig_backfire_count / total_nudges if total_nudges > 0 else 0.0
-        )
+        sig_backfire_rate = sig_backfire_count / sig_count if sig_count > 0 else 0.0
 
         # Compute backfire rate: fraction of nudges that backfired (regardless of significance)
         backfire_count = sum(int(r.backfire_A) + int(r.backfire_B) for r in result_list)
@@ -1510,11 +1509,12 @@ Examples:
     )
 
     # Significant backfire statistics (only counting statistically significant backfires)
+    # Rate is relative to significant cases, not total nudges
     total_sig_backfire = sum(
         int(r.backfire_A and r.sig_A) + int(r.backfire_B and r.sig_B) for r in results
     )
     print(
-        f"Overall Significant Backfire Rate: {overall_sig_backfire_rate:.1%} ({total_sig_backfire}/{total_nudges})"
+        f"Overall Significant Backfire Rate: {overall_sig_backfire_rate:.1%} ({total_sig_backfire}/{total_sig} significant)"
     )
 
 
