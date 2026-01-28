@@ -51,6 +51,7 @@ from choices.analysis.create_summary import (
 )
 from choices.analysis.utils import (
     get_model_display_name,
+    get_nudge_display_name,
     get_nudge_marker,
     is_reasoning_model,
 )
@@ -523,7 +524,7 @@ def create_steerability_plot(
                 color=color_nudge_A,
                 linewidth=4,
                 solid_capstyle="round",
-                label="Mean steer. (→A)",
+                label="Mean (→A)",
             ),
             Line2D(
                 [0],
@@ -531,17 +532,17 @@ def create_steerability_plot(
                 color=color_nudge_B,
                 linewidth=4,
                 solid_capstyle="round",
-                label="Mean steer. (→B)",
+                label="Mean (→B)",
             ),
             # Spacer and header for influence types
             Patch(facecolor="none", edgecolor="none", label=""),
-            Patch(facecolor="none", edgecolor="none", label="Influence types:"),
+            Patch(facecolor="none", edgecolor="none", label=r"$\bf{Influence}$"),
         ]
 
         # Group 2: Nudge type symbols
         for nudge_type in sorted(all_nudge_types):
             marker = get_nudge_marker(nudge_type)
-            display_name = nudge_type.replace("_", " ").title()
+            display_name = get_nudge_display_name(nudge_type)
             legend_elements.append(
                 Line2D(
                     [0],
@@ -551,7 +552,7 @@ def create_steerability_plot(
                     markerfacecolor="#666666",
                     markeredgecolor="white",
                     markersize=8,
-                    label=f"  {display_name}",
+                    label=display_name,
                 )
             )
 
@@ -561,7 +562,7 @@ def create_steerability_plot(
             handles=legend_elements,
             loc="upper left",
             bbox_to_anchor=legend_anchor,
-            fontsize=8,
+            fontsize=10,
             framealpha=0.9,
         )
 

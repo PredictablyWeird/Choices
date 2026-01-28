@@ -447,6 +447,60 @@ def get_nudge_marker(nudge_type: str) -> str:
     return _dynamic_nudge_markers[nudge_type]
 
 
+# Abbreviations for nudge types (for legend display)
+NUDGE_TYPE_ABBREVIATIONS = {
+    # Evidence-based
+    "survey_preference": "Survey",
+    "weak_evidence": "Weak Ev.",
+    "strong_evidence": "Strong Ev.",
+    "expert_recommendation": "Expert",
+    # Pressure-based
+    "emotional": "Emotional",
+    "identity": "Identity",
+    "user_preference": "User Pref.",
+    "social_norm": "Social",
+    # Direct instruction
+    "always_save": "Always",
+    "moral_imperative": "Moral",
+    # Other
+    "few_shot": "Few-shot",
+    "few_shot_3": "Few-shot",
+    "custom": "Custom",
+    # Baselines
+    "survey_preference_baseline": "Survey (base)",
+    "weak_evidence_baseline": "Weak Ev (base)",
+    "emotional_baseline": "Emotional (base)",
+    "user_preference_baseline": "User Pref (base)",
+    # Negation variants
+    "survey_preference_negation": "Survey (neg)",
+    "weak_evidence_negation": "Weak Ev (neg)",
+    "user_preference_negation": "User Pref (neg)",
+    "emotional_negation": "Emotional (neg)",
+}
+
+
+def get_nudge_display_name(nudge_type: str) -> str:
+    """
+    Get abbreviated display name for a nudge type.
+
+    Args:
+        nudge_type: The nudge type identifier (e.g., "survey_preference", "few_shot_3")
+
+    Returns:
+        Abbreviated display name for use in legends
+    """
+    # Check for exact match first
+    if nudge_type in NUDGE_TYPE_ABBREVIATIONS:
+        return NUDGE_TYPE_ABBREVIATIONS[nudge_type]
+
+    # Handle few_shot_N variants
+    if nudge_type.startswith("few_shot"):
+        return "Few-shot"
+
+    # Fallback: title case with underscores replaced
+    return nudge_type.replace("_", " ").title()
+
+
 def get_category_marker(category: str) -> str:
     """Get marker for a category."""
     return CATEGORY_MARKERS.get(category, "o")
