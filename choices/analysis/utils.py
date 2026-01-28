@@ -421,17 +421,14 @@ CATEGORY_MARKERS = {
 # Marker palette for nudge types
 NUDGE_MARKERS = {
     "survey_preference": "o",  # circle
-    "always_save": "s",  # square
-    "utilitarian": "^",  # triangle up
-    "deontological": "D",  # diamond
-    "weak_evidence": "v",  # triangle down
+    "user_preference": "s",  # square
     "emotional": "P",  # plus (filled)
-    "expert_opinion": "X",  # x (filled)
-    "social_proof": "*",  # star
+    "weak_evidence": "v",  # triangle down
+    "few_shot_3": "D",  # diamond
 }
 
 # Extended marker palette for nudge types not in NUDGE_MARKERS
-_EXTRA_MARKERS = ["h", "p", "H", "8", "d", "<", ">", "1", "2", "3", "4"]
+_EXTRA_MARKERS = ["X", "*", "^", "h", "p", "H", "8", "d", "<", ">", "1", "2", "3", "4"]
 
 # Cache for dynamically assigned nudge markers
 _dynamic_nudge_markers: Dict[str, str] = {}
