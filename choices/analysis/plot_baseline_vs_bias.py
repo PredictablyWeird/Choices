@@ -301,7 +301,7 @@ def create_nonsig_analysis_plot(
             va="top",
         )
 
-    ax.set_xlabel("|Steerability Bias|", fontsize=12)
+    ax.set_xlabel("|Steerability Asymmetry|", fontsize=12)
     ax.set_ylabel("Count", fontsize=12)
 
     if show_title:
