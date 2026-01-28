@@ -422,7 +422,7 @@ def create_steerability_plot(
                 clip_on=False,
             )
 
-        # Add header labels for options (get from first row)
+        # Add header labels for options (get from first row) with arrows
         if row_keys:
             first_rd = row_data[row_keys[0]]
             level_A = abbreviate_label(first_rd.get("level_A") or "A")
@@ -435,7 +435,7 @@ def create_steerability_plot(
             ax.text(
                 left_x,
                 header_y,
-                level_A,
+                f"A ← {level_A}",
                 ha="left",
                 va="center",
                 fontsize=12,
@@ -446,7 +446,7 @@ def create_steerability_plot(
             ax.text(
                 right_x,
                 header_y,
-                level_B,
+                f"{level_B} → B",
                 ha="right",
                 va="center",
                 fontsize=12,
@@ -511,9 +511,12 @@ def create_steerability_plot(
     ax_baseline.set_xticks([])
     ax_baseline.set_xlabel("Baseline\nPreference", fontsize=10)
 
-    # Create legend
+    # Create legend with two groups
     if show_legend:
+        from matplotlib.patches import Patch
+
         legend_elements = [
+            # Group 1: Mean steerability bars
             Line2D(
                 [0],
                 [0],
@@ -530,9 +533,12 @@ def create_steerability_plot(
                 solid_capstyle="round",
                 label="Mean steer. (→B)",
             ),
+            # Spacer and header for influence types
+            Patch(facecolor="none", edgecolor="none", label=""),
+            Patch(facecolor="none", edgecolor="none", label="Influence types:"),
         ]
 
-        # Add nudge type symbols
+        # Group 2: Nudge type symbols
         for nudge_type in sorted(all_nudge_types):
             marker = get_nudge_marker(nudge_type)
             display_name = nudge_type.replace("_", " ").title()
@@ -545,7 +551,7 @@ def create_steerability_plot(
                     markerfacecolor="#666666",
                     markeredgecolor="white",
                     markersize=8,
-                    label=f"{display_name} (max bias)",
+                    label=f"  {display_name}",
                 )
             )
 
