@@ -163,6 +163,18 @@ def find_most_biased_nudge(nudge_data: List[Dict]) -> Optional[Dict]:
     return max(valid, key=lambda nd: abs(nd["steerability_bias"]))
 
 
+def abbreviate_label(label: str) -> str:
+    """Abbreviate long labels for display."""
+    if label is None:
+        return label
+    # Abbreviate left-handed/right-handed
+    label = label.replace("left-handed", "left-h.")
+    label = label.replace("right-handed", "right-h.")
+    label = label.replace("Left-handed", "Left-h.")
+    label = label.replace("Right-handed", "Right-h.")
+    return label
+
+
 def create_steerability_plot(
     row_data: Dict[str, Dict[str, any]],
     row_labels: List[str],
@@ -210,7 +222,7 @@ def create_steerability_plot(
 
     # Bar settings
     bar_linewidth = 4
-    bar_height = 0.5  # Total height, centered on y_pos
+    bar_height = 0.55  # Total height, centered on y_pos
 
     # Y positions for each row
     y_positions = np.arange(n_rows)
@@ -223,14 +235,14 @@ def create_steerability_plot(
         rd = row_data[key]
         y_pos = y_positions[i]
 
-        # Draw horizontal line for this row
+        # Draw horizontal line for this row (stronger/more visible)
         ax.axhline(
             y=y_pos,
-            color="lightgray",
-            linestyle="-",
-            linewidth=0.5,
+            color="gray",
+            linestyle=":",
+            linewidth=1.0,
             alpha=0.5,
-            zorder=0,
+            zorder=2,
         )
 
         # Compute mean steerability values
@@ -283,7 +295,7 @@ def create_steerability_plot(
                     [y_pos - 0.15],
                     color=color_nudge_A,
                     marker=marker,
-                    s=80,
+                    s=50,
                     edgecolors="white",
                     linewidths=0.5,
                     zorder=7,
@@ -297,7 +309,7 @@ def create_steerability_plot(
                     [y_pos + 0.15],
                     color=color_nudge_B,
                     marker=marker,
-                    s=80,
+                    s=50,
                     edgecolors="white",
                     linewidths=0.5,
                     zorder=7,
@@ -322,12 +334,31 @@ def create_steerability_plot(
     else:
         ax.set_xlim(-1.0, 1.0)
 
-    # Add light background fills for left (red) and right (blue) halves
+    # Add light background fills for left (red) and right (blue) halves - per row with gaps
     x_min_bg, x_max_bg = ax.get_xlim()
-    # Light red for left side (steerability towards A)
-    ax.axvspan(x_min_bg, 0, color=color_nudge_A, alpha=0.08, zorder=0)
-    # Light blue for right side (steerability towards B)
-    ax.axvspan(0, x_max_bg, color=color_nudge_B, alpha=0.08, zorder=0)
+    row_bg_height = (
+        0.42  # Height of each row's background (less than 0.5 to create gaps)
+    )
+    for i in range(n_rows):
+        y_pos = y_positions[i]
+        # Light red for left side (steerability towards A)
+        ax.fill_between(
+            [x_min_bg, 0],
+            y_pos - row_bg_height,
+            y_pos + row_bg_height,
+            color=color_nudge_A,
+            alpha=0.08,
+            zorder=0,
+        )
+        # Light blue for right side (steerability towards B)
+        ax.fill_between(
+            [0, x_max_bg],
+            y_pos - row_bg_height,
+            y_pos + row_bg_height,
+            color=color_nudge_B,
+            alpha=0.08,
+            zorder=0,
+        )
 
     ax.set_xlabel("Log Odds Effect", fontsize=11)
 
@@ -348,8 +379,8 @@ def create_steerability_plot(
         for i, key in enumerate(row_keys):
             y_pos = y_positions[i]
             rd = row_data[key]
-            level_A = rd.get("level_A") or "A"
-            level_B = rd.get("level_B") or "B"
+            level_A = abbreviate_label(rd.get("level_A") or "A")
+            level_B = abbreviate_label(rd.get("level_B") or "B")
 
             # Left label: option A in bold red
             ax.text(
@@ -394,8 +425,8 @@ def create_steerability_plot(
         # Add header labels for options (get from first row)
         if row_keys:
             first_rd = row_data[row_keys[0]]
-            level_A = first_rd.get("level_A") or "A"
-            level_B = first_rd.get("level_B") or "B"
+            level_A = abbreviate_label(first_rd.get("level_A") or "A")
+            level_B = abbreviate_label(first_rd.get("level_B") or "B")
 
             header_y = -0.6
             left_x = x_min_ax + 0.05 * x_range_ax
