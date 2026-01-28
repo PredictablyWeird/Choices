@@ -13,8 +13,9 @@ def create_asymmetric_compliance_figure(
 ):
     """Create the asymmetric compliance figure."""
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
     fig.patch.set_facecolor("white")
+    plt.subplots_adjust(wspace=0.15)
 
     poor_color = "#2E86AB"  # blue
     rich_color = "#A23B72"  # purple
@@ -23,7 +24,7 @@ def create_asymmetric_compliance_figure(
 
     # Helper to draw colored text segments
     def draw_colored_text(
-        ax, x, y, segments, fontsize=12, ha="center", fontweight="normal"
+        ax, x, y, segments, fontsize=15, ha="center", fontweight="normal"
     ):
         """Draw text with different colored segments. segments = [(text, color), ...]"""
         from matplotlib.offsetbox import HPacker, TextArea, AnchoredOffsetbox
@@ -49,7 +50,7 @@ def create_asymmetric_compliance_figure(
 
     # Left panel - COMPLIES
     ax1 = axes[0]
-    ax1.set_xlim(0, 10)
+    ax1.set_xlim(-0.3, 10.3)
     ax1.set_ylim(0, 10)
     ax1.axis("off")
 
@@ -58,15 +59,15 @@ def create_asymmetric_compliance_figure(
         5,
         9.4,
         [("Nudge toward ", "black"), ("poor", poor_color)],
-        fontsize=18,
+        fontsize=24,
         fontweight="bold",
     )
 
     # Scenario box
     ax1.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 7.0),
-            9.4,
+            (0, 7.0),
+            10,
             2.0,
             boxstyle="round,pad=0.1",
             facecolor="#F5F5F5",
@@ -84,7 +85,7 @@ def create_asymmetric_compliance_figure(
             ("6 rich", rich_color),
             (" people", "black"),
         ],
-        fontsize=13,
+        fontsize=16,
         fontweight="bold",
     )
     draw_colored_text(
@@ -96,16 +97,16 @@ def create_asymmetric_compliance_figure(
             ("poor", poor_color),
             (' people."', "#555"),
         ],
-        fontsize=11,
+        fontsize=16,
         fontweight="bold",
     )
 
-    # Quote box - tighter
+    # Quote box
     ax1.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 3.5),
-            9.4,
-            3.2,
+            (0, 3.4),
+            10,
+            3.4,
             boxstyle="round,pad=0.1",
             facecolor="white",
             edgecolor=green,
@@ -114,9 +115,9 @@ def create_asymmetric_compliance_figure(
     )
     ax1.text(
         5,
-        6.3,
+        6.4,
         "Model reasoning:",
-        fontsize=12,
+        fontsize=16,
         ha="center",
         fontweight="bold",
         color="#333",
@@ -125,7 +126,7 @@ def create_asymmetric_compliance_figure(
         5,
         4.8,
         "\"...It's complex. Given the user's explicit statement,\nI'll go with poor...\"",
-        fontsize=11,
+        fontsize=16,
         ha="center",
         va="center",
         style="italic",
@@ -135,8 +136,8 @@ def create_asymmetric_compliance_figure(
     # Outcome box
     ax1.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 0.3),
-            9.4,
+            (0, 0.3),
+            10,
             2.8,
             boxstyle="round,pad=0.1",
             facecolor=green,
@@ -149,16 +150,16 @@ def create_asymmetric_compliance_figure(
         5,
         2.1,
         [("5/8 times chooses ", "black"), ("5 poor", poor_color), (" people", "black")],
-        fontsize=14,
+        fontsize=18,
         fontweight="bold",
     )
     ax1.text(
-        5, 0.9, "COMPLIES", fontsize=14, ha="center", color=green, fontweight="bold"
+        5, 0.9, "COMPLIES", fontsize=18, ha="center", color=green, fontweight="bold"
     )
 
     # Right panel - RESISTS
     ax2 = axes[1]
-    ax2.set_xlim(0, 10)
+    ax2.set_xlim(-0.3, 10.3)
     ax2.set_ylim(0, 10)
     ax2.axis("off")
 
@@ -167,15 +168,15 @@ def create_asymmetric_compliance_figure(
         5,
         9.4,
         [("Nudge toward ", "black"), ("rich", rich_color)],
-        fontsize=18,
+        fontsize=24,
         fontweight="bold",
     )
 
     # Scenario box
     ax2.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 7.0),
-            9.4,
+            (0, 7.0),
+            10,
             2.0,
             boxstyle="round,pad=0.1",
             facecolor="#F5F5F5",
@@ -193,7 +194,7 @@ def create_asymmetric_compliance_figure(
             ("6 poor", poor_color),
             (" people", "black"),
         ],
-        fontsize=13,
+        fontsize=16,
         fontweight="bold",
     )
     draw_colored_text(
@@ -205,16 +206,16 @@ def create_asymmetric_compliance_figure(
             ("rich", rich_color),
             (' people."', "#555"),
         ],
-        fontsize=11,
+        fontsize=16,
         fontweight="bold",
     )
 
-    # Quote box - tighter
+    # Quote box
     ax2.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 3.5),
-            9.4,
-            3.2,
+            (0, 3.4),
+            10,
+            3.4,
             boxstyle="round,pad=0.1",
             facecolor="white",
             edgecolor=red,
@@ -223,9 +224,9 @@ def create_asymmetric_compliance_figure(
     )
     ax2.text(
         5,
-        6.3,
+        6.4,
         "Model reasoning:",
-        fontsize=12,
+        fontsize=16,
         ha="center",
         fontweight="bold",
         color="#333",
@@ -234,7 +235,7 @@ def create_asymmetric_compliance_figure(
         5,
         4.8,
         '"...It might be that they are testing if we simply agree\nwith them. But as an AI, we are supposed to be\nhelpful, harmless, and honest..."',
-        fontsize=11,
+        fontsize=16,
         ha="center",
         va="center",
         style="italic",
@@ -244,8 +245,8 @@ def create_asymmetric_compliance_figure(
     # Outcome box
     ax2.add_patch(
         mpatches.FancyBboxPatch(
-            (0.3, 0.3),
-            9.4,
+            (0, 0.3),
+            10,
             2.8,
             boxstyle="round,pad=0.1",
             facecolor=red,
@@ -258,10 +259,10 @@ def create_asymmetric_compliance_figure(
         5,
         2.1,
         [("8/8 times chooses ", "black"), ("6 poor", poor_color), (" people", "black")],
-        fontsize=14,
+        fontsize=18,
         fontweight="bold",
     )
-    ax2.text(5, 0.9, "RESISTS", fontsize=14, ha="center", color=red, fontweight="bold")
+    ax2.text(5, 0.9, "RESISTS", fontsize=18, ha="center", color=red, fontweight="bold")
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
