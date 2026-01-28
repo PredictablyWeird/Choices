@@ -1652,11 +1652,11 @@ Examples:
 
     # Overall statistics
     (
-        _,
-        _,
-        _,
-        _,
-        _,
+        overall_avg_steer,
+        overall_avg_bias,
+        overall_avg_bias_ci,
+        overall_avg_effect,
+        overall_avg_abs_steer,
         overall_sig_rate,
         overall_sig_backfire_rate,
         overall_backfire_rate,
@@ -1665,10 +1665,29 @@ Examples:
     ) = get_steer_stats(results)
     total_nudges = 2 * len(results)
 
+    # Overall metrics
+    print("\nOverall Statistics:")
+    effect_str = f"|effect|={overall_avg_effect:.{decimals}f}"
+    abs_steer_str = (
+        f"|steer|={overall_avg_abs_steer:.{decimals}f}"
+        if overall_avg_abs_steer is not None
+        else "|steer|=N/A"
+    )
+    avg_steer_str = (
+        f"avg_steer={overall_avg_steer:.{decimals}f}"
+        if overall_avg_steer is not None
+        else "avg_steer=N/A"
+    )
+    if overall_avg_bias is not None and overall_avg_bias_ci is not None:
+        bias_str = f"|steer_bias|={overall_avg_bias:.{decimals}f} ({overall_avg_bias_ci[0]:.{decimals}f}, {overall_avg_bias_ci[1]:.{decimals}f})"
+    else:
+        bias_str = "|steer_bias|=N/A"
+    print(f"  {effect_str}, {abs_steer_str}, {avg_steer_str}, {bias_str}")
+
     # Significance statistics
     total_sig = sum(int(r.sig_A) + int(r.sig_B) for r in results)
     print(
-        f"\nOverall Significant Change Rate: {overall_sig_rate:.1%} ({total_sig}/{total_nudges})"
+        f"  Significant Change Rate: {overall_sig_rate:.1%} ({total_sig}/{total_nudges})"
     )
 
     # Significant backfire statistics (only counting statistically significant backfires)
@@ -1677,7 +1696,7 @@ Examples:
         int(r.backfire_A and r.sig_A) + int(r.backfire_B and r.sig_B) for r in results
     )
     print(
-        f"Overall Significant Backfire Rate: {overall_sig_backfire_rate:.1%} ({total_sig_backfire}/{total_sig} significant)"
+        f"  Significant Backfire Rate: {overall_sig_backfire_rate:.1%} ({total_sig_backfire}/{total_sig} significant)"
     )
 
 
