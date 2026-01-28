@@ -171,18 +171,20 @@ def create_steerability_plot(
     figsize: Tuple[float, float] = (10, None),
     show_legend: bool = True,
     title: Optional[str] = None,
+    single_model_mode: bool = False,
 ) -> plt.Figure:
     """
     Create the steerability plot with baseline column.
 
     Args:
         row_data: Dict mapping row_key -> data dict
-        row_labels: Display labels for each row
+        row_labels: Display labels for each row (used in multi-model mode)
         row_keys: Keys to look up in row_data
         output_path: Optional path to save figure
         figsize: Figure size (width, height)
         show_legend: Whether to show legend
         title: Optional title
+        single_model_mode: If True, rows are factors and use option labels instead
 
     Returns:
         The matplotlib Figure object
@@ -208,7 +210,7 @@ def create_steerability_plot(
 
     # Bar settings
     bar_linewidth = 4
-    bar_height = 0.35
+    bar_height = 0.5  # Total height, centered on y_pos
 
     # Y positions for each row
     y_positions = np.arange(n_rows)
@@ -243,12 +245,12 @@ def create_steerability_plot(
             if nd.get("steerability_B") is not None
         ]
 
-        # Draw mean bars
+        # Draw mean bars (centered on y_pos)
         if steer_A_values:
             mean_A = -sum(steer_A_values) / len(steer_A_values)  # Negate for plotting
             ax.plot(
                 [mean_A, mean_A],
-                [y_pos - bar_height, y_pos],
+                [y_pos - bar_height / 2, y_pos + bar_height / 2],
                 color=color_nudge_A,
                 linewidth=bar_linewidth,
                 solid_capstyle="round",
@@ -259,7 +261,7 @@ def create_steerability_plot(
             mean_B = sum(steer_B_values) / len(steer_B_values)
             ax.plot(
                 [mean_B, mean_B],
-                [y_pos, y_pos + bar_height],
+                [y_pos - bar_height / 2, y_pos + bar_height / 2],
                 color=color_nudge_B,
                 linewidth=bar_linewidth,
                 solid_capstyle="round",
@@ -273,29 +275,29 @@ def create_steerability_plot(
             all_nudge_types.add(nudge_type)
             marker = get_nudge_marker(nudge_type)
 
-            # Plot marker for steerability towards A (above center)
+            # Plot marker for steerability towards A (slightly above center)
             steer_A = most_biased.get("steerability_A")
             if steer_A is not None:
                 ax.scatter(
                     [-steer_A],  # Negate for plotting
-                    [y_pos - bar_height / 2],
+                    [y_pos - 0.15],
                     color=color_nudge_A,
                     marker=marker,
-                    s=60,
+                    s=80,
                     edgecolors="white",
                     linewidths=0.5,
                     zorder=7,
                 )
 
-            # Plot marker for steerability towards B (below center)
+            # Plot marker for steerability towards B (slightly below center)
             steer_B = most_biased.get("steerability_B")
             if steer_B is not None:
                 ax.scatter(
                     [steer_B],
-                    [y_pos + bar_height / 2],
+                    [y_pos + 0.15],
                     color=color_nudge_B,
                     marker=marker,
-                    s=60,
+                    s=80,
                     edgecolors="white",
                     linewidths=0.5,
                     zorder=7,
@@ -330,62 +332,97 @@ def create_steerability_plot(
     ax.set_xlabel("Log Odds Effect", fontsize=11)
 
     # Add vertical grid lines
-    ax.xaxis.grid(True, linestyle=":", linewidth=1.5, alpha=0.7, zorder=0)
+    ax.xaxis.grid(True, linestyle=":", linewidth=1.0, alpha=0.5, zorder=0)
 
     # Configure y-axis
     ax.set_yticks(y_positions)
     ax.set_yticklabels([""] * n_rows)
 
-    # Add row labels on the left
+    # Add row labels
     x_min_ax, x_max_ax = ax.get_xlim()
     x_range_ax = x_max_ax - x_min_ax
     label_offset = x_range_ax * 0.02
 
-    for i, label in enumerate(row_labels):
-        y_pos = y_positions[i]
-        ax.text(
-            x_min_ax - label_offset,
-            y_pos,
-            label,
-            ha="right",
-            va="center",
-            fontsize=11,
-            color="#333333",
-            clip_on=False,
-        )
+    if single_model_mode:
+        # Single model mode: option A labels on left (red), option B labels on right (blue)
+        for i, key in enumerate(row_keys):
+            y_pos = y_positions[i]
+            rd = row_data[key]
+            level_A = rd.get("level_A") or "A"
+            level_B = rd.get("level_B") or "B"
 
-    # Add header labels for options (get from first row)
-    if row_keys:
-        first_rd = row_data[row_keys[0]]
-        level_A = first_rd.get("level_A") or "A"
-        level_B = first_rd.get("level_B") or "B"
+            # Left label: option A in bold red
+            ax.text(
+                x_min_ax - label_offset,
+                y_pos,
+                level_A,
+                ha="right",
+                va="center",
+                fontsize=11,
+                fontweight="bold",
+                color=color_nudge_A,
+                clip_on=False,
+            )
 
-        header_y = -0.6
-        left_x = x_min_ax + 0.05 * x_range_ax
-        right_x = x_max_ax - 0.05 * x_range_ax
+            # Right label: option B in bold blue (will be between steerability and baseline)
+            ax.text(
+                x_max_ax + label_offset,
+                y_pos,
+                level_B,
+                ha="left",
+                va="center",
+                fontsize=11,
+                fontweight="bold",
+                color=color_nudge_B,
+                clip_on=False,
+            )
+    else:
+        # Multi-model mode: model names on left, header labels at top
+        for i, label in enumerate(row_labels):
+            y_pos = y_positions[i]
+            ax.text(
+                x_min_ax - label_offset,
+                y_pos,
+                label,
+                ha="right",
+                va="center",
+                fontsize=11,
+                color="#333333",
+                clip_on=False,
+            )
 
-        ax.text(
-            left_x,
-            header_y,
-            f"\u2190 {level_A}",
-            ha="left",
-            va="center",
-            fontsize=12,
-            fontweight="bold",
-            color=color_nudge_A,
-            clip_on=False,
-        )
-        ax.text(
-            right_x,
-            header_y,
-            f"{level_B} \u2192",
-            ha="right",
-            va="center",
-            fontsize=12,
-            fontweight="bold",
-            color=color_nudge_B,
-            clip_on=False,
-        )
+        # Add header labels for options (get from first row)
+        if row_keys:
+            first_rd = row_data[row_keys[0]]
+            level_A = first_rd.get("level_A") or "A"
+            level_B = first_rd.get("level_B") or "B"
+
+            header_y = -0.6
+            left_x = x_min_ax + 0.05 * x_range_ax
+            right_x = x_max_ax - 0.05 * x_range_ax
+
+            ax.text(
+                left_x,
+                header_y,
+                level_A,
+                ha="left",
+                va="center",
+                fontsize=12,
+                fontweight="bold",
+                color=color_nudge_A,
+                clip_on=False,
+            )
+            ax.text(
+                right_x,
+                header_y,
+                level_B,
+                ha="right",
+                va="center",
+                fontsize=12,
+                fontweight="bold",
+                color=color_nudge_B,
+                clip_on=False,
+            )
 
     # Title
     if title:
@@ -481,16 +518,21 @@ def create_steerability_plot(
                 )
             )
 
+        # Position legend further right in single model mode due to B labels
+        legend_anchor = (1.55, 1) if single_model_mode else (1.35, 1)
         ax.legend(
             handles=legend_elements,
             loc="upper left",
-            bbox_to_anchor=(1.35, 1),
+            bbox_to_anchor=legend_anchor,
             fontsize=8,
             framealpha=0.9,
         )
 
-    # Adjust subplot spacing
-    fig.subplots_adjust(left=0.18, right=0.70 if show_legend else 0.85, wspace=0.15)
+    # Adjust subplot spacing - more space between plots in single model mode for B labels
+    if single_model_mode:
+        fig.subplots_adjust(left=0.15, right=0.60 if show_legend else 0.75, wspace=0.55)
+    else:
+        fig.subplots_adjust(left=0.18, right=0.70 if show_legend else 0.85, wspace=0.15)
 
     # Save figure
     if output_path:
@@ -684,6 +726,7 @@ Examples:
             figsize=figsize,
             show_legend=not args.no_legend,
             title=args.title,
+            single_model_mode=True,
         )
 
     else:
