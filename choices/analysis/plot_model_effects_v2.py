@@ -390,7 +390,7 @@ def create_steerability_plot(
                 level_A,
                 ha="right",
                 va="center",
-                fontsize=12,
+                fontsize=11,
                 fontweight="bold",
                 color=color_nudge_A,
                 clip_on=False,
@@ -403,7 +403,7 @@ def create_steerability_plot(
                 level_B,
                 ha="left",
                 va="center",
-                fontsize=12,
+                fontsize=11,
                 fontweight="bold",
                 color=color_nudge_B,
                 clip_on=False,
@@ -465,7 +465,7 @@ def create_steerability_plot(
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
     ax.tick_params(axis="y", which="both", left=False)
-    ax.tick_params(axis="both", which="major", labelsize=10)
+    ax.tick_params(axis="both", which="major", labelsize=12)
 
     # Invert y-axis so first row is at top
     ax.invert_yaxis()
@@ -495,7 +495,7 @@ def create_steerability_plot(
                 f"{f_0_B:.2f}",
                 ha="left" if f_0_B >= 0.5 else "right",
                 va="center",
-                fontsize=9,
+                fontsize=11,
                 color=color_baseline,
                 fontweight="bold",
             )
@@ -516,34 +516,33 @@ def create_steerability_plot(
     if show_legend:
         from matplotlib.patches import Patch
 
-        legend_elements = [
-            # Group 1: Mean steerability bars
-            Line2D(
-                [0],
-                [0],
-                color=color_nudge_A,
-                linewidth=4,
-                solid_capstyle="round",
-                label="Mean (→A)",
-            ),
-            Line2D(
-                [0],
-                [0],
-                color=color_nudge_B,
-                linewidth=4,
-                solid_capstyle="round",
-                label="Mean (→B)",
-            ),
-            # Spacer and header for influence types
-            Patch(facecolor="none", edgecolor="none", label=""),
-            Patch(facecolor="none", edgecolor="none", label=r"$\bf{Influence}$"),
-        ]
+        # Create base legend elements
+        mean_A_elem = Line2D(
+            [0],
+            [0],
+            color=color_nudge_A,
+            linewidth=4,
+            solid_capstyle="round",
+            label="Mean (→A)",
+        )
+        mean_B_elem = Line2D(
+            [0],
+            [0],
+            color=color_nudge_B,
+            linewidth=4,
+            solid_capstyle="round",
+            label="Mean (→B)",
+        )
+        influence_header = Patch(
+            facecolor="none", edgecolor="none", label=r"$\bf{Influence:}$"
+        )
 
-        # Group 2: Nudge type symbols
+        # Create nudge type elements
+        nudge_elements = []
         for nudge_type in sorted(all_nudge_types):
             marker = get_nudge_marker(nudge_type)
             display_name = get_nudge_display_name(nudge_type)
-            legend_elements.append(
+            nudge_elements.append(
                 Line2D(
                     [0],
                     [0],
@@ -556,19 +555,60 @@ def create_steerability_plot(
                 )
             )
 
-        # Position legend further right in single model mode due to B labels
-        legend_anchor = (1.55, 1) if single_model_mode else (1.35, 1)
-        ax.legend(
-            handles=legend_elements,
-            loc="upper left",
-            bbox_to_anchor=legend_anchor,
-            fontsize=10,
-            framealpha=0.9,
-        )
+        if single_model_mode:
+            # Two separate legends for single-model mode
 
-    # Adjust subplot spacing - more space between plots in single model mode for B labels
+            # Legend 1 (top-left): Mean colors only
+            legend1 = ax.legend(
+                handles=[mean_A_elem, mean_B_elem],
+                loc="lower left",
+                bbox_to_anchor=(-0.2, 1.02),
+                ncol=1,
+                fontsize=10,
+                framealpha=0.9,
+            )
+            ax.add_artist(legend1)  # Keep this legend when adding the second
+
+            # Legend 2 (top-right): Influence types in 2 rows
+            n_nudges = len(nudge_elements)
+            # Calculate ncol to get ~2 rows (ceiling division)
+            ncol_influence = (n_nudges + 1 + 1) // 2  # +1 for header, +1 for ceiling
+
+            influence_elements = [influence_header] + nudge_elements
+            ax.legend(
+                handles=influence_elements,
+                loc="lower left",
+                bbox_to_anchor=(0.2, 1.02),
+                ncol=ncol_influence,
+                fontsize=10,
+                framealpha=0.9,
+                columnspacing=1.2,
+            )
+        else:
+            # Original vertical legend for multi-model mode
+            legend_elements = [
+                mean_A_elem,
+                mean_B_elem,
+                Patch(facecolor="none", edgecolor="none", label=""),
+                influence_header,
+            ]
+            legend_elements.extend(nudge_elements)
+
+            ax.legend(
+                handles=legend_elements,
+                loc="upper left",
+                bbox_to_anchor=(1.35, 1),
+                fontsize=10,
+                framealpha=0.9,
+                alignment="left",
+            )
+
+    # Adjust subplot spacing
     if single_model_mode:
-        fig.subplots_adjust(left=0.15, right=0.60 if show_legend else 0.75, wspace=0.55)
+        # More space at top for horizontal legend
+        fig.subplots_adjust(
+            left=0.15, right=0.85 if show_legend else 0.75, top=0.85, wspace=0.55
+        )
     else:
         fig.subplots_adjust(left=0.18, right=0.70 if show_legend else 0.85, wspace=0.15)
 
