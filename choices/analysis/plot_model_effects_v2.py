@@ -696,18 +696,34 @@ Examples:
 
     if args.model:
         # Single model mode: rows are factors
+        # Get the actual model name from results (may differ slightly from args.model)
+        models_in_results = set(r.model for r in results)
+        if not models_in_results:
+            print("No results found for this model.")
+            return
+        actual_model = list(models_in_results)[0]  # Should be only one after filtering
+
         # Determine reasoning condition
         if args.reasoning:
-            reasoning = args.reasoning[0]
+            # Filter to specified reasoning conditions and pick the first one found
+            reasoning_in_results = set(r.reasoning_condition for r in results)
+            valid_reasoning = [r for r in args.reasoning if r in reasoning_in_results]
+            if not valid_reasoning:
+                print(
+                    f"No results with reasoning {args.reasoning}. Available: {reasoning_in_results}"
+                )
+                return
+            reasoning = valid_reasoning[0]
         else:
-            reasoning = get_default_reasoning_condition(args.model)
-            # Filter to this reasoning condition
-            results = [r for r in results if r.reasoning_condition == reasoning]
+            reasoning = get_default_reasoning_condition(actual_model)
 
-        data = collect_data_for_single_model(results, args.model, reasoning)
+        # Filter to this reasoning condition
+        results = [r for r in results if r.reasoning_condition == reasoning]
+
+        data = collect_data_for_single_model(results, actual_model, reasoning)
 
         if not data:
-            print("No data found for this model/reasoning combination.")
+            print(f"No data found for model={actual_model}, reasoning={reasoning}.")
             return
 
         row_keys = sorted(data.keys())
