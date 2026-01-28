@@ -361,7 +361,7 @@ def create_steerability_plot(
             zorder=0,
         )
 
-    ax.set_xlabel("Log Odds Effect", fontsize=11)
+    ax.set_xlabel("Log Odds Effect", fontsize=12)
 
     # Add vertical grid lines
     ax.xaxis.grid(True, linestyle=":", linewidth=1.0, alpha=0.5, zorder=0)
@@ -390,7 +390,7 @@ def create_steerability_plot(
                 level_A,
                 ha="right",
                 va="center",
-                fontsize=11,
+                fontsize=12,
                 fontweight="bold",
                 color=color_nudge_A,
                 clip_on=False,
@@ -403,7 +403,7 @@ def create_steerability_plot(
                 level_B,
                 ha="left",
                 va="center",
-                fontsize=11,
+                fontsize=12,
                 fontweight="bold",
                 color=color_nudge_B,
                 clip_on=False,
@@ -418,7 +418,7 @@ def create_steerability_plot(
                 label,
                 ha="right",
                 va="center",
-                fontsize=11,
+                fontsize=12,
                 color="#333333",
                 clip_on=False,
             )
@@ -510,7 +510,7 @@ def create_steerability_plot(
     ax_baseline.spines["bottom"].set_visible(False)
     ax_baseline.set_yticks([])
     ax_baseline.set_xticks([])
-    ax_baseline.set_xlabel("Baseline\nPreference", fontsize=10)
+    ax_baseline.set_xlabel("Baseline\nPreference", fontsize=12)
 
     # Create legend with two groups
     if show_legend:
