@@ -201,7 +201,7 @@ def create_line_plot(
             color=color_towards,
             linewidth=2,
             markersize=8,
-            label="Nudge towards baseline pref.",
+            label="Influence towards baseline pref.",
         )
         ax.plot(
             bin_centers,
@@ -210,7 +210,7 @@ def create_line_plot(
             color=color_against,
             linewidth=2,
             markersize=8,
-            label="Nudge against baseline pref.",
+            label="Influence against baseline pref.",
         )
 
         for i, (x, n) in enumerate(zip(bin_centers, n_per_bin)):
@@ -269,7 +269,7 @@ def create_line_plot(
             "-",
             color=color_towards,
             linewidth=2.5,
-            label="Nudge towards baseline pref.",
+            label="Influence towards baseline pref.",
         )
         ax.plot(
             smooth_x,
@@ -277,7 +277,7 @@ def create_line_plot(
             "-",
             color=color_against,
             linewidth=2.5,
-            label="Nudge against baseline pref.",
+            label="Influence against baseline pref.",
         )
 
     ax.axhline(y=0, color="gray", linestyle=":", linewidth=1, alpha=0.7)
@@ -292,8 +292,7 @@ def create_line_plot(
         ax.set_title(title, fontsize=14, fontweight="bold")
     else:
         ax.set_title(
-            "Steerability by Baseline Preference\n"
-            "(Does nudging amplify existing preferences?)",
+            "Steerability by Baseline Preference",
             fontsize=14,
             fontweight="bold",
         )
@@ -351,13 +350,17 @@ def create_scatter_plot(
     ax.set_xlabel(
         "Baseline Preference Strength\n(frequency of preferred option)", fontsize=12
     )
-    ax.set_ylabel("Steerability Bias\n(towards pref. minus against pref.)", fontsize=12)
+    ax.set_ylabel(
+        "Steerability Asymmetry\n(towards pref. minus against pref.)", fontsize=12
+    )
 
     if title:
         ax.set_title(title, fontsize=14, fontweight="bold")
     else:
         ax.set_title(
-            "Steerability Bias vs Baseline Preference", fontsize=14, fontweight="bold"
+            "Steerability Asymmetry vs Baseline Preference",
+            fontsize=14,
+            fontweight="bold",
         )
 
     ax.annotate(
@@ -573,8 +576,8 @@ def create_combined_plot(
     ax2.axhline(y=0, color="gray", linestyle=":", linewidth=1, alpha=0.7)
     ax2.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.7)
     ax2.set_xlabel("Baseline Preference", fontsize=11)
-    ax2.set_ylabel("Steerability Bias", fontsize=11)
-    ax2.set_title("Bias vs Baseline", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Steerability Asymmetry", fontsize=11)
+    ax2.set_title("Asymmetry vs Baseline Preference", fontsize=12, fontweight="bold")
     ax2.set_xlim(0.45, 1.0)
     ax2.legend(loc="lower right", fontsize=9, framealpha=0.9)
     ax2.spines["top"].set_visible(False)
@@ -594,13 +597,6 @@ def create_combined_plot(
 
     if title:
         fig.suptitle(title, fontsize=14, fontweight="bold", y=1.02)
-    else:
-        fig.suptitle(
-            "Does Nudging Amplify Existing Preferences?",
-            fontsize=14,
-            fontweight="bold",
-            y=1.02,
-        )
 
     plt.tight_layout()
 
