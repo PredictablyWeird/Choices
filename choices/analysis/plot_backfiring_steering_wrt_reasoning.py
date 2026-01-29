@@ -473,5 +473,5 @@ def create_bar_charts(input_file, output_dir="plots"):
 
 
 if __name__ == "__main__":
-    input_file = "main_results_jan28.csv"
+    input_file = "data/main_results_jan28.csv"
     create_bar_charts(input_file)
