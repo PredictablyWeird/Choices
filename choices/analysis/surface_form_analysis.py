@@ -72,6 +72,28 @@ from choices.analysis.utils import (
 DEFAULT_ALPHA = 0.05
 
 
+def abbreviate_model_name(display_name: str) -> str:
+    """
+    Abbreviate model display name for compact plots.
+
+    Examples:
+        "DeepSeek V3" -> "DeepSeek"
+        "Llama 3.3 70B" -> "Llama 70B"
+        "Claude 3.5 Sonnet" -> "Claude Sonnet"
+        "GPT-4o" -> "GPT-4o"
+    """
+    # Remove version numbers like "V3", "V3.2", "3.3", "3.5"
+    import re
+
+    # Pattern to match version numbers (V3, V3.2, 3.3, 3.5, etc.) but keep size indicators (70B)
+    # First handle "Vx.x" or "Vx" patterns
+    result = re.sub(r"\s*V\d+(\.\d+)?", "", display_name)
+    # Then handle "x.x" patterns that are not followed by "B" (to keep 70B etc.)
+    result = re.sub(r"\s+\d+\.\d+(?!\s*B)", "", result)
+
+    return result.strip()
+
+
 @dataclass
 class SurfaceFormDataPoint:
     """Data point for a single nudge condition (normal or baseline)."""
@@ -593,6 +615,7 @@ def create_grouped_bar_chart(
     output_path: Optional[str] = None,
     title: Optional[str] = None,
     figsize: Tuple[float, float] = (10, 6),
+    abbr_names: bool = False,
 ) -> Optional[Tuple[plt.Figure, plt.Axes]]:
     """
     Create a grouped bar chart comparing normal vs irrelevant nudge effect magnitudes by model.
@@ -610,7 +633,8 @@ def create_grouped_bar_chart(
         key = (dp.model, dp.reasoning_condition)
         if key not in model_data:
             model_data[key] = {"normal": [], "baseline": []}
-        model_data[key][dp.condition].append(abs(dp.effect_size))
+        if dp.steerability is not None:
+            model_data[key][dp.condition].append(abs(dp.steerability))
 
     # Compute averages and prepare plot data
     models = []
@@ -628,7 +652,10 @@ def create_grouped_bar_chart(
 
     for (model, reasoning), effects in sorted(model_data.items(), key=sort_key):
         if effects["normal"] and effects["baseline"]:
-            models.append(f"{get_model_display_name(model)}\n({reasoning})")
+            display_name = get_model_display_name(model)
+            if abbr_names:
+                display_name = abbreviate_model_name(display_name)
+            models.append(f"{display_name}\n({reasoning})")
             n_mean = np.mean(effects["normal"])
             b_mean = np.mean(effects["baseline"])
             normal_means.append(n_mean)
@@ -667,8 +694,9 @@ def create_grouped_bar_chart(
     )
 
     # Styling
-    ax.set_ylabel("Average |Effect Size|", fontsize=12)
-    ax.set_xlabel("Model", fontsize=12)
+    ax.set_ylabel("Average |Steerability| (log-odds)", fontsize=12)
+    if title != "":
+        ax.set_xlabel("Model", fontsize=12)
     ax.set_xticks(x)
     ax.set_xticklabels(models, fontsize=10)
     ax.legend(loc="upper right", fontsize=10)
@@ -676,12 +704,12 @@ def create_grouped_bar_chart(
     ax.spines["right"].set_visible(False)
     ax.set_ylim(0, max(normal_means + baseline_means) * 1.15)
 
-    if title:
-        ax.set_title(title, fontsize=14, fontweight="bold")
-    else:
+    if title is None:
         ax.set_title(
             "Informative vs Irrelevant Nudge Effects", fontsize=14, fontweight="bold"
         )
+    elif title:
+        ax.set_title(title, fontsize=14, fontweight="bold")
 
     plt.tight_layout()
 
@@ -894,14 +922,14 @@ def create_scatter_plot(
     ax.set_xlabel("Baseline Frequency f₀(c) (no nudge)", fontsize=14)
     ax.set_ylabel("Nudged Frequency fₓ(c) (nudged towards c)", fontsize=14)
 
-    if title:
-        ax.set_title(title, fontsize=16, fontweight="bold")
-    else:
+    if title is None:
         ax.set_title(
             "Surface Form Analysis: Baseline Preference vs Nudged Frequency",
             fontsize=16,
             fontweight="bold",
         )
+    elif title:
+        ax.set_title(title, fontsize=16, fontweight="bold")
 
     # Legend
     handles, labels = ax.get_legend_handles_labels()
@@ -1516,6 +1544,18 @@ Examples:
         help="Create grouped bar chart instead of scatter plot",
     )
 
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Don't show a title on the plot",
+    )
+
+    parser.add_argument(
+        "--abbr-names",
+        action="store_true",
+        help="Use abbreviated model names (e.g., 'DeepSeek' instead of 'DeepSeek V3')",
+    )
+
     args = parser.parse_args()
 
     # Determine output path
@@ -1581,20 +1621,24 @@ Examples:
         print("No data points found matching the criteria.")
         return
 
+    # Determine title (empty string suppresses title)
+    plot_title = "" if args.no_title else args.title
+
     # Create plot
     if args.bar_chart:
         result = create_grouped_bar_chart(
             data_points=data_points,
             output_path=output_path,
-            title=args.title,
+            title=plot_title,
             figsize=tuple(args.figsize),
+            abbr_names=args.abbr_names,
         )
     else:
         result = create_scatter_plot(
             data_points=data_points,
             groups=args.groups,
             output_path=output_path,
-            title=args.title,
+            title=plot_title,
             figsize=tuple(args.figsize),
             n_bins=args.n_bins,
             show_diagonal=not args.no_diagonal,
