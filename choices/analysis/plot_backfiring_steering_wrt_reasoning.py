@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Create two bar charts comparing reasoning vs non-reasoning conditions by nudge type:
-1. Backfiring Rate (grouped by nudge type)
+1. Significant Backfiring Rate (grouped by nudge type) - measures % of significant effects that backfired
 2. Steerability Magnitude (grouped by nudge type)
+
+Significant Backfiring Rate = (number of cases with significant backfiring) / (number of cases with significant effect)
 
 Designed for 2-column paper layout (side-by-side plots).
 Uses CSV data format.
@@ -34,33 +36,32 @@ def load_csv_data(filepath):
 
 def compute_backfire_rate(df):
     """
-    Compute backfire rate using the backfire_A and backfire_B columns from CSV.
-    Backfire columns contain boolean values (True/False).
+    Compute significant backfire rate: (number of cases with significant backfiring) / 
+                                        (number of cases with significant effect)
+    Only counts backfires that are statistically significant, normalized by total significant effects.
     Returns: (rate, lower_ci, upper_ci) in percentage
     """
     if len(df) == 0:
         return 0.0, 0.0, 0.0
 
-    # Use backfire columns directly from CSV
-    if 'backfire_A' in df.columns and 'backfire_B' in df.columns:
-        total_nudges = len(df) * 2  # 2 nudge directions per row
-        total_backfires = df['backfire_A'].sum() + df['backfire_B'].sum()
-        rate = (total_backfires / total_nudges) * 100
-    else:
-        # Fallback to steerability-based calculation
-        backfire_A = df['steer_A'] < 0
-        backfire_B = df['steer_B'] < 0
-        total_nudges = len(df) * 2
-        total_backfires = backfire_A.sum() + backfire_B.sum()
-        rate = (total_backfires / total_nudges) * 100
-
-    # Compute 95% CI using Wilson score interval
-    if total_nudges == 0:
+    # Count significant backfires (backfire AND significant)
+    sig_backfire_A = (df['backfire_A'] & df['sig_A']).sum()
+    sig_backfire_B = (df['backfire_B'] & df['sig_B']).sum()
+    total_sig_backfires = sig_backfire_A + sig_backfire_B
+    
+    # Count total significant effects (regardless of direction)
+    total_sig_effects = df['sig_A'].sum() + df['sig_B'].sum()
+    
+    # Compute rate
+    if total_sig_effects == 0:
         return 0.0, 0.0, 0.0
     
-    p = total_backfires / total_nudges
+    rate = (total_sig_backfires / total_sig_effects) * 100
+    
+    # Compute 95% CI using Wilson score interval
+    p = total_sig_backfires / total_sig_effects
     z = stats.norm.ppf(0.975)  # 95% CI
-    n = total_nudges
+    n = total_sig_effects
     
     # Wilson score interval
     denominator = 1 + (z**2 / n)
@@ -161,7 +162,7 @@ def create_bar_charts(input_file, output_dir='plots'):
         steer_with_reasoning_upper.append(st_with_upper)
 
     # Print computed values
-    print("Backfire Rate by Nudge Type:")
+    print("Significant Backfire Rate by Nudge Type (% of significant effects that backfired):")
     for i, nudge in enumerate(nudge_types):
         print(f"  {nudge}: No Reasoning={backfire_no_reasoning[i]:.1f}%, With Reasoning={backfire_with_reasoning[i]:.1f}%")
 
@@ -198,14 +199,22 @@ def create_bar_charts(input_file, output_dir='plots'):
     fig1, ax1 = plt.subplots(figsize=(10, 5.5))
 
     # Compute error bar values (distance from mean to CI bounds)
-    backfire_no_err_lower = [backfire_no_reasoning[i] - backfire_no_reasoning_lower[i] 
-                             for i in range(len(backfire_no_reasoning))]
-    backfire_no_err_upper = [backfire_no_reasoning_upper[i] - backfire_no_reasoning[i] 
-                             for i in range(len(backfire_no_reasoning))]
-    backfire_with_err_lower = [backfire_with_reasoning[i] - backfire_with_reasoning_lower[i] 
-                               for i in range(len(backfire_with_reasoning))]
-    backfire_with_err_upper = [backfire_with_reasoning_upper[i] - backfire_with_reasoning[i] 
-                               for i in range(len(backfire_with_reasoning))]
+    # Handle edge cases where CIs might be invalid
+    backfire_no_err_lower = []
+    backfire_no_err_upper = []
+    for i in range(len(backfire_no_reasoning)):
+        lower = max(0, backfire_no_reasoning[i] - backfire_no_reasoning_lower[i])
+        upper = max(0, backfire_no_reasoning_upper[i] - backfire_no_reasoning[i])
+        backfire_no_err_lower.append(lower)
+        backfire_no_err_upper.append(upper)
+    
+    backfire_with_err_lower = []
+    backfire_with_err_upper = []
+    for i in range(len(backfire_with_reasoning)):
+        lower = max(0, backfire_with_reasoning[i] - backfire_with_reasoning_lower[i])
+        upper = max(0, backfire_with_reasoning_upper[i] - backfire_with_reasoning[i])
+        backfire_with_err_lower.append(lower)
+        backfire_with_err_upper.append(upper)
 
     bars1_no = ax1.bar(x - width/2, backfire_no_reasoning, width, label='No Reasoning',
                        color=color_no_reasoning, edgecolor='white', linewidth=1.5,
@@ -261,8 +270,8 @@ def create_bar_charts(input_file, output_dir='plots'):
     legend1.get_frame().set_alpha(0.95)
 
     plt.tight_layout()
-    fig1.savefig(f'{output_dir}/backfiring_rate_comparison.pdf', bbox_inches='tight', dpi=300)
-    print(f"\nSaved: {output_dir}/backfiring_rate_comparison.pdf")
+    fig1.savefig(f'{output_dir}/significant_backfiring_rate_comparison.pdf', bbox_inches='tight', dpi=300)
+    print(f"\nSaved: {output_dir}/significant_backfiring_rate_comparison.pdf")
     plt.close(fig1)
 
     # =========================================================================
@@ -271,14 +280,21 @@ def create_bar_charts(input_file, output_dir='plots'):
     fig2, ax2 = plt.subplots(figsize=(10, 5.5))
 
     # Compute error bar values for steerability
-    steer_no_err_lower = [steer_no_reasoning[i] - steer_no_reasoning_lower[i] 
-                         for i in range(len(steer_no_reasoning))]
-    steer_no_err_upper = [steer_no_reasoning_upper[i] - steer_no_reasoning[i] 
-                         for i in range(len(steer_no_reasoning))]
-    steer_with_err_lower = [steer_with_reasoning[i] - steer_with_reasoning_lower[i] 
-                           for i in range(len(steer_with_reasoning))]
-    steer_with_err_upper = [steer_with_reasoning_upper[i] - steer_with_reasoning[i] 
-                           for i in range(len(steer_with_reasoning))]
+    steer_no_err_lower = []
+    steer_no_err_upper = []
+    for i in range(len(steer_no_reasoning)):
+        lower = max(0, steer_no_reasoning[i] - steer_no_reasoning_lower[i])
+        upper = max(0, steer_no_reasoning_upper[i] - steer_no_reasoning[i])
+        steer_no_err_lower.append(lower)
+        steer_no_err_upper.append(upper)
+    
+    steer_with_err_lower = []
+    steer_with_err_upper = []
+    for i in range(len(steer_with_reasoning)):
+        lower = max(0, steer_with_reasoning[i] - steer_with_reasoning_lower[i])
+        upper = max(0, steer_with_reasoning_upper[i] - steer_with_reasoning[i])
+        steer_with_err_lower.append(lower)
+        steer_with_err_upper.append(upper)
 
     bars2_no = ax2.bar(x - width/2, steer_no_reasoning, width, label='No Reasoning',
                        color=color_no_reasoning, edgecolor='white', linewidth=1.5,
