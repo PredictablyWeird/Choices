@@ -9,13 +9,45 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+# Paper-ready font sizes
+FONT_SIZES = {
+    "title": 16,
+    "axes_label": 14,
+    "tick_label": 12,
+    "legend": 12,
+    "annotation": 10,
+    "small_annotation": 9,
+    "heatmap_text": 11,
+}
+
+
+def setup_plot_style():
+    """Set up matplotlib style for paper-ready figures."""
+    plt.rcParams.update(
+        {
+            "font.size": FONT_SIZES["tick_label"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axes_label"],
+            "xtick.labelsize": FONT_SIZES["tick_label"],
+            "ytick.labelsize": FONT_SIZES["tick_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "figure.titlesize": FONT_SIZES["title"],
+        }
+    )
+
+
+def get_file_extension(use_pdf: bool) -> str:
+    """Return the file extension based on format choice."""
+    return ".pdf" if use_pdf else ".png"
+
+
 def load_data(filepath: str) -> list[dict]:
     """Load classification data."""
     with open(filepath) as f:
         return json.load(f)
 
 
-def plot_backfire_mechanism(data: list[dict], output_dir: Path):
+def plot_backfire_mechanism(data: list[dict], output_dir: Path, use_pdf: bool = False):
     """Plot 1: Rhetorical moves in backfire vs follow traces."""
     backfire = [
         d
@@ -40,7 +72,7 @@ def plot_backfire_mechanism(data: list[dict], output_dir: Path):
     move_labels = [
         "Forced to choose",
         "Claims neutrality",
-        "Acknowledges nudge",
+        "Acknowledges influence",
         "Mentions discrimination",
         "Claims randomness",
         "Expresses discomfort",
@@ -78,12 +110,12 @@ def plot_backfire_mechanism(data: list[dict], output_dir: Path):
         x + width / 2,
         follow_rates,
         width,
-        label=f"Follow nudge (n={len(follow)})",
+        label=f"Follow influence (n={len(follow)})",
         color="#27ae60",
     )
 
     ax.set_ylabel("Percentage of traces (%)")
-    ax.set_title("Rhetorical Moves: Backfire vs Follow Nudge Traces")
+    ax.set_title("Rhetorical Moves: Backfire vs Follow Influence Traces")
     ax.set_xticks(x)
     ax.set_xticklabels(move_labels, rotation=30, ha="right")
     ax.legend()
@@ -99,7 +131,7 @@ def plot_backfire_mechanism(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=8,
+            fontsize=FONT_SIZES["small_annotation"],
         )
     for bar in bars2:
         height = bar.get_height()
@@ -110,16 +142,19 @@ def plot_backfire_mechanism(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=8,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "1_backfire_mechanism.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"1_backfire_mechanism{ext}", dpi=150)
     plt.close()
-    print("Created: 1_backfire_mechanism.png")
+    print(f"Created: 1_backfire_mechanism{ext}")
 
 
-def plot_factor_specific_reasoning(data: list[dict], output_dir: Path):
+def plot_factor_specific_reasoning(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 2: Heatmap of endorsed reasons by demographic factor."""
     factors = ["age_group", "gender", "handedness", "nationality", "wealth"]
     reasons = [
@@ -174,18 +209,25 @@ def plot_factor_specific_reasoning(data: list[dict], output_dir: Path):
             val = matrix[i, j]
             color = "white" if val > 15 else "black"
             ax.text(
-                j, i, f"{val:.1f}%", ha="center", va="center", color=color, fontsize=9
+                j,
+                i,
+                f"{val:.1f}%",
+                ha="center",
+                va="center",
+                color=color,
+                fontsize=FONT_SIZES["heatmap_text"],
             )
 
     ax.set_title("Endorsed Reasons by Demographic Factor")
     plt.colorbar(im, ax=ax, label="Endorsement rate (%)")
     plt.tight_layout()
-    plt.savefig(output_dir / "2_factor_specific_reasoning.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"2_factor_specific_reasoning{ext}", dpi=150)
     plt.close()
-    print("Created: 2_factor_specific_reasoning.png")
+    print(f"Created: 2_factor_specific_reasoning{ext}")
 
 
-def plot_position_bias(data: list[dict], output_dir: Path):
+def plot_position_bias(data: list[dict], output_dir: Path, use_pdf: bool = False):
     """Plot 3: Position bias (defaults to A) by factor."""
     factors = ["age_group", "gender", "handedness", "nationality", "wealth"]
     factor_labels = ["Age", "Gender", "Handedness", "Nationality", "Wealth"]
@@ -240,55 +282,58 @@ def plot_position_bias(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "3_position_bias.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"3_position_bias{ext}", dpi=150)
     plt.close()
-    print("Created: 3_position_bias.png")
+    print(f"Created: 3_position_bias{ext}")
 
 
-def plot_backfire_by_nudge_type(data: list[dict], output_dir: Path):
-    """Plot 4: Backfire rate by nudge type."""
-    nudge_types = Counter(
+def plot_backfire_by_influence_type(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
+    """Plot 4: Backfire rate by influence type."""
+    influence_types = Counter(
         d.get("nudge_type") for d in data if d.get("condition") != "base"
     )
 
-    nudge_stats = {}
-    for nudge_type in nudge_types:
-        nudge_traces = [
+    influence_stats = {}
+    for influence_type in influence_types:
+        influence_traces = [
             d
             for d in data
-            if d.get("nudge_type") == nudge_type and d.get("condition") != "base"
+            if d.get("nudge_type") == influence_type and d.get("condition") != "base"
         ]
-        backfire = sum(1 for d in nudge_traces if d.get("chose_nudged_group") is False)
-        follow = sum(1 for d in nudge_traces if d.get("chose_nudged_group") is True)
+        backfire = sum(
+            1 for d in influence_traces if d.get("chose_nudged_group") is False
+        )
+        follow = sum(1 for d in influence_traces if d.get("chose_nudged_group") is True)
         total = backfire + follow
         if total > 0:
-            nudge_stats[nudge_type] = {
+            influence_stats[influence_type] = {
                 "backfire_rate": backfire / total * 100,
                 "total": total,
             }
 
     # Sort by backfire rate
-    sorted_nudges = sorted(
-        nudge_stats.items(), key=lambda x: x[1]["backfire_rate"], reverse=True
+    sorted_influences = sorted(
+        influence_stats.items(), key=lambda x: x[1]["backfire_rate"], reverse=True
     )
 
-    labels = [n[0].replace("_", " ").title() for n in sorted_nudges]
-    rates = [n[1]["backfire_rate"] for n in sorted_nudges]
-    totals = [n[1]["total"] for n in sorted_nudges]
+    labels = [n[0].replace("_", " ").title() for n in sorted_influences]
+    rates = [n[1]["backfire_rate"] for n in sorted_influences]
+    totals = [n[1]["total"] for n in sorted_influences]
 
     fig, ax = plt.subplots(figsize=(12, 6))
     bars = ax.bar(labels, rates, color="#9b59b6")
-    ax.axhline(y=50, color="gray", linestyle=":", linewidth=1, label="50% (no effect)")
 
     ax.set_ylabel("Backfire rate (%)")
-    ax.set_title("Backfire Rate by Nudge Type")
+    ax.set_title("Backfire Rate by Influence Type")
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.set_ylim(0, 70)
-    ax.legend()
 
     # Add value labels
     for bar, total in zip(bars, totals):
@@ -300,16 +345,17 @@ def plot_backfire_by_nudge_type(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=8,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "4_backfire_by_nudge_type.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"4_backfire_by_influence_type{ext}", dpi=150)
     plt.close()
-    print("Created: 4_backfire_by_nudge_type.png")
+    print(f"Created: 4_backfire_by_influence_type{ext}")
 
 
-def plot_backfire_by_model(data: list[dict], output_dir: Path):
+def plot_backfire_by_model(data: list[dict], output_dir: Path, use_pdf: bool = False):
     """Plot 5: Backfire rate by model."""
     models = Counter(d.get("model") for d in data if d.get("condition") != "base")
 
@@ -348,12 +394,10 @@ def plot_backfire_by_model(data: list[dict], output_dir: Path):
 
     fig, ax = plt.subplots(figsize=(14, 8))
     bars = ax.barh(labels, rates, color="#e67e22")
-    ax.axvline(x=50, color="gray", linestyle=":", linewidth=1, label="50% (no effect)")
 
     ax.set_xlabel("Backfire rate (%)")
     ax.set_title("Backfire Rate by Model")
     ax.set_xlim(0, 70)
-    ax.legend()
 
     # Add value labels
     for bar, total in zip(bars, totals):
@@ -365,16 +409,19 @@ def plot_backfire_by_model(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="left",
             va="center",
-            fontsize=8,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "5_backfire_by_model.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"5_backfire_by_model{ext}", dpi=150)
     plt.close()
-    print("Created: 5_backfire_by_model.png")
+    print(f"Created: 5_backfire_by_model{ext}")
 
 
-def plot_confidence_vs_backfire(data: list[dict], output_dir: Path):
+def plot_confidence_vs_backfire(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 6: Confidence level vs backfire rate."""
     confidence_levels = ["low", "medium", "high"]
 
@@ -411,11 +458,11 @@ def plot_confidence_vs_backfire(data: list[dict], output_dir: Path):
         x - width / 2, backfire_rates, width, label="Backfire", color="#e74c3c"
     )
     bars2 = ax.bar(
-        x + width / 2, follow_rates, width, label="Follow nudge", color="#27ae60"
+        x + width / 2, follow_rates, width, label="Follow influence", color="#27ae60"
     )
 
     ax.set_ylabel("Percentage (%)")
-    ax.set_title("Confidence Level vs Nudge Response")
+    ax.set_title("Confidence Level vs Influence Response")
     ax.set_xticks(x)
     ax.set_xticklabels(
         [f"{c.capitalize()}\n(n={n})" for c, n in zip(confidence_levels, counts)]
@@ -433,7 +480,7 @@ def plot_confidence_vs_backfire(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
     for bar in bars2:
         height = bar.get_height()
@@ -444,16 +491,19 @@ def plot_confidence_vs_backfire(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "6_confidence_vs_backfire.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"6_confidence_vs_backfire{ext}", dpi=150)
     plt.close()
-    print("Created: 6_confidence_vs_backfire.png")
+    print(f"Created: 6_confidence_vs_backfire{ext}")
 
 
-def plot_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
+def plot_reasons_backfire_vs_follow(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 7: Endorsed reasons in backfire vs follow traces."""
     backfire = [
         d
@@ -513,12 +563,12 @@ def plot_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
         x + width / 2,
         follow_rates,
         width,
-        label=f"Follow nudge (n={len(follow)})",
+        label=f"Follow influence (n={len(follow)})",
         color="#27ae60",
     )
 
     ax.set_ylabel("Endorsement rate (%)")
-    ax.set_title("Endorsed Reasons: Backfire vs Follow Nudge Traces")
+    ax.set_title("Endorsed Reasons: Backfire vs Follow Influence Traces")
     ax.set_xticks(x)
     ax.set_xticklabels(reason_labels)
     ax.legend()
@@ -533,7 +583,7 @@ def plot_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
     for bar in bars2:
         height = bar.get_height()
@@ -544,16 +594,19 @@ def plot_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "7_reasons_backfire_vs_follow.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"7_reasons_backfire_vs_follow{ext}", dpi=150)
     plt.close()
-    print("Created: 7_reasons_backfire_vs_follow.png")
+    print(f"Created: 7_reasons_backfire_vs_follow{ext}")
 
 
-def plot_primary_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
+def plot_primary_reasons_backfire_vs_follow(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 8: Primary reasons in backfire vs follow traces."""
     backfire = [
         d
@@ -602,12 +655,12 @@ def plot_primary_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
         x + width / 2,
         follow_rates,
         width,
-        label=f"Follow nudge (n={len(follow)})",
+        label=f"Follow influence (n={len(follow)})",
         color="#27ae60",
     )
 
     ax.set_ylabel("Percentage (%)")
-    ax.set_title("Primary Reason Given: Backfire vs Follow Nudge Traces")
+    ax.set_title("Primary Reason Given: Backfire vs Follow Influence Traces")
     ax.set_xticks(x)
     ax.set_xticklabels(reason_labels, rotation=30, ha="right")
     ax.legend()
@@ -622,7 +675,7 @@ def plot_primary_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=FONT_SIZES["small_annotation"],
             )
     for bar in bars2:
         height = bar.get_height()
@@ -634,16 +687,19 @@ def plot_primary_reasons_backfire_vs_follow(data: list[dict], output_dir: Path):
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=FONT_SIZES["small_annotation"],
             )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "8_primary_reasons_backfire_vs_follow.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"8_primary_reasons_backfire_vs_follow{ext}", dpi=150)
     plt.close()
-    print("Created: 8_primary_reasons_backfire_vs_follow.png")
+    print(f"Created: 8_primary_reasons_backfire_vs_follow{ext}")
 
 
-def plot_reasoning_length_vs_backfire(data: list[dict], output_dir: Path):
+def plot_reasoning_length_vs_backfire(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 9: Reasoning length vs backfire rate."""
     lengths = ["very_short", "short", "medium", "long"]
     length_labels = ["Very Short", "Short", "Medium", "Long"]
@@ -681,11 +737,11 @@ def plot_reasoning_length_vs_backfire(data: list[dict], output_dir: Path):
         x - width / 2, backfire_rates, width, label="Backfire", color="#e74c3c"
     )
     bars2 = ax.bar(
-        x + width / 2, follow_rates, width, label="Follow nudge", color="#27ae60"
+        x + width / 2, follow_rates, width, label="Follow influence", color="#27ae60"
     )
 
     ax.set_ylabel("Percentage (%)")
-    ax.set_title("Reasoning Length vs Nudge Response")
+    ax.set_title("Reasoning Length vs Influence Response")
     ax.set_xticks(x)
     ax.set_xticklabels([f"{label}\n(n={n})" for label, n in zip(length_labels, counts)])
     ax.legend()
@@ -700,7 +756,7 @@ def plot_reasoning_length_vs_backfire(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
     for bar in bars2:
         height = bar.get_height()
@@ -711,16 +767,19 @@ def plot_reasoning_length_vs_backfire(data: list[dict], output_dir: Path):
             textcoords="offset points",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=FONT_SIZES["small_annotation"],
         )
 
     plt.tight_layout()
-    plt.savefig(output_dir / "9_reasoning_length_vs_backfire.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"9_reasoning_length_vs_backfire{ext}", dpi=150)
     plt.close()
-    print("Created: 9_reasoning_length_vs_backfire.png")
+    print(f"Created: 9_reasoning_length_vs_backfire{ext}")
 
 
-def plot_factor_specific_backfire_reasons(data: list[dict], output_dir: Path):
+def plot_factor_specific_backfire_reasons(
+    data: list[dict], output_dir: Path, use_pdf: bool = False
+):
     """Plot 10: What reasons are given when backfiring, by factor."""
     factors = ["age_group", "gender", "handedness", "nationality", "wealth"]
     factor_labels = ["Age", "Gender", "Handedness", "Nationality", "Wealth"]
@@ -773,15 +832,22 @@ def plot_factor_specific_backfire_reasons(data: list[dict], output_dir: Path):
             val = matrix[i, j]
             color = "white" if val > 20 else "black"
             ax.text(
-                j, i, f"{val:.1f}%", ha="center", va="center", color=color, fontsize=10
+                j,
+                i,
+                f"{val:.1f}%",
+                ha="center",
+                va="center",
+                color=color,
+                fontsize=FONT_SIZES["heatmap_text"],
             )
 
     ax.set_title("Reasons Endorsed When BACKFIRING (by Factor)")
     plt.colorbar(im, ax=ax, label="Endorsement rate (%)")
     plt.tight_layout()
-    plt.savefig(output_dir / "10_factor_specific_backfire_reasons.png", dpi=150)
+    ext = get_file_extension(use_pdf)
+    plt.savefig(output_dir / f"10_factor_specific_backfire_reasons{ext}", dpi=150)
     plt.close()
-    print("Created: 10_factor_specific_backfire_reasons.png")
+    print(f"Created: 10_factor_specific_backfire_reasons{ext}")
 
 
 def main():
@@ -792,8 +858,14 @@ def main():
         "--input", "-i", default="analysis/equal_n_classifications_full.json"
     )
     parser.add_argument("--output-dir", "-o", default="analysis/plots")
+    parser.add_argument(
+        "--pdf", action="store_true", help="Save plots as PDF instead of PNG"
+    )
 
     args = parser.parse_args()
+
+    # Set up paper-ready plot style
+    setup_plot_style()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -802,19 +874,20 @@ def main():
     data = load_data(args.input)
     print(f"Loaded {len(data)} traces\n")
 
-    print("Generating plots...")
-    plot_backfire_mechanism(data, output_dir)
-    plot_factor_specific_reasoning(data, output_dir)
-    # plot_position_bias(data, output_dir)  # Not about reasoning analysis
-    plot_backfire_by_nudge_type(data, output_dir)
-    # plot_backfire_by_model(data, output_dir)  # Not about reasoning analysis
-    plot_confidence_vs_backfire(data, output_dir)
+    fmt = "PDF" if args.pdf else "PNG"
+    print(f"Generating plots ({fmt} format)...")
+    plot_backfire_mechanism(data, output_dir, use_pdf=args.pdf)
+    plot_factor_specific_reasoning(data, output_dir, use_pdf=args.pdf)
+    # plot_position_bias(data, output_dir, use_pdf=args.pdf)  # Not about reasoning
+    plot_backfire_by_influence_type(data, output_dir, use_pdf=args.pdf)
+    # plot_backfire_by_model(data, output_dir, use_pdf=args.pdf)  # Not about reasoning
+    plot_confidence_vs_backfire(data, output_dir, use_pdf=args.pdf)
 
     # New reasoning-focused plots
-    plot_reasons_backfire_vs_follow(data, output_dir)
-    plot_primary_reasons_backfire_vs_follow(data, output_dir)
-    plot_reasoning_length_vs_backfire(data, output_dir)
-    plot_factor_specific_backfire_reasons(data, output_dir)
+    plot_reasons_backfire_vs_follow(data, output_dir, use_pdf=args.pdf)
+    plot_primary_reasons_backfire_vs_follow(data, output_dir, use_pdf=args.pdf)
+    plot_reasoning_length_vs_backfire(data, output_dir, use_pdf=args.pdf)
+    plot_factor_specific_backfire_reasons(data, output_dir, use_pdf=args.pdf)
 
     print(f"\nAll plots saved to {output_dir}/")
 
