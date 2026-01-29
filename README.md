@@ -197,6 +197,8 @@ Extracts all pairwise comparisons and fits a model to determine which variables 
 
 ## Nudging Experiments
 
+TODO Update this part.
+
 Nudging experiments test how different prompts or instructions affect model preferences. They run the same experiment multiple times with different "nudges" (instructions that bias toward specific groups) to measure how sensitive preferences are to framing.
 
 ### Running Nudging Experiments

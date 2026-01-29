@@ -299,6 +299,9 @@ def create_multi_model_effects_plot(
     show_geom_mean: bool = False,
     log_odds: bool = False,
     show_title: bool = True,
+    show_baselines: bool = False,
+    show_legend: bool = True,
+    mean_only: bool = False,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for multiple models.
@@ -315,6 +318,9 @@ def create_multi_model_effects_plot(
         show_geom_mean: If True, show geometric mean markers
         log_odds: If True, plot log odds steerability instead of baseline preference
         show_title: If True, show the plot title
+        show_baselines: If True (and log_odds=True, single factor mode), show baseline bars
+        show_legend: If True, show the legend
+        mean_only: If True, only show geometric mean bars (hides individual points)
 
     Returns:
         The matplotlib Figure object
@@ -333,7 +339,18 @@ def create_multi_model_effects_plot(
     # Calculate figure height based on number of rows
     height = figsize[1] if figsize[1] else max(4, n_rows * 1.2)
 
-    fig, ax = plt.subplots(figsize=(figsize[0], height))
+    # Check if all rows have the same factor (single factor mode) for baseline column
+    unique_factors = set(factor for _, _, factor in rows)
+    single_factor_mode = len(unique_factors) == 1
+
+    # Create figure with optional baseline column (only for log_odds + single factor mode)
+    if log_odds and show_baselines and single_factor_mode:
+        fig, (ax, ax_baseline) = plt.subplots(
+            1, 2, figsize=(figsize[0], height), gridspec_kw={"width_ratios": [4, 1]}
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(figsize[0], height))
+        ax_baseline = None
 
     # Colors - based on nudge direction
     color_nudge_A = "#E63946"  # Red - nudging towards A
@@ -394,24 +411,36 @@ def create_multi_model_effects_plot(
                 zorder=9,
             )
 
-        # Plot each nudge type with its own symbol
-        for nd in row_data["nudge_data"]:
-            nudge_type = nd["nudge_type"]
-            marker = get_nudge_marker(nudge_type)
+        # Plot each nudge type with its own symbol (unless mean_only)
+        if not mean_only:
+            for nd in row_data["nudge_data"]:
+                nudge_type = nd["nudge_type"]
+                marker = get_nudge_marker(nudge_type)
 
-            # Nudge towards A (above center line) - RED
-            y_A = y_pos - y_offset
-            if show_significance and not nd["sig_A"]:
-                point_color_A = color_nonsig
-            else:
-                point_color_A = color_nudge_A
+                # Nudge towards A (above center line) - RED
+                y_A = y_pos - y_offset
+                if show_significance and not nd["sig_A"]:
+                    point_color_A = color_nonsig
+                else:
+                    point_color_A = color_nudge_A
 
-            if log_odds:
-                # Plot negative of steerability_A (log odds) so more steerability towards A goes left
-                steer_A = nd.get("steerability_A")
-                if steer_A is not None:
+                if log_odds:
+                    # Plot negative of steerability_A (log odds) so more steerability towards A goes left
+                    steer_A = nd.get("steerability_A")
+                    if steer_A is not None:
+                        ax.scatter(
+                            [-steer_A],
+                            [y_A],
+                            color=point_color_A,
+                            marker=marker,
+                            s=80,
+                            edgecolors="white",
+                            linewidths=0.5,
+                            zorder=5,
+                        )
+                else:
                     ax.scatter(
-                        [-steer_A],
+                        [nd["f_A_B"]],
                         [y_A],
                         color=point_color_A,
                         marker=marker,
@@ -420,31 +449,31 @@ def create_multi_model_effects_plot(
                         linewidths=0.5,
                         zorder=5,
                     )
-            else:
-                ax.scatter(
-                    [nd["f_A_B"]],
-                    [y_A],
-                    color=point_color_A,
-                    marker=marker,
-                    s=80,
-                    edgecolors="white",
-                    linewidths=0.5,
-                    zorder=5,
-                )
 
-            # Nudge towards B (below center line) - BLUE
-            y_B = y_pos + y_offset
-            if show_significance and not nd["sig_B"]:
-                point_color_B = color_nonsig
-            else:
-                point_color_B = color_nudge_B
+                # Nudge towards B (below center line) - BLUE
+                y_B = y_pos + y_offset
+                if show_significance and not nd["sig_B"]:
+                    point_color_B = color_nonsig
+                else:
+                    point_color_B = color_nudge_B
 
-            if log_odds:
-                # Plot steerability_B (log odds)
-                steer_B = nd.get("steerability_B")
-                if steer_B is not None:
+                if log_odds:
+                    # Plot steerability_B (log odds)
+                    steer_B = nd.get("steerability_B")
+                    if steer_B is not None:
+                        ax.scatter(
+                            [steer_B],
+                            [y_B],
+                            color=point_color_B,
+                            marker=marker,
+                            s=80,
+                            edgecolors="white",
+                            linewidths=0.5,
+                            zorder=5,
+                        )
+                else:
                     ax.scatter(
-                        [steer_B],
+                        [nd["f_B_B"]],
                         [y_B],
                         color=point_color_B,
                         marker=marker,
@@ -453,20 +482,16 @@ def create_multi_model_effects_plot(
                         linewidths=0.5,
                         zorder=5,
                     )
-            else:
-                ax.scatter(
-                    [nd["f_B_B"]],
-                    [y_B],
-                    color=point_color_B,
-                    marker=marker,
-                    s=80,
-                    edgecolors="white",
-                    linewidths=0.5,
-                    zorder=5,
-                )
 
         # Compute and draw geometric mean markers
-        if show_geom_mean:
+        if show_geom_mean or mean_only:
+            # Use thicker bars when mean_only for better visibility
+            bar_linewidth = 4 if mean_only else 2
+            bar_height = 0.35 if mean_only else 0.25
+            whisker_y_A = y_pos - bar_height / 2  # Whisker position for A
+            whisker_y_B = y_pos + bar_height / 2  # Whisker position for B
+            cap_height = 0.08  # Height of whisker caps
+
             if log_odds:
                 # For log odds, compute arithmetic mean of steerability values
                 # Note: steerability_A is negated for plotting (goes to left)
@@ -481,8 +506,6 @@ def create_multi_model_effects_plot(
                     if nd.get("steerability_B") is not None
                 ]
 
-                bar_height = 0.25
-
                 if steer_A_values:
                     geom_mean_A = -sum(steer_A_values) / len(
                         steer_A_values
@@ -491,10 +514,37 @@ def create_multi_model_effects_plot(
                         [geom_mean_A, geom_mean_A],
                         [y_pos - bar_height, y_pos],
                         color=color_nudge_A,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(steer_A_values) > 1:
+                        min_A = -max(steer_A_values)  # Negate for plotting
+                        max_A = -min(steer_A_values)  # Negate for plotting
+                        # Horizontal whisker line
+                        ax.plot(
+                            [min_A, max_A],
+                            [whisker_y_A, whisker_y_A],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        # Caps at ends
+                        ax.plot(
+                            [min_A, min_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_A, max_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
                 if steer_B_values:
                     geom_mean_B = sum(steer_B_values) / len(steer_B_values)
@@ -502,15 +552,40 @@ def create_multi_model_effects_plot(
                         [geom_mean_B, geom_mean_B],
                         [y_pos, y_pos + bar_height],
                         color=color_nudge_B,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(steer_B_values) > 1:
+                        min_B = min(steer_B_values)
+                        max_B = max(steer_B_values)
+                        # Horizontal whisker line
+                        ax.plot(
+                            [min_B, max_B],
+                            [whisker_y_B, whisker_y_B],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        # Caps at ends
+                        ax.plot(
+                            [min_B, min_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_B, max_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
             else:
                 f_A_B_values = [nd["f_A_B"] for nd in row_data["nudge_data"]]
                 f_B_B_values = [nd["f_B_B"] for nd in row_data["nudge_data"]]
-
-                bar_height = 0.25
 
                 if f_A_B_values:
                     geom_mean_A = geometric_mean_freq(f_A_B_values)
@@ -518,10 +593,35 @@ def create_multi_model_effects_plot(
                         [geom_mean_A, geom_mean_A],
                         [y_pos - bar_height, y_pos],
                         color=color_nudge_A,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(f_A_B_values) > 1:
+                        min_A = min(f_A_B_values)
+                        max_A = max(f_A_B_values)
+                        ax.plot(
+                            [min_A, max_A],
+                            [whisker_y_A, whisker_y_A],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [min_A, min_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_A, max_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
                 if f_B_B_values:
                     geom_mean_B = geometric_mean_freq(f_B_B_values)
@@ -529,14 +629,35 @@ def create_multi_model_effects_plot(
                         [geom_mean_B, geom_mean_B],
                         [y_pos, y_pos + bar_height],
                         color=color_nudge_B,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
-
-    # Check if all rows have the same factor (single factor mode)
-    unique_factors = set(factor for _, _, factor in rows)
-    single_factor_mode = len(unique_factors) == 1
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(f_B_B_values) > 1:
+                        min_B = min(f_B_B_values)
+                        max_B = max(f_B_B_values)
+                        ax.plot(
+                            [min_B, max_B],
+                            [whisker_y_B, whisker_y_B],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [min_B, min_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_B, max_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
     # Add reference line and grid
     if log_odds:
@@ -829,17 +950,67 @@ def create_multi_model_effects_plot(
     # Invert y-axis so first row is at top
     ax.invert_yaxis()
 
+    # Draw baseline bar column if enabled (only for log_odds + single factor mode)
+    if ax_baseline is not None:
+        color_baseline = "#2A9D8F"  # Teal - baseline marker
+
+        for i, (model, reasoning, factor) in enumerate(rows):
+            y_pos = y_positions[i]
+            rd = data_by_model_reason_factor[(model, reasoning, factor)]
+            f_0_B = rd["f_0_B"]
+
+            # Draw horizontal bar from 0 to baseline value
+            # Bar extends from 0.5 (neutral) in the direction of baseline
+            bar_height = 0.35
+            ax_baseline.barh(
+                y_pos,
+                f_0_B - 0.5,  # Length from center
+                left=0.5,  # Start at center
+                height=bar_height,
+                color=color_baseline,
+                alpha=0.7,
+                edgecolor="none",
+            )
+
+            # Add text label showing the baseline value
+            ax_baseline.text(
+                f_0_B + 0.02 if f_0_B >= 0.5 else f_0_B - 0.02,
+                y_pos,
+                f"{f_0_B:.2f}",
+                ha="left" if f_0_B >= 0.5 else "right",
+                va="center",
+                fontsize=10,
+                color=color_baseline,
+                fontweight="bold",
+            )
+
+        # Style the baseline axis
+        ax_baseline.set_xlim(0, 1)
+        ax_baseline.set_ylim(ax.get_ylim())  # Match main plot y-limits
+        ax_baseline.axvline(x=0.5, color="gray", linestyle=":", linewidth=1, alpha=0.5)
+        ax_baseline.spines["top"].set_visible(False)
+        ax_baseline.spines["right"].set_visible(False)
+        ax_baseline.spines["left"].set_visible(False)
+        ax_baseline.spines["bottom"].set_visible(False)
+        ax_baseline.set_yticks([])
+        ax_baseline.set_xticks([])
+        ax_baseline.set_xlabel("Baseline pref.", fontsize=10)
+
     # Adjust subplot to make room for labels on left and legend on right
-    fig.subplots_adjust(left=0.18, right=0.58)
+    if ax_baseline is not None:
+        fig.subplots_adjust(left=0.18, right=0.70 if show_legend else 0.85, wspace=0.15)
+    else:
+        fig.subplots_adjust(left=0.18, right=0.58 if show_legend else 0.85)
 
     # Add legend outside plot area on the right
-    ax.legend(
-        handles=legend_elements,
-        loc="upper left",
-        bbox_to_anchor=(1.12, 1),
-        fontsize=9,
-        framealpha=0.9,
-    )
+    if show_legend:
+        ax.legend(
+            handles=legend_elements,
+            loc="upper left",
+            bbox_to_anchor=(1.12, 1),
+            fontsize=9,
+            framealpha=0.9,
+        )
 
     # Save figure
     if output_path:
@@ -865,6 +1036,7 @@ def create_model_effects_plot(
     show_title: bool = True,
     show_baselines: bool = False,
     show_legend: bool = True,
+    mean_only: bool = False,
 ) -> plt.Figure:
     """
     Create scatter plot showing nudge effects for a single model.
@@ -887,6 +1059,7 @@ def create_model_effects_plot(
         show_title: If True, show the plot title
         show_baselines: If True (and log_odds=True), show baseline bars in right column
         show_legend: If True, show the legend
+        mean_only: If True, only show geometric mean bars (hides individual points)
 
     Returns:
         The matplotlib Figure object
@@ -970,25 +1143,37 @@ def create_model_effects_plot(
                 label="Baseline" if i == 0 else None,
             )
 
-        # Plot each nudge type with its own symbol
-        for nd in factor_data["nudge_data"]:
-            nudge_type = nd["nudge_type"]
-            marker = get_nudge_marker(nudge_type)
+        # Plot each nudge type with its own symbol (unless mean_only)
+        if not mean_only:
+            for nd in factor_data["nudge_data"]:
+                nudge_type = nd["nudge_type"]
+                marker = get_nudge_marker(nudge_type)
 
-            # Nudge towards A (above center line, visually on top) - RED
-            # Note: y-axis is inverted, so subtract offset to go up
-            y_A = y_pos - y_offset
-            if show_significance and not nd["sig_A"]:
-                point_color_A = color_nonsig
-            else:
-                point_color_A = color_nudge_A
+                # Nudge towards A (above center line, visually on top) - RED
+                # Note: y-axis is inverted, so subtract offset to go up
+                y_A = y_pos - y_offset
+                if show_significance and not nd["sig_A"]:
+                    point_color_A = color_nonsig
+                else:
+                    point_color_A = color_nudge_A
 
-            if log_odds:
-                # Plot negative of steerability_A (log odds) so more steerability towards A goes left
-                steer_A = nd.get("steerability_A")
-                if steer_A is not None:
+                if log_odds:
+                    # Plot negative of steerability_A (log odds) so more steerability towards A goes left
+                    steer_A = nd.get("steerability_A")
+                    if steer_A is not None:
+                        ax.scatter(
+                            [-steer_A],
+                            [y_A],
+                            color=point_color_A,
+                            marker=marker,
+                            s=80,
+                            edgecolors="white",
+                            linewidths=0.5,
+                            zorder=5,
+                        )
+                else:
                     ax.scatter(
-                        [-steer_A],
+                        [nd["f_A_B"]],
                         [y_A],
                         color=point_color_A,
                         marker=marker,
@@ -997,32 +1182,32 @@ def create_model_effects_plot(
                         linewidths=0.5,
                         zorder=5,
                     )
-            else:
-                ax.scatter(
-                    [nd["f_A_B"]],
-                    [y_A],
-                    color=point_color_A,
-                    marker=marker,
-                    s=80,
-                    edgecolors="white",
-                    linewidths=0.5,
-                    zorder=5,
-                )
 
-            # Nudge towards B (below center line, visually on bottom) - BLUE
-            # Note: y-axis is inverted, so add offset to go down
-            y_B = y_pos + y_offset
-            if show_significance and not nd["sig_B"]:
-                point_color_B = color_nonsig
-            else:
-                point_color_B = color_nudge_B
+                # Nudge towards B (below center line, visually on bottom) - BLUE
+                # Note: y-axis is inverted, so add offset to go down
+                y_B = y_pos + y_offset
+                if show_significance and not nd["sig_B"]:
+                    point_color_B = color_nonsig
+                else:
+                    point_color_B = color_nudge_B
 
-            if log_odds:
-                # Plot steerability_B (log odds)
-                steer_B = nd.get("steerability_B")
-                if steer_B is not None:
+                if log_odds:
+                    # Plot steerability_B (log odds)
+                    steer_B = nd.get("steerability_B")
+                    if steer_B is not None:
+                        ax.scatter(
+                            [steer_B],
+                            [y_B],
+                            color=point_color_B,
+                            marker=marker,
+                            s=80,
+                            edgecolors="white",
+                            linewidths=0.5,
+                            zorder=5,
+                        )
+                else:
                     ax.scatter(
-                        [steer_B],
+                        [nd["f_B_B"]],
                         [y_B],
                         color=point_color_B,
                         marker=marker,
@@ -1031,20 +1216,16 @@ def create_model_effects_plot(
                         linewidths=0.5,
                         zorder=5,
                     )
-            else:
-                ax.scatter(
-                    [nd["f_B_B"]],
-                    [y_B],
-                    color=point_color_B,
-                    marker=marker,
-                    s=80,
-                    edgecolors="white",
-                    linewidths=0.5,
-                    zorder=5,
-                )
 
         # Compute and draw geometric mean markers (computed in log odds space)
-        if show_geom_mean:
+        if show_geom_mean or mean_only:
+            # Use thicker bars when mean_only for better visibility
+            bar_linewidth = 4 if mean_only else 2
+            bar_height = 0.35 if mean_only else 0.25
+            whisker_y_A = y_pos - bar_height / 2  # Whisker position for A
+            whisker_y_B = y_pos + bar_height / 2  # Whisker position for B
+            cap_height = 0.08  # Height of whisker caps
+
             if log_odds:
                 # For log odds, compute arithmetic mean of steerability values
                 # Note: steerability_A is negated for plotting (goes to left)
@@ -1059,8 +1240,6 @@ def create_model_effects_plot(
                     if nd.get("steerability_B") is not None
                 ]
 
-                bar_height = 0.25  # Height of the vertical bar
-
                 if steer_A_values:
                     geom_mean_A = -sum(steer_A_values) / len(
                         steer_A_values
@@ -1071,10 +1250,37 @@ def create_model_effects_plot(
                         [geom_mean_A, geom_mean_A],
                         [y_pos - bar_height, y_pos],
                         color=color_nudge_A,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(steer_A_values) > 1:
+                        min_A = -max(steer_A_values)  # Negate for plotting
+                        max_A = -min(steer_A_values)  # Negate for plotting
+                        # Horizontal whisker line
+                        ax.plot(
+                            [min_A, max_A],
+                            [whisker_y_A, whisker_y_A],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        # Caps at ends
+                        ax.plot(
+                            [min_A, min_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_A, max_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
                 if steer_B_values:
                     geom_mean_B = sum(steer_B_values) / len(steer_B_values)
@@ -1084,15 +1290,40 @@ def create_model_effects_plot(
                         [geom_mean_B, geom_mean_B],
                         [y_pos, y_pos + bar_height],
                         color=color_nudge_B,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(steer_B_values) > 1:
+                        min_B = min(steer_B_values)
+                        max_B = max(steer_B_values)
+                        # Horizontal whisker line
+                        ax.plot(
+                            [min_B, max_B],
+                            [whisker_y_B, whisker_y_B],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        # Caps at ends
+                        ax.plot(
+                            [min_B, min_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_B, max_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
             else:
                 f_A_B_values = [nd["f_A_B"] for nd in factor_data["nudge_data"]]
                 f_B_B_values = [nd["f_B_B"] for nd in factor_data["nudge_data"]]
-
-                bar_height = 0.25  # Height of the vertical bar
 
                 if f_A_B_values:
                     geom_mean_A = geometric_mean_freq(f_A_B_values)
@@ -1102,10 +1333,35 @@ def create_model_effects_plot(
                         [geom_mean_A, geom_mean_A],
                         [y_pos - bar_height, y_pos],
                         color=color_nudge_A,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(f_A_B_values) > 1:
+                        min_A = min(f_A_B_values)
+                        max_A = max(f_A_B_values)
+                        ax.plot(
+                            [min_A, max_A],
+                            [whisker_y_A, whisker_y_A],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [min_A, min_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_A, max_A],
+                            [whisker_y_A - cap_height, whisker_y_A + cap_height],
+                            color=color_nudge_A,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
                 if f_B_B_values:
                     geom_mean_B = geometric_mean_freq(f_B_B_values)
@@ -1115,10 +1371,35 @@ def create_model_effects_plot(
                         [geom_mean_B, geom_mean_B],
                         [y_pos, y_pos + bar_height],
                         color=color_nudge_B,
-                        linewidth=2,
+                        linewidth=bar_linewidth,
                         solid_capstyle="round",
                         zorder=6,
                     )
+                    # Draw whiskers for min/max in mean_only mode
+                    if mean_only and len(f_B_B_values) > 1:
+                        min_B = min(f_B_B_values)
+                        max_B = max(f_B_B_values)
+                        ax.plot(
+                            [min_B, max_B],
+                            [whisker_y_B, whisker_y_B],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [min_B, min_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
+                        ax.plot(
+                            [max_B, max_B],
+                            [whisker_y_B - cap_height, whisker_y_B + cap_height],
+                            color=color_nudge_B,
+                            linewidth=1.5,
+                            zorder=5,
+                        )
 
     # Add reference line
     if log_odds:
@@ -1485,6 +1766,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--mean-only",
+        action="store_true",
+        help="Only show geometric mean bars, hide individual nudge type points (implies --geom-mean)",
+    )
+
+    parser.add_argument(
         "--log-odds",
         action="store_true",
         help="Plot log odds steerability instead of baseline preference",
@@ -1499,13 +1786,13 @@ Examples:
     parser.add_argument(
         "--baselines",
         action="store_true",
-        help="Show baseline preferences in a separate column (single model + log-odds mode only)",
+        help="Show baseline preferences in a separate column (requires log-odds mode; multi-model requires single factor)",
     )
 
     parser.add_argument(
-        "--paper",
+        "--no-legend",
         action="store_true",
-        help="Paper mode: suppress title and legend for publication figures",
+        help="Suppress the legend",
     )
 
     args = parser.parse_args()
@@ -1631,9 +1918,10 @@ Examples:
             show_significance=args.significance,
             show_geom_mean=args.geom_mean,
             log_odds=args.log_odds,
-            show_title=not args.no_title and not args.paper,
+            show_title=not args.no_title,
             show_baselines=args.baselines,
-            show_legend=not args.paper,
+            show_legend=not args.no_legend,
+            mean_only=args.mean_only,
         )
     else:
         # Multi-model mode: show best factor per (model, reasoning) combination
@@ -1676,6 +1964,9 @@ Examples:
             show_geom_mean=args.geom_mean,
             log_odds=args.log_odds,
             show_title=not args.no_title,
+            show_baselines=args.baselines,
+            show_legend=not args.no_legend,
+            mean_only=args.mean_only,
         )
 
     if fig is None:

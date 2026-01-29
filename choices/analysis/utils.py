@@ -421,17 +421,14 @@ CATEGORY_MARKERS = {
 # Marker palette for nudge types
 NUDGE_MARKERS = {
     "survey_preference": "o",  # circle
-    "always_save": "s",  # square
-    "utilitarian": "^",  # triangle up
-    "deontological": "D",  # diamond
-    "weak_evidence": "v",  # triangle down
+    "user_preference": "s",  # square
     "emotional": "P",  # plus (filled)
-    "expert_opinion": "X",  # x (filled)
-    "social_proof": "*",  # star
+    "weak_evidence": "v",  # triangle down
+    "few_shot_3": "D",  # diamond
 }
 
 # Extended marker palette for nudge types not in NUDGE_MARKERS
-_EXTRA_MARKERS = ["h", "p", "H", "8", "d", "<", ">", "1", "2", "3", "4"]
+_EXTRA_MARKERS = ["X", "*", "^", "h", "p", "H", "8", "d", "<", ">", "1", "2", "3", "4"]
 
 # Cache for dynamically assigned nudge markers
 _dynamic_nudge_markers: Dict[str, str] = {}
@@ -448,6 +445,60 @@ def get_nudge_marker(nudge_type: str) -> str:
         _dynamic_nudge_markers[nudge_type] = _EXTRA_MARKERS[idx]
 
     return _dynamic_nudge_markers[nudge_type]
+
+
+# Abbreviations for nudge types (for legend display)
+NUDGE_TYPE_ABBREVIATIONS = {
+    # Evidence-based
+    "survey_preference": "Survey",
+    "weak_evidence": "Weak Ev.",
+    "strong_evidence": "Strong Ev.",
+    "expert_recommendation": "Expert",
+    # Pressure-based
+    "emotional": "Emotional",
+    "identity": "Identity",
+    "user_preference": "User Pref.",
+    "social_norm": "Social",
+    # Direct instruction
+    "always_save": "Always",
+    "moral_imperative": "Moral",
+    # Other
+    "few_shot": "Few-shot",
+    "few_shot_3": "Few-shot",
+    "custom": "Custom",
+    # Baselines
+    "survey_preference_baseline": "Survey (base)",
+    "weak_evidence_baseline": "Weak Ev (base)",
+    "emotional_baseline": "Emotional (base)",
+    "user_preference_baseline": "User Pref (base)",
+    # Negation variants
+    "survey_preference_negation": "Survey (neg)",
+    "weak_evidence_negation": "Weak Ev (neg)",
+    "user_preference_negation": "User Pref (neg)",
+    "emotional_negation": "Emotional (neg)",
+}
+
+
+def get_nudge_display_name(nudge_type: str) -> str:
+    """
+    Get abbreviated display name for a nudge type.
+
+    Args:
+        nudge_type: The nudge type identifier (e.g., "survey_preference", "few_shot_3")
+
+    Returns:
+        Abbreviated display name for use in legends
+    """
+    # Check for exact match first
+    if nudge_type in NUDGE_TYPE_ABBREVIATIONS:
+        return NUDGE_TYPE_ABBREVIATIONS[nudge_type]
+
+    # Handle few_shot_N variants
+    if nudge_type.startswith("few_shot"):
+        return "Few-shot"
+
+    # Fallback: title case with underscores replaced
+    return nudge_type.replace("_", " ").title()
 
 
 def get_category_marker(category: str) -> str:

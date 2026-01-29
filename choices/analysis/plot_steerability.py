@@ -320,6 +320,8 @@ def collect_data_by_nudge_type(
             'sig_bias': list of significance flags for steerability bias,
         }
     """
+    from choices.analysis.utils import get_nudge_display_name
+
     data_by_nudge: Dict[str, Dict[str, any]] = defaultdict(
         lambda: {
             "f_A_B": [],
@@ -339,8 +341,8 @@ def collect_data_by_nudge_type(
             r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_bias
         )
 
-        # Format nudge type for display
-        nudge_key = r.nudge_type.replace("_", " ").title()
+        # Format nudge type for display using shortened names from utils
+        nudge_key = get_nudge_display_name(r.nudge_type)
         data_by_nudge[nudge_key]["f_A_B"].append(f_A_B)
         data_by_nudge[nudge_key]["f_B_B"].append(f_B_B)
         data_by_nudge[nudge_key]["f_0_B"].append(f_0_B)
@@ -511,6 +513,7 @@ def create_steerability_violin_plot(
     show_bias: bool = False,
     show_significance: bool = False,
     single_model: bool = False,
+    no_title: bool = False,
 ) -> plt.Figure:
     """
     Create violin plot showing steerability distributions.
@@ -531,6 +534,7 @@ def create_steerability_violin_plot(
         show_bias: If True, add a column showing steerability bias as violin plot
         show_significance: If True, color non-significant points in grey
         single_model: If True, only show baseline average (not range) since data is from one model
+        no_title: If True, suppress the plot title
 
     Returns:
         The matplotlib Figure object
@@ -855,47 +859,48 @@ def create_steerability_violin_plot(
 
     # Build x-axis label based on mode
     if relative and log_odds:
-        ax.set_xlabel("Δ Log₁₀ Odds (relative to baseline)", fontsize=12)
+        ax.set_xlabel("Δ Log Odds (relative to baseline)", fontsize=14)
     elif relative:
-        ax.set_xlabel("Δ Frequency (relative to baseline)", fontsize=12)
+        ax.set_xlabel("Δ Frequency (relative to baseline)", fontsize=14)
     elif log_odds:
-        ax.set_xlabel("Log₁₀ Odds of Choosing B", fontsize=12)
+        ax.set_xlabel("Log Odds of Choosing B", fontsize=14)
     else:
-        ax.set_xlabel("Frequency of Choosing B", fontsize=12)
+        ax.set_xlabel("Frequency of Choosing B", fontsize=14)
 
-    if title:
-        ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
-    else:
-        # Build space label
-        if relative and log_odds:
-            space_label = "(Relative Log Odds)"
-        elif relative:
-            space_label = "(Relative Frequency)"
-        elif log_odds:
-            space_label = "(Log Odds Space)"
+    if not no_title:
+        if title:
+            ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
         else:
-            space_label = "(Frequency Space)"
+            # Build space label
+            if relative and log_odds:
+                space_label = "(Relative Log Odds)"
+            elif relative:
+                space_label = "(Relative Frequency)"
+            elif log_odds:
+                space_label = "(Log Odds Space)"
+            else:
+                space_label = "(Frequency Space)"
 
-        # Build row type label
-        if row_type == "factors":
-            row_label = "Factor"
-            dist_label = "models and nudge types"
-        elif row_type == "models":
-            row_label = "Model"
-            dist_label = "factors and nudge types"
-        elif row_type == "nudges":
-            row_label = "Nudge Type"
-            dist_label = "factors and models"
-        else:  # baseline
-            row_label = "Baseline Preference"
-            dist_label = "factors, models, and nudge types"
+            # Build row type label
+            if row_type == "factors":
+                row_label = "Factor"
+                dist_label = "models and nudge types"
+            elif row_type == "models":
+                row_label = "Model"
+                dist_label = "factors and nudge types"
+            elif row_type == "nudges":
+                row_label = "Nudge Type"
+                dist_label = "factors and models"
+            else:  # baseline
+                row_label = "Baseline Preference"
+                dist_label = "factors, models, and nudge types"
 
-        ax.set_title(
-            f"Steerability by {row_label} {space_label}\n(Distribution across {dist_label})",
-            fontsize=14,
-            fontweight="bold",
-            pad=20,
-        )
+            ax.set_title(
+                f"Steerability by {row_label} {space_label}\n(Distribution across {dist_label})",
+                fontsize=14,
+                fontweight="bold",
+                pad=20,
+            )
 
     # Set x-axis limits
     if log_odds or relative:
@@ -932,7 +937,7 @@ def create_steerability_violin_plot(
                 level_A,
                 ha="right",
                 va="center",
-                fontsize=10,
+                fontsize=12,
                 fontweight="bold",
                 color="#E63946",  # Same as nudge A color
                 clip_on=False,  # Allow text outside plot area
@@ -947,7 +952,7 @@ def create_steerability_violin_plot(
                     level_B,
                     ha="left",
                     va="center",
-                    fontsize=10,
+                    fontsize=12,
                     fontweight="bold",
                     color="#457B9D",  # Same as nudge B color
                     clip_on=False,  # Allow text outside plot area
@@ -962,7 +967,7 @@ def create_steerability_violin_plot(
                 row_key,
                 ha="right",
                 va="center",
-                fontsize=10,
+                fontsize=12,
                 clip_on=False,
             )
 
@@ -1128,13 +1133,13 @@ def create_steerability_violin_plot(
         ax_bias.invert_yaxis()
 
         # Steerability bias is always in log odds space
-        ax_bias.set_xlabel("Steerability Bias\n(Δ Log₁₀ Odds)", fontsize=10)
+        ax_bias.set_xlabel("Steerability Bias\n(Δ Log Odds)", fontsize=12)
 
         # Style bias axis
         ax_bias.spines["top"].set_visible(False)
         ax_bias.spines["right"].set_visible(False)
         ax_bias.spines["left"].set_visible(False)
-        ax_bias.tick_params(axis="x", which="major", labelsize=9)
+        ax_bias.tick_params(axis="x", which="major", labelsize=11)
 
         # Add grid lines to match main plot
         for i in range(n_rows - 1):
@@ -1159,8 +1164,8 @@ def create_steerability_violin_plot(
         label_B = "Nudged towards B"
     else:
         # When aggregating, A = less preferred at baseline, B = more preferred
-        label_A = "Nudge away from baseline pref."
-        label_B = "Nudge towards baseline pref."
+        label_A = "Influence away\nfrom baseline pref."
+        label_B = "Influence toward\nfrom baseline pref."
 
     legend_elements = [
         Patch(facecolor=color_nudge_A, alpha=0.3, label=label_A),
@@ -1173,7 +1178,7 @@ def create_steerability_violin_plot(
             markersize=14,
             linewidth=0,
             markeredgewidth=2.5,
-            label=f"{central_label} (nudged)",
+            label=central_label,
         ),
     ]
 
@@ -1224,14 +1229,14 @@ def create_steerability_violin_plot(
     ax.legend(
         handles=legend_elements,
         loc="upper right",
-        fontsize=10,
+        fontsize=12,
         framealpha=0.9,
     )
 
     # Style
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.tick_params(axis="both", which="major", labelsize=10)
+    ax.tick_params(axis="both", which="major", labelsize=12)
 
     # Add light horizontal grid lines to separate rows
     for i in range(n_rows - 1):
@@ -1396,6 +1401,12 @@ Examples:
         help="Show non-significant data points in grey (uses z-test for nudges, Wald test for bias)",
     )
 
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Suppress the plot title",
+    )
+
     args = parser.parse_args()
 
     # Determine output path (append row type to default filename)
@@ -1548,6 +1559,7 @@ Examples:
         show_bias=args.bias,
         show_significance=args.significance,
         single_model=is_single_model,
+        no_title=args.no_title,
     )
 
     if fig is None:
