@@ -8,6 +8,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from choices.analysis.utils import PLOTS_OUTPUT_DIR
+
 
 # Paper-ready font sizes
 FONT_SIZES = {
@@ -857,7 +859,7 @@ def main():
     parser.add_argument(
         "--input", "-i", default="analysis/equal_n_classifications_full.json"
     )
-    parser.add_argument("--output-dir", "-o", default="analysis/plots")
+    parser.add_argument("--output-dir", "-o", default=PLOTS_OUTPUT_DIR)
     parser.add_argument(
         "--pdf", action="store_true", help="Save plots as PDF instead of PNG"
     )

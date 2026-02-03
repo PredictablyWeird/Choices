@@ -21,21 +21,21 @@
 
 Assuming you have raw results (as output from the batch script) in the folder `results/`, plots from the main body of the paper are generated as follows:
 
-- Fig. 2: `uv run python -m choices.analysis.plot_model_effects_v2 --factor wealth --results-dirs results --reasoning off none`
-- Fig. 3 (a): `uv run python -m choices.analysis.plot_model_effects_v2 --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
-- Fig. 3 (b): `uv run python -m choices.analysis.plot_model_effects_v2 --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
-- Figs. 4 and 5: `uv run python -m choices.analysis.plot_backfiring_steering_wrt_reasoning`
-- Fig. 6: `uv run python -m choices.analysis.plot_baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
-- Fig. 7: `uv run python -m choices.analysis.surface_form_analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
+- Fig. 2: `uv run python -m choices.analysis.plots.model_effects --factor wealth --results-dirs results --reasoning off none`
+- Fig. 3 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
+- Fig. 3 (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
+- Figs. 4 and 5: `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning`
+- Fig. 6: `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
+- Fig. 7: `uv run python -m choices.analysis.surface_form.analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
   - Note: For this plot you need to also run "_baseline" and "_negation" versions of experiments and put these results into `results_surface/`
 
 For appendix plots:
 
-- Fig. 8 (a): `uv run python -m choices.analysis.plot_steerability --results-dirs results --rows nudges --reasoning-conditions none off --significance --no-title`
-- Fig. 8 (b): `uv run python -m choices.analysis.plot_steerability --results-dirs results --rows nudges --reasoning-conditions before low --significance --no-title`
-- Fig. 9 (steerability in dependence of baseline bias): `uv run python -m choices.analysis.plot_steerability_by_baseline --results-dirs results --reasoning-conditions none off low before --sig-baseline-only`
-- Fig. 10 (negation results): Use `choices/analysis/analyze_negation_results.py`
-- FIgs. 11-18: Script `choices/analysis/plot_classification_results.py`
+- Fig. 8 (a): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions none off --significance --no-title`
+- Fig. 8 (b): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions before low --significance --no-title`
+- Fig. 9 (steerability in dependence of baseline bias): `uv run python -m choices.analysis.plots.steerability_by_baseline --results-dirs results --reasoning-conditions none off low before --sig-baseline-only`
+- Fig. 10 (negation results): Use `choices/analysis/surface_form/negation.py`
+- Figs. 11-18: Script `choices/analysis/reasoning_traces/plots.py`
 
 
 ## Table Data
@@ -68,13 +68,17 @@ The following scripts in `choices/analysis/` are **not** used to generate figure
 - `analyze_simple_nudging_results.py` - Detailed analysis of a single simple_nudging experiment (balance, validity, preference stats, steerability asymmetry with bootstrap CIs)
 - `analyze_simple_rates.py` - AMCE analysis for a single simple_rates experiment
 
-**Exchange Rate Analysis:**
-- `analyze_nudging_results.py` - Exchange rate computation and value steerability analysis
-- `create_exchange_rates_plots.py` - Exchange rate visualization utilities
+**Exchange Rate Analysis (`exchange_rates/`):**
+- `exchange_rates/analyze.py` - Exchange rate computation and value steerability analysis
+- `exchange_rates/plots.py` - Exchange rate visualization utilities
+
+**Reasoning Trace Analysis (`reasoning_traces/`):**
+- `reasoning_traces/classify.py` - LLM-based classification of reasoning traces
+- `reasoning_traces/analyze.py` - Analyze classification results
+- `reasoning_traces/plots.py` - Generate plots from classification results
 
 **Data Quality & Diagnostics:**
 - `analyze_invalid_responses.py` - Analyze invalid response rates across experiments
-- `analyze_classifications.py` - Analyze classification results from reasoning trace classification
 
 **Other Analysis Tools:**
 - `get_backfiring_rates.py` - Compute backfiring rates stratified by baseline preference
@@ -82,5 +86,4 @@ The following scripts in `choices/analysis/` are **not** used to generate figure
 
 **Helper Modules (used by other scripts):**
 - `utils.py` - Shared utilities (result loading, balance checking, statistical tests, model colors, etc.)
-- `steerability_metric.py` - Steerability asymmetry computation functions
-- `nudge_effect_size.py` - Nudge effect size dataclass and helpers
+- `metrics.py` - Steerability asymmetry and nudge effect size calculations

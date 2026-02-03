@@ -80,6 +80,7 @@ from choices.analysis.create_summary import (
     discover_experiments,
 )
 from choices.analysis.metrics import freq_to_log_odds
+from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
 def transform_data_to_log_odds(
@@ -1413,7 +1414,7 @@ Examples:
     if args.output:
         output_path = args.output
     else:
-        output_path = f"steerability_violins_{args.rows}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/steerability_violins_{args.rows}.pdf"
 
     # Force log odds and relative mode for model/nudge rows (but not baseline)
     use_log_odds = args.log_odds

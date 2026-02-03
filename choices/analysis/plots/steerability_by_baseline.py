@@ -48,6 +48,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
 )
 from choices.analysis.metrics import freq_to_log_odds
+from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
 @dataclass
@@ -697,7 +698,10 @@ Examples:
 
     args = parser.parse_args()
 
-    output_path = args.output or f"steerability_by_baseline_{args.plot_type}.pdf"
+    output_path = (
+        args.output
+        or f"{PLOTS_OUTPUT_DIR}/steerability_by_baseline_{args.plot_type}.pdf"
+    )
 
     print("=" * 70)
     print("Steerability by Baseline Preference")

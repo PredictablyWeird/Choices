@@ -50,6 +50,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
 )
 from choices.analysis.utils import (
+    PLOTS_OUTPUT_DIR,
     get_model_display_name,
     get_nudge_display_name,
     get_nudge_marker,
@@ -722,10 +723,10 @@ Examples:
         output_path = args.output
     elif args.model:
         safe_model = args.model.replace("/", "_").replace(":", "_")
-        output_path = f"steerability_{safe_model}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/steerability_{safe_model}.pdf"
     else:
         safe_factor = args.factor.replace("/", "_").replace(":", "_").replace(" ", "_")
-        output_path = f"steerability_{safe_factor}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/steerability_{safe_factor}.pdf"
 
     # Print header
     print("=" * 60)

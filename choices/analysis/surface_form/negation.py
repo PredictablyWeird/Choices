@@ -39,6 +39,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
 )
 from choices.analysis.utils import (
+    PLOTS_OUTPUT_DIR,
     get_model_display_name,
 )
 
@@ -1711,7 +1712,7 @@ def main():
 
     # Generate bar chart if requested
     if args.bar_chart:
-        figure_path = args.figure_output or "negation_analysis.pdf"
+        figure_path = args.figure_output or f"{PLOTS_OUTPUT_DIR}/negation_analysis.pdf"
         if args.vs_opposite:
             result = create_stacked_bar_chart_vs_opposite(
                 pairs, output_path=figure_path

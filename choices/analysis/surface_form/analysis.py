@@ -51,6 +51,7 @@ from choices.analysis.metrics import (
     load_preference_graph,
 )
 from choices.analysis.utils import (
+    PLOTS_OUTPUT_DIR,
     compute_factor_frequencies_with_counts,
     get_factor_color,
     get_model_color,
@@ -1561,7 +1562,7 @@ Examples:
             suffix += f"_{args.groups}"
         if args.condition and len(args.condition) == 1:
             suffix += f"_{args.condition[0]}"
-        output_path = f"surface_form_analysis{suffix}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/surface_form_analysis{suffix}.pdf"
 
     # Print header
     print("=" * 110)

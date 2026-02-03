@@ -60,3 +60,4 @@ results*
 # Analysis outputs (regenerable)
 analysis/*.json
 analysis/plots/
+plots/

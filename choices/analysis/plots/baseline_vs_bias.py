@@ -24,7 +24,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
 )
 from choices.analysis.metrics import freq_to_log_odds
-from choices.analysis.utils import get_model_display_name
+from choices.analysis.utils import get_model_display_name, PLOTS_OUTPUT_DIR
 
 
 @dataclass
@@ -397,7 +397,7 @@ Examples:
 
     args = parser.parse_args()
 
-    output_path = args.output or "nonsig_baseline_analysis.pdf"
+    output_path = args.output or f"{PLOTS_OUTPUT_DIR}/nonsig_baseline_analysis.pdf"
 
     print("=" * 70)
     print("Steerability Asymmetry Analysis (Non-significant Baseline)")
