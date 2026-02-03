@@ -7,6 +7,7 @@ Framework for running preference elicitation experiments.
 - Clone the repo
 - Run `uv sync --dev`
 - Install pre-commit hooks with `uv run pre-commit install`
+- `cp .env.example .env` and add your API keys to the '.env' file
 
 
 ## Creating Experiments

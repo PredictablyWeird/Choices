@@ -39,6 +39,7 @@ class NormalizedResult:
     )
     sig_baseline: bool  # Whether baseline preference is significant
     sig_asym: bool  # Whether steerability asymmetry is significant
+    sig_any_nudge: bool  # Whether at least one nudge effect is significant
     model: str
     model_display: str
     reasoning_condition: str
@@ -75,6 +76,7 @@ def normalize_result(r: FrequencyResult) -> NormalizedResult:
         steerability_asym=asym,
         sig_baseline=r.sig_baseline_B,
         sig_asym=r.sig_asym,
+        sig_any_nudge=r.sig_A or r.sig_B,
         model=r.model,
         model_display=get_model_display_name(r.model),
         reasoning_condition=r.reasoning_condition,
@@ -89,8 +91,7 @@ def create_nonsig_analysis_plot(
     title: Optional[str] = None,
     show_title: bool = True,
     figsize: Tuple[float, float] = (8, 6),
-    show_mean: bool = True,
-    show_median: bool = False,
+    show_line: Optional[str] = None,
     n_bins: int = 15,
 ) -> plt.Figure:
     """
@@ -100,125 +101,110 @@ def create_nonsig_analysis_plot(
     - Significance (significant vs non-significant)
     - Reasoning condition (reasoning vs non-reasoning)
 
+    Hatching patterns:
+    - "/" for significant asymmetry
+
     Args:
         normalized_results: List of normalized results (filtered to non-sig baseline)
         output_path: Optional path to save the figure
         title: Optional custom title
         show_title: Whether to show title (default True)
         figsize: Figure size
-        show_mean: Show mean line
-        show_median: Show median line
+        show_line: Which line to show: 'mean', 'median', or None (default)
         n_bins: Number of histogram bins
 
     Returns:
         The matplotlib Figure object
     """
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+
     if not normalized_results:
         print("No data to plot.")
         return None
 
-    # Categorize results into 4 groups
+    # Categorize results by reasoning condition and sig_asym only
     REASONING_CONDITIONS = {"low", "medium", "high", "before", "after"}
 
-    sig_reasoning = []
-    sig_non_reasoning = []
-    nonsig_reasoning = []
-    nonsig_non_reasoning = []
+    # Categories: (reasoning, sig_asym)
+    categories = {
+        (False, False): [],  # non-reasoning, non-sig
+        (False, True): [],  # non-reasoning, sig_asym
+        (True, False): [],  # reasoning, non-sig
+        (True, True): [],  # reasoning, sig_asym
+    }
 
     for r in normalized_results:
         abs_bias = abs(r.steerability_asym)
         is_reasoning = r.reasoning_condition in REASONING_CONDITIONS
-
-        if r.sig_asym:
-            if is_reasoning:
-                sig_reasoning.append(abs_bias)
-            else:
-                sig_non_reasoning.append(abs_bias)
-        else:
-            if is_reasoning:
-                nonsig_reasoning.append(abs_bias)
-            else:
-                nonsig_non_reasoning.append(abs_bias)
+        key = (is_reasoning, r.sig_asym)
+        categories[key].append(abs_bias)
 
     # Compute overall statistics
     all_abs_biases = np.abs([r.steerability_asym for r in normalized_results])
     n_total = len(normalized_results)
-    n_sig = len(sig_reasoning) + len(sig_non_reasoning)
-    n_nonsig = len(nonsig_reasoning) + len(nonsig_non_reasoning)
-    pct_sig = 100 * n_sig / n_total
-    pct_nonsig = 100 * n_nonsig / n_total
+    n_sig_asym = sum(1 for r in normalized_results if r.sig_asym)
+    n_nonsig_asym = n_total - n_sig_asym
+    # n_sig_nudge = sum(1 for r in normalized_results if r.sig_any_nudge)
+    # n_sig_both = sum(1 for r in normalized_results if r.sig_asym and r.sig_any_nudge)
+    pct_sig_asym = 100 * n_sig_asym / n_total
+    pct_nonsig_asym = 100 * n_nonsig_asym / n_total
 
     # Check if we have both reasoning and non-reasoning conditions
-    has_reasoning = len(sig_reasoning) + len(nonsig_reasoning) > 0
-    has_non_reasoning = len(sig_non_reasoning) + len(nonsig_non_reasoning) > 0
+    has_reasoning = any(len(v) > 0 for k, v in categories.items() if k[0])
+    has_non_reasoning = any(len(v) > 0 for k, v in categories.items() if not k[0])
     split_by_reasoning = has_reasoning and has_non_reasoning
 
     fig, ax = plt.subplots(figsize=figsize)
 
     # Compute bin edges
     bin_edges = np.linspace(0, max(all_abs_biases) * 1.05, n_bins + 1)
+    bin_width = bin_edges[1] - bin_edges[0]
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # Define hatch patterns (dense for visibility)
+    def get_hatch(sig_asym: bool) -> str:
+        if sig_asym:
+            return "///"
+        else:
+            return ""
 
     if split_by_reasoning:
-        # 4-way split: sig/nonsig × reasoning/non-reasoning
         color_reasoning = "#009E73"  # Green
         color_non_reasoning = "#E69F00"  # Orange
 
-        hist_nonsig_nonreas, _ = np.histogram(nonsig_non_reasoning, bins=bin_edges)
-        hist_nonsig_reas, _ = np.histogram(nonsig_reasoning, bins=bin_edges)
-        hist_sig_nonreas, _ = np.histogram(sig_non_reasoning, bins=bin_edges)
-        hist_sig_reas, _ = np.histogram(sig_reasoning, bins=bin_edges)
+        # Stack order: non-reasoning first (bottom), then reasoning
+        # Within each: non-sig first, then sig
+        stack_order = [
+            # Non-reasoning
+            ((False, False), color_non_reasoning),
+            ((False, True), color_non_reasoning),
+            # Reasoning
+            ((True, False), color_reasoning),
+            ((True, True), color_reasoning),
+        ]
 
-        bin_width = bin_edges[1] - bin_edges[0]
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-        # Bottom layer: non-significant, non-reasoning
-        ax.bar(
-            bin_centers,
-            hist_nonsig_nonreas,
-            width=bin_width * 0.9,
-            color=color_non_reasoning,
-            edgecolor="black",
-            linewidth=0.5,
-        )
-
-        # Second layer: non-significant, reasoning
-        ax.bar(
-            bin_centers,
-            hist_nonsig_reas,
-            width=bin_width * 0.9,
-            bottom=hist_nonsig_nonreas,
-            color=color_reasoning,
-            edgecolor="black",
-            linewidth=0.5,
-        )
-
-        # Third layer: significant, non-reasoning
-        ax.bar(
-            bin_centers,
-            hist_sig_nonreas,
-            width=bin_width * 0.9,
-            bottom=hist_nonsig_nonreas + hist_nonsig_reas,
-            color=color_non_reasoning,
-            edgecolor="black",
-            linewidth=0.5,
-            hatch="//",
-        )
-
-        # Top layer: significant, reasoning
-        ax.bar(
-            bin_centers,
-            hist_sig_reas,
-            width=bin_width * 0.9,
-            bottom=hist_nonsig_nonreas + hist_nonsig_reas + hist_sig_nonreas,
-            color=color_reasoning,
-            edgecolor="black",
-            linewidth=0.5,
-            hatch="//",
-        )
+        bottom = np.zeros(len(bin_centers))
+        for key, color in stack_order:
+            data = categories[key]
+            if not data:
+                continue
+            hist, _ = np.histogram(data, bins=bin_edges)
+            is_reasoning, sig_asym = key
+            hatch = get_hatch(sig_asym)
+            ax.bar(
+                bin_centers,
+                hist,
+                width=bin_width * 0.9,
+                bottom=bottom,
+                color=color,
+                edgecolor="black",
+                linewidth=0.5,
+                hatch=hatch,
+            )
+            bottom = bottom + hist
 
         # Create custom legend
-        from matplotlib.patches import Patch
-
         legend_elements = [
             Patch(facecolor=color_reasoning, edgecolor="white", label="Reasoning"),
             Patch(
@@ -227,85 +213,118 @@ def create_nonsig_analysis_plot(
             Patch(
                 facecolor="white",
                 edgecolor="black",
-                hatch="//",
-                label=f"Significant ({pct_sig:.1f}%)",
+                hatch="///",
+                label=f"Sig. asymmetry ({pct_sig_asym:.1f}%)",
             ),
             Patch(
                 facecolor="white",
                 edgecolor="black",
-                label=f"Non-significant ({pct_nonsig:.1f}%)",
+                label=f"Non-sig. ({pct_nonsig_asym:.1f}%)",
             ),
         ]
-        ax.legend(
-            handles=legend_elements, loc="upper right", fontsize=9, framealpha=0.9
-        )
+
+        # Add mean/median to legend if showing
+        if show_line == "mean":
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="#D55E00",
+                    linestyle="--",
+                    linewidth=2.5,
+                    label="Mean",
+                )
+            )
+        elif show_line == "median":
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="#0072B2",
+                    linestyle="--",
+                    linewidth=2.5,
+                    label="Median",
+                )
+            )
+
+        ax.legend(handles=legend_elements, loc="upper left", fontsize=9, framealpha=0.9)
 
     else:
-        # 2-way split: sig/nonsig only
-        sig_asyms = [abs(r.steerability_asym) for r in normalized_results if r.sig_asym]
-        nonsig_asyms = [
-            abs(r.steerability_asym) for r in normalized_results if not r.sig_asym
+        # Non-split case: just stack by sig_asym
+        stack_order = [False, True]  # non-sig first, then sig
+
+        bottom = np.zeros(len(bin_centers))
+        for sig_asym in stack_order:
+            data = [
+                abs(r.steerability_asym)
+                for r in normalized_results
+                if r.sig_asym == sig_asym
+            ]
+            if not data:
+                continue
+            hist, _ = np.histogram(data, bins=bin_edges)
+            hatch = get_hatch(sig_asym)
+            color = "#7B68EE" if sig_asym else "#D0D0D0"
+            ax.bar(
+                bin_centers,
+                hist,
+                width=bin_width * 0.9,
+                bottom=bottom,
+                color=color,
+                edgecolor="black",
+                linewidth=0.5,
+                hatch=hatch,
+            )
+            bottom = bottom + hist
+
+        # Create legend
+        legend_elements = [
+            Patch(
+                facecolor="white",
+                edgecolor="black",
+                hatch="///",
+                label=f"Sig. asymmetry ({pct_sig_asym:.1f}%)",
+            ),
+            Patch(
+                facecolor="white",
+                edgecolor="black",
+                label=f"Non-sig. ({pct_nonsig_asym:.1f}%)",
+            ),
         ]
 
-        hist_nonsig, _ = np.histogram(nonsig_asyms, bins=bin_edges)
-        hist_sig, _ = np.histogram(sig_asyms, bins=bin_edges)
+        # Add mean/median to legend if showing
+        if show_line == "mean":
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="#D55E00",
+                    linestyle="--",
+                    linewidth=2.5,
+                    label="Mean",
+                )
+            )
+        elif show_line == "median":
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="#0072B2",
+                    linestyle="--",
+                    linewidth=2.5,
+                    label="Median",
+                )
+            )
 
-        bin_width = bin_edges[1] - bin_edges[0]
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        ax.legend(handles=legend_elements, loc="upper left", fontsize=9, framealpha=0.9)
 
-        ax.bar(
-            bin_centers,
-            hist_nonsig,
-            width=bin_width * 0.9,
-            color="#D0D0D0",
-            edgecolor="white",
-            linewidth=0.5,
-            label=f"Non-significant ({pct_nonsig:.1f}%)",
-        )
-
-        ax.bar(
-            bin_centers,
-            hist_sig,
-            width=bin_width * 0.9,
-            bottom=hist_nonsig,
-            color="#7B68EE",
-            edgecolor="white",
-            linewidth=0.5,
-            label=f"Significant ({pct_sig:.1f}%)",
-        )
-
-    # Add mean/median lines
-    if show_mean:
+    # Add mean or median line (legend entry handled above)
+    if show_line == "mean":
         mean_val = np.mean(all_abs_biases)
-        mean_color = "#D55E00"  # Dark orange
-        ax.axvline(mean_val, color=mean_color, linestyle="--", linewidth=2.5)
-        y_max = ax.get_ylim()[1]
-        ax.text(
-            mean_val + 0.02,
-            y_max * 0.95,
-            f"Mean: {mean_val:.2f}",
-            color=mean_color,
-            fontsize=10,
-            fontweight="bold",
-            ha="left",
-            va="top",
-        )
-
-    if show_median:
+        ax.axvline(mean_val, color="#D55E00", linestyle="--", linewidth=2.5)
+    elif show_line == "median":
         median_val = np.median(all_abs_biases)
-        median_color = "#0072B2"  # Blue
-        ax.axvline(median_val, color=median_color, linestyle="--", linewidth=2.5)
-        y_max = ax.get_ylim()[1]
-        ax.text(
-            median_val + 0.02,
-            y_max * 0.85,
-            f"Median: {median_val:.2f}",
-            color=median_color,
-            fontsize=10,
-            fontweight="bold",
-            ha="left",
-            va="top",
-        )
+        ax.axvline(median_val, color="#0072B2", linestyle="--", linewidth=2.5)
 
     ax.set_xlabel("|Steerability Asymmetry|", fontsize=12)
     ax.set_ylabel("Count", fontsize=12)
@@ -320,9 +339,6 @@ def create_nonsig_analysis_plot(
                 fontweight="bold",
             )
 
-    # Add legend for non-split case (split case handles its own legend above)
-    if not split_by_reasoning:
-        ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.3)
@@ -391,9 +407,12 @@ Examples:
         "--n-bins", type=int, default=15, help="Number of histogram bins"
     )
     parser.add_argument(
-        "--show-median", action="store_true", help="Show median line on plot"
+        "--show-line",
+        type=str,
+        choices=["mean", "median"],
+        default=None,
+        help="Show a vertical line for mean or median (default: none)",
     )
-    parser.add_argument("--no-mean", action="store_true", help="Hide mean line on plot")
 
     args = parser.parse_args()
 
@@ -454,17 +473,31 @@ Examples:
 
     # Stats for non-significant baseline cases
     nonsig_asyms = np.array([r.steerability_asym for r in nonsig_baseline])
-    nonsig_sig_asym = sum(1 for r in nonsig_baseline if r.sig_asym)
+    n_total = len(nonsig_baseline)
+    n_sig_asym = sum(1 for r in nonsig_baseline if r.sig_asym)
+    n_sig_nudge = sum(1 for r in nonsig_baseline if r.sig_any_nudge)
+    n_sig_both = sum(1 for r in nonsig_baseline if r.sig_asym and r.sig_any_nudge)
+    n_sig_any = sum(1 for r in nonsig_baseline if r.sig_asym or r.sig_any_nudge)
     print("Summary Statistics:")
     print("-" * 50)
-    print(f"  N experiments: {len(nonsig_baseline)}")
+    print(f"  N experiments: {n_total}")
     print(
         f"  |Asym|: mean={np.mean(np.abs(nonsig_asyms)):.3f}, "
         f"median={np.median(np.abs(nonsig_asyms)):.3f}"
     )
     print(
-        f"  With significant steerability asymmetry: {nonsig_sig_asym} "
-        f"({100*nonsig_sig_asym/len(nonsig_baseline):.1f}%)"
+        f"  With significant steerability asymmetry: {n_sig_asym} "
+        f"({100*n_sig_asym/n_total:.1f}%)"
+    )
+    print(
+        f"  With significant nudge effect (any): {n_sig_nudge} "
+        f"({100*n_sig_nudge/n_total:.1f}%)"
+    )
+    print(
+        f"  With any significant effect: {n_sig_any} " f"({100*n_sig_any/n_total:.1f}%)"
+    )
+    print(
+        f"  With both (intersection): {n_sig_both} " f"({100*n_sig_both/n_total:.1f}%)"
     )
     print()
 
@@ -476,8 +509,7 @@ Examples:
         title=args.title,
         show_title=not args.no_title,
         figsize=figsize,
-        show_mean=not args.no_mean,
-        show_median=args.show_median,
+        show_line=args.show_line,
         n_bins=args.n_bins,
     )
 
