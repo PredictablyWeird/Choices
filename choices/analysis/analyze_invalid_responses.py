@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from choices.analysis.nudge_effect_size import (
+from choices.analysis.metrics import (
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
     load_preference_graph,

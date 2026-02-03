@@ -47,7 +47,7 @@ from choices.analysis.create_summary import (
     FrequencyResult,
     compute_all_results,
 )
-from choices.analysis.steerability_metric import freq_to_log_odds
+from choices.analysis.metrics import freq_to_log_odds
 
 
 @dataclass

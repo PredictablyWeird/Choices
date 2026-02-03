@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from choices.analysis.steerability_metric import (
+from choices.analysis.metrics import (
     compute_steerability_asym_from_counts,
 )
 from choices.analysis.utils import (

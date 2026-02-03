@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-from choices.analysis.create_exchange_rates_plots import (
+from choices.analysis.exchange_rates.plots import (
     fit_utility_curves,
     get_factor_values_and_N_values,
     load_exchange_rates_data,
     two_way_geometric_exchange_rate,
 )
-from choices.analysis.steerability_metric import compute_steerability_asym
+from choices.analysis.metrics import compute_steerability_asym
 from choices.results import ExperimentResults
 from choices.utils import find_result_files
 

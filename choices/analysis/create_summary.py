@@ -51,24 +51,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from choices.analysis.analyze_simple_nudging_results import (
-    binomial_test_vs_half,
-    two_proportion_z_test,
-)
-from choices.analysis.nudge_effect_size import (
+from choices.analysis.metrics import (
+    compute_steerability_asym_from_counts,
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
     load_preference_graph,
-)
-from choices.analysis.steerability_metric import (
-    compute_steerability_asym_from_counts,
     wald_test_steerability_asym,
 )
 from choices.analysis.utils import (
+    binomial_test_vs_half,
     get_base_model_name,
     get_model_display_name,
     get_reasoning_condition,
     get_reasoning_mode_from_results,
+    two_proportion_z_test,
 )
 
 # Default significance level (95% confidence)

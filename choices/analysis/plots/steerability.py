@@ -79,7 +79,7 @@ from choices.analysis.create_summary import (
     compute_all_results,
     discover_experiments,
 )
-from choices.analysis.steerability_metric import freq_to_log_odds
+from choices.analysis.metrics import freq_to_log_odds
 
 
 def transform_data_to_log_odds(

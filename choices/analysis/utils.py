@@ -409,6 +409,79 @@ def get_model_color(model: str) -> str:
     return _dynamic_model_colors[model]
 
 
+# Color palettes for factors, nudges, and reasoning conditions
+FACTOR_COLORS = {
+    "gender": "#E63946",  # red
+    "wealth": "#457B9D",  # blue
+    "age_group": "#2A9D8F",  # teal
+    "social_status": "#E9C46A",  # yellow/gold
+    "ethnicity": "#9B5DE5",  # purple
+}
+
+NUDGE_COLORS = {
+    "survey_preference": "#1f77b4",  # blue
+    "user_preference": "#ff7f0e",  # orange
+    "emotional": "#2ca02c",  # green
+    "weak_evidence": "#d62728",  # red
+    "few_shot_3": "#9467bd",  # purple
+    "always_save": "#8c564b",  # brown
+}
+
+REASONING_COLORS = {
+    "none": "#1f77b4",  # blue
+    "before": "#ff7f0e",  # orange
+    "after": "#2ca02c",  # green
+    "off": "#d62728",  # red
+    "low": "#9467bd",  # purple
+    "medium": "#8c564b",  # brown
+    "high": "#e377c2",  # pink
+}
+
+# Caches for dynamically assigned colors
+_dynamic_factor_colors: Dict[str, str] = {}
+_dynamic_nudge_colors: Dict[str, str] = {}
+_dynamic_reasoning_colors: Dict[str, str] = {}
+
+
+def get_factor_color(factor: str) -> str:
+    """Get color for a factor, auto-assigning from palette if not predefined."""
+    if factor in FACTOR_COLORS:
+        return FACTOR_COLORS[factor]
+
+    if factor not in _dynamic_factor_colors:
+        idx = len(_dynamic_factor_colors) % len(_EXTRA_COLORS)
+        _dynamic_factor_colors[factor] = _EXTRA_COLORS[idx]
+
+    return _dynamic_factor_colors[factor]
+
+
+def get_nudge_color(nudge_type: str) -> str:
+    """Get color for a nudge type, auto-assigning from palette if not predefined."""
+    # Strip _baseline or _negation suffixes for color matching
+    base_nudge = nudge_type.replace("_baseline", "").replace("_negation", "")
+
+    if base_nudge in NUDGE_COLORS:
+        return NUDGE_COLORS[base_nudge]
+
+    if nudge_type not in _dynamic_nudge_colors:
+        idx = len(_dynamic_nudge_colors) % len(_EXTRA_COLORS)
+        _dynamic_nudge_colors[nudge_type] = _EXTRA_COLORS[idx]
+
+    return _dynamic_nudge_colors[nudge_type]
+
+
+def get_reasoning_color(reasoning: str) -> str:
+    """Get color for a reasoning condition, auto-assigning from palette if not predefined."""
+    if reasoning in REASONING_COLORS:
+        return REASONING_COLORS[reasoning]
+
+    if reasoning not in _dynamic_reasoning_colors:
+        idx = len(_dynamic_reasoning_colors) % len(_EXTRA_COLORS)
+        _dynamic_reasoning_colors[reasoning] = _EXTRA_COLORS[idx]
+
+    return _dynamic_reasoning_colors[reasoning]
+
+
 # Marker palette for categories
 CATEGORY_MARKERS = {
     "gender": "o",  # circle
