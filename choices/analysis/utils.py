@@ -504,3 +504,309 @@ def get_nudge_display_name(nudge_type: str) -> str:
 def get_category_marker(category: str) -> str:
     """Get marker for a category."""
     return CATEGORY_MARKERS.get(category, "o")
+
+
+# =============================================================================
+# Result Loading
+# =============================================================================
+
+
+def load_results(results_dir: str) -> Dict[str, Any]:
+    """
+    Load results from an experiment directory.
+
+    Loads preference graph and optional utility model data.
+
+    Args:
+        results_dir: Path to results directory
+
+    Returns:
+        Dictionary with keys:
+            - "graph": Preference graph data
+            - "utilities": Utility model data (or None)
+            - "results_dir": The original results directory path
+    """
+    results_path = Path(results_dir)
+
+    # Find preference graph file
+    graph_files = list(results_path.glob("preference_graph_*.json"))
+    if not graph_files:
+        raise FileNotFoundError(f"No preference_graph file found in {results_dir}")
+
+    with open(graph_files[0], "r") as f:
+        graph_data = json.load(f)
+
+    # Also load utility model if available
+    utility_files = list(results_path.glob("utility_model_*.json"))
+    utility_data = None
+    if utility_files:
+        with open(utility_files[0], "r") as f:
+            utility_data = json.load(f)
+
+    return {
+        "graph": graph_data,
+        "utilities": utility_data,
+        "results_dir": results_dir,
+    }
+
+
+def find_latest_result_dir(
+    experiment_name: str,
+    model: str,
+    base_dir: str = "results",
+) -> Optional[Path]:
+    """Find the latest result directory for an experiment."""
+    exp_dir = Path(base_dir) / experiment_name / model
+    if not exp_dir.exists():
+        return None
+
+    # Get all timestamp directories
+    dirs = [d for d in exp_dir.iterdir() if d.is_dir()]
+    if not dirs:
+        return None
+
+    # Sort by name (timestamp format ensures chronological order)
+    return sorted(dirs)[-1]
+
+
+# =============================================================================
+# Experiment Balance Checking
+# =============================================================================
+
+
+def check_balance(
+    options: List[Dict],
+    edges: Dict[str, Dict],
+    variables: List[Dict],
+) -> Dict[str, Any]:
+    """
+    Check if an experiment is balanced.
+
+    For a balanced design:
+    - Each option should appear in approximately equal numbers of comparisons
+    - For each N value, it should be paired with each factor level equally often
+      (e.g., N=1 appears with male and female the same number of times)
+
+    Args:
+        options: List of option dictionaries
+        edges: Dictionary of edges
+        variables: List of variable definitions
+
+    Returns:
+        Dictionary with balance statistics:
+            - "option_counts": dict of option_id -> presentation count
+            - "n_factor_balance": dict of N pairs to their balance info
+            - "is_balanced": bool indicating if design is balanced
+    """
+    from collections import defaultdict
+
+    # Build option lookup
+    options_by_id = {opt["id"]: opt for opt in options}
+
+    # Count appearances per option
+    option_counts = defaultdict(int)
+    for edge_key in edges.keys():
+        try:
+            ids = eval(edge_key)
+            if isinstance(ids, tuple):
+                option_counts[ids[0]] += 1
+                option_counts[ids[1]] += 1
+        except Exception:
+            parts = edge_key.strip("()").split(",")
+            if len(parts) == 2:
+                option_counts[int(parts[0].strip())] += 1
+                option_counts[int(parts[1].strip())] += 1
+
+    # Get N variable and factor variable
+    n_var = None
+    factor_var = None
+    for var in variables:
+        if var["name"] == "N":
+            n_var = var
+        else:
+            factor_var = var
+
+    if not factor_var or not n_var:
+        return {
+            "option_counts": dict(option_counts),
+            "n_factor_balance": {},
+            "is_balanced": True,
+        }
+
+    factor_name = factor_var["name"]
+    factor_levels = factor_var["values"]
+    n_values = sorted(n_var["values"])
+
+    # For each pair of N values, count how often each N is paired with each factor level
+    n_factor_balance = {}
+
+    for i, n1 in enumerate(n_values):
+        for n2 in n_values[i + 1 :]:
+            # For this N pair, count factor level distribution
+            factor_with_lower_n = defaultdict(int)
+            factor_with_higher_n = defaultdict(int)
+
+            for edge_key in edges.keys():
+                try:
+                    ids = eval(edge_key)
+                    opt_a = options_by_id.get(ids[0])
+                    opt_b = options_by_id.get(ids[1])
+
+                    if not opt_a or not opt_b:
+                        continue
+
+                    n_a = opt_a.get("N")
+                    n_b = opt_b.get("N")
+                    factor_a = opt_a.get(factor_name)
+                    factor_b = opt_b.get(factor_name)
+
+                    # Check if this edge involves the N pair (n1, n2)
+                    if n_a == n1 and n_b == n2:
+                        factor_with_lower_n[factor_a] += 1
+                        factor_with_higher_n[factor_b] += 1
+                    elif n_a == n2 and n_b == n1:
+                        factor_with_higher_n[factor_a] += 1
+                        factor_with_lower_n[factor_b] += 1
+
+                except Exception:
+                    pass
+
+            # Skip N pairs with no samples
+            total_samples = sum(factor_with_lower_n.values()) + sum(
+                factor_with_higher_n.values()
+            )
+            if total_samples == 0:
+                continue
+
+            # Check if balanced: each factor level should have equal counts
+            lower_counts = [factor_with_lower_n[f] for f in factor_levels]
+            higher_counts = [factor_with_higher_n[f] for f in factor_levels]
+
+            is_balanced = (
+                len(set(lower_counts)) <= 1
+                and len(set(higher_counts)) <= 1
+                and all(c > 0 for c in lower_counts)
+                and all(c > 0 for c in higher_counts)
+            )
+
+            n_factor_balance[(n1, n2)] = {
+                "factor_with_lower_n": dict(factor_with_lower_n),
+                "factor_with_higher_n": dict(factor_with_higher_n),
+                "balanced": is_balanced,
+            }
+
+    return {
+        "option_counts": dict(option_counts),
+        "n_factor_balance": n_factor_balance,
+        "is_balanced": all(v["balanced"] for v in n_factor_balance.values())
+        if n_factor_balance
+        else True,
+    }
+
+
+# =============================================================================
+# Statistical Tests
+# =============================================================================
+
+
+def binomial_test_vs_half(
+    successes: int,
+    n: int,
+    alpha: float = 0.05,
+) -> Dict[str, Any]:
+    """
+    Test if a proportion differs significantly from 0.5 using exact binomial test.
+
+    Args:
+        successes: Number of successes (wins)
+        n: Total number of trials
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with p_value, ci_low, ci_high, and is_significant
+    """
+    from scipy import stats
+
+    if n <= 0:
+        return {
+            "p_value": 1.0,
+            "ci_low": 0.0,
+            "ci_high": 1.0,
+            "is_significant": False,
+        }
+
+    result = stats.binomtest(successes, n, p=0.5, alternative="two-sided")
+    ci = result.proportion_ci(confidence_level=1 - alpha)
+
+    return {
+        "p_value": result.pvalue,
+        "ci_low": ci.low,
+        "ci_high": ci.high,
+        "is_significant": result.pvalue < alpha,
+    }
+
+
+def two_proportion_z_test(
+    p1: float,
+    n1: int,
+    p2: float,
+    n2: int,
+    alpha: float = 0.05,
+) -> Dict[str, Any]:
+    """
+    Test if two proportions differ significantly using two-proportion z-test.
+
+    This is the standard test for comparing proportions in academic publications.
+
+    Args:
+        p1: First proportion (e.g., base condition)
+        n1: Sample size for first proportion
+        p2: Second proportion (e.g., nudged condition)
+        n2: Sample size for second proportion
+        alpha: Significance level (default 0.05)
+
+    Returns:
+        Dictionary with z_stat, p_value, diff, ci_low, ci_high, and is_significant
+    """
+    import numpy as np
+    from scipy import stats
+
+    if n1 <= 0 or n2 <= 0:
+        return {
+            "z_stat": 0.0,
+            "p_value": 1.0,
+            "diff": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "is_significant": False,
+        }
+
+    # Pooled proportion under H0: p1 = p2
+    p_pooled = (p1 * n1 + p2 * n2) / (n1 + n2)
+
+    # Standard error under H0
+    se_pooled = np.sqrt(p_pooled * (1 - p_pooled) * (1 / n1 + 1 / n2))
+
+    # Z statistic
+    if se_pooled > 0:
+        z_stat = (p2 - p1) / se_pooled
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+    else:
+        z_stat = 0.0
+        p_value = 1.0
+
+    # Confidence interval for the difference (using unpooled SE)
+    se_diff = np.sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2)
+    z_crit = stats.norm.ppf(1 - alpha / 2)
+    diff = p2 - p1
+    ci_low = diff - z_crit * se_diff
+    ci_high = diff + z_crit * se_diff
+
+    return {
+        "z_stat": z_stat,
+        "p_value": p_value,
+        "diff": diff,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "is_significant": p_value < alpha,
+    }
