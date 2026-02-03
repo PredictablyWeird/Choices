@@ -34,9 +34,11 @@ class NormalizedResult:
     baseline_pref: float  # f_0(preferred) - always >= 0.5
     steerability_towards: float  # Steerability when nudging towards baseline pref
     steerability_against: float  # Steerability when nudging against baseline pref
-    steerability_bias: float  # towards - against (positive = easier towards pref)
+    steerability_asym: (
+        float  # normalized (towards - against) / (|towards| + |against| + eps)
+    )
     sig_baseline: bool  # Whether baseline preference is significant
-    sig_bias: bool  # Whether steerability bias is significant
+    sig_asym: bool  # Whether steerability asymmetry is significant
     model: str
     model_display: str
     reasoning_condition: str
@@ -60,13 +62,19 @@ def normalize_result(r: FrequencyResult) -> NormalizedResult:
         steer_towards = compute_steerability(1 - r.f_A_B, 1 - r.f_0_B)
         steer_against = compute_steerability(r.f_B_B, r.f_0_B)
 
+    # Compute normalized asymmetry using the new formula
+    eps = 0.01
+    asym = (steer_towards - steer_against) / (
+        abs(steer_towards) + abs(steer_against) + eps
+    )
+
     return NormalizedResult(
         baseline_pref=baseline_pref,
         steerability_towards=steer_towards,
         steerability_against=steer_against,
-        steerability_bias=steer_towards - steer_against,
+        steerability_asym=asym,
         sig_baseline=r.sig_baseline_B,
-        sig_bias=r.sig_bias,
+        sig_asym=r.sig_asym,
         model=r.model,
         model_display=get_model_display_name(r.model),
         reasoning_condition=r.reasoning_condition,
@@ -118,10 +126,10 @@ def create_nonsig_analysis_plot(
     nonsig_non_reasoning = []
 
     for r in normalized_results:
-        abs_bias = abs(r.steerability_bias)
+        abs_bias = abs(r.steerability_asym)
         is_reasoning = r.reasoning_condition in REASONING_CONDITIONS
 
-        if r.sig_bias:
+        if r.sig_asym:
             if is_reasoning:
                 sig_reasoning.append(abs_bias)
             else:
@@ -133,7 +141,7 @@ def create_nonsig_analysis_plot(
                 nonsig_non_reasoning.append(abs_bias)
 
     # Compute overall statistics
-    all_abs_biases = np.abs([r.steerability_bias for r in normalized_results])
+    all_abs_biases = np.abs([r.steerability_asym for r in normalized_results])
     n_total = len(normalized_results)
     n_sig = len(sig_reasoning) + len(sig_non_reasoning)
     n_nonsig = len(nonsig_reasoning) + len(nonsig_non_reasoning)
@@ -234,15 +242,13 @@ def create_nonsig_analysis_plot(
 
     else:
         # 2-way split: sig/nonsig only
-        sig_biases = [
-            abs(r.steerability_bias) for r in normalized_results if r.sig_bias
-        ]
-        nonsig_biases = [
-            abs(r.steerability_bias) for r in normalized_results if not r.sig_bias
+        sig_asyms = [abs(r.steerability_asym) for r in normalized_results if r.sig_asym]
+        nonsig_asyms = [
+            abs(r.steerability_asym) for r in normalized_results if not r.sig_asym
         ]
 
-        hist_nonsig, _ = np.histogram(nonsig_biases, bins=bin_edges)
-        hist_sig, _ = np.histogram(sig_biases, bins=bin_edges)
+        hist_nonsig, _ = np.histogram(nonsig_asyms, bins=bin_edges)
+        hist_sig, _ = np.histogram(sig_asyms, bins=bin_edges)
 
         bin_width = bin_edges[1] - bin_edges[0]
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -447,18 +453,18 @@ Examples:
         return
 
     # Stats for non-significant baseline cases
-    nonsig_biases = np.array([r.steerability_bias for r in nonsig_baseline])
-    nonsig_sig_bias = sum(1 for r in nonsig_baseline if r.sig_bias)
+    nonsig_asyms = np.array([r.steerability_asym for r in nonsig_baseline])
+    nonsig_sig_asym = sum(1 for r in nonsig_baseline if r.sig_asym)
     print("Summary Statistics:")
     print("-" * 50)
     print(f"  N experiments: {len(nonsig_baseline)}")
     print(
-        f"  |Bias|: mean={np.mean(np.abs(nonsig_biases)):.3f}, "
-        f"median={np.median(np.abs(nonsig_biases)):.3f}"
+        f"  |Asym|: mean={np.mean(np.abs(nonsig_asyms)):.3f}, "
+        f"median={np.median(np.abs(nonsig_asyms)):.3f}"
     )
     print(
-        f"  With significant steerability bias: {nonsig_sig_bias} "
-        f"({100*nonsig_sig_bias/len(nonsig_baseline):.1f}%)"
+        f"  With significant steerability asymmetry: {nonsig_sig_asym} "
+        f"({100*nonsig_sig_asym/len(nonsig_baseline):.1f}%)"
     )
     print()
 

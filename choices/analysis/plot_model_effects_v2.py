@@ -9,7 +9,7 @@ Two modes:
 Features:
 - Always uses log-odds steerability
 - Always includes baseline preference column
-- Shows mean steerability bars (thick) plus marker for nudge type with largest bias
+- Shows mean steerability bars (thick) plus marker for nudge type with largest asymmetry
 - No title (use --title to override)
 
 Usage:
@@ -98,7 +98,7 @@ def collect_data_for_single_model(
                 "nudge_type": r.nudge_type,
                 "steerability_A": r.steerability_A,
                 "steerability_B": r.steerability_B,
-                "steerability_bias": r.steerability_bias,
+                "steerability_asym": r.steerability_asym,
             }
         )
         if data[r.factor]["f_0_B"] is None:
@@ -144,7 +144,7 @@ def collect_data_for_single_factor(
                 "nudge_type": r.nudge_type,
                 "steerability_A": r.steerability_A,
                 "steerability_B": r.steerability_B,
-                "steerability_bias": r.steerability_bias,
+                "steerability_asym": r.steerability_asym,
             }
         )
         if data[key]["f_0_B"] is None:
@@ -156,12 +156,12 @@ def collect_data_for_single_factor(
     return dict(data)
 
 
-def find_most_biased_nudge(nudge_data: List[Dict]) -> Optional[Dict]:
-    """Find the nudge type with the largest magnitude steerability bias."""
-    valid = [nd for nd in nudge_data if nd.get("steerability_bias") is not None]
+def find_most_asymmetric_nudge(nudge_data: List[Dict]) -> Optional[Dict]:
+    """Find the nudge type with the largest magnitude steerability asymmetry."""
+    valid = [nd for nd in nudge_data if nd.get("steerability_asym") is not None]
     if not valid:
         return None
-    return max(valid, key=lambda nd: abs(nd["steerability_bias"]))
+    return max(valid, key=lambda nd: abs(nd["steerability_asym"]))
 
 
 def abbreviate_label(label: str) -> str:
@@ -281,15 +281,15 @@ def create_steerability_plot(
                 zorder=6,
             )
 
-        # Find and plot the most biased nudge type
-        most_biased = find_most_biased_nudge(rd["nudge_data"])
-        if most_biased:
-            nudge_type = most_biased["nudge_type"]
+        # Find and plot the most asymmetric nudge type
+        most_asymmetric = find_most_asymmetric_nudge(rd["nudge_data"])
+        if most_asymmetric:
+            nudge_type = most_asymmetric["nudge_type"]
             all_nudge_types.add(nudge_type)
             marker = get_nudge_marker(nudge_type)
 
             # Plot marker for steerability towards A (slightly above center)
-            steer_A = most_biased.get("steerability_A")
+            steer_A = most_asymmetric.get("steerability_A")
             if steer_A is not None:
                 ax.scatter(
                     [-steer_A],  # Negate for plotting
@@ -303,7 +303,7 @@ def create_steerability_plot(
                 )
 
             # Plot marker for steerability towards B (slightly below center)
-            steer_B = most_biased.get("steerability_B")
+            steer_B = most_asymmetric.get("steerability_B")
             if steer_B is not None:
                 ax.scatter(
                     [steer_B],

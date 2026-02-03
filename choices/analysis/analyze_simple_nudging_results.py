@@ -21,7 +21,7 @@ import numpy as np
 from scipy import stats
 
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
+    compute_steerability_asym_from_counts,
 )
 
 # Default significance level (95% confidence)
@@ -201,7 +201,7 @@ def compute_factor_frequencies_from_edges(
     return level_stats
 
 
-def bootstrap_steerability_bias(
+def bootstrap_steerability_asym(
     base_graph_data: Dict[str, Any],
     nudge_A_graph_data: Dict[str, Any],
     nudge_B_graph_data: Dict[str, Any],
@@ -213,10 +213,10 @@ def bootstrap_steerability_bias(
     random_seed: Optional[int] = 42,
 ) -> Dict[str, Any]:
     """
-    Compute bootstrap confidence intervals for steerability bias.
+    Compute bootstrap confidence intervals for steerability asymmetry.
 
     Resamples responses within each edge to generate a distribution of
-    steerability bias estimates.
+    steerability asymmetry estimates.
 
     Args:
         base_graph_data: Graph data for base (no nudge) condition
@@ -340,37 +340,37 @@ def bootstrap_steerability_bias(
         }
 
     # Bootstrap
-    biases = []
+    asyms = []
     for _ in range(n_bootstrap):
         # Resample each condition
         c_0_A, c_0_B = compute_counts_from_edge_list(base_edges, resample=True)
         c_A_A, c_A_B = compute_counts_from_edge_list(nudge_A_edges, resample=True)
         c_B_A, c_B_B = compute_counts_from_edge_list(nudge_B_edges, resample=True)
 
-        # Compute steerability bias using counts with Haldane-Anscombe correction
-        _, _, bias = compute_steerability_bias_from_counts(
+        # Compute steerability asymmetry using counts with Haldane-Anscombe correction
+        _, _, asym = compute_steerability_asym_from_counts(
             c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
         )
 
-        if bias is not None:
-            biases.append(bias)
+        if asym is not None:
+            asyms.append(asym)
 
-    if len(biases) < n_bootstrap * 0.5:
+    if len(asyms) < n_bootstrap * 0.5:
         # Too many failed bootstrap iterations
         return {
             "ci_low": None,
             "ci_high": None,
             "se": None,
             "is_significant": False,
-            "n_bootstrap": len(biases),
+            "n_bootstrap": len(asyms),
         }
 
     # Compute percentile CI
     lower_percentile = (alpha / 2) * 100
     upper_percentile = (1 - alpha / 2) * 100
-    ci_low = np.percentile(biases, lower_percentile)
-    ci_high = np.percentile(biases, upper_percentile)
-    se = np.std(biases)
+    ci_low = np.percentile(asyms, lower_percentile)
+    ci_high = np.percentile(asyms, upper_percentile)
+    se = np.std(asyms)
 
     # Significant if CI excludes 0
     is_significant = ci_low > 0 or ci_high < 0
@@ -380,7 +380,7 @@ def bootstrap_steerability_bias(
         "ci_high": ci_high,
         "se": se,
         "is_significant": is_significant,
-        "n_bootstrap": len(biases),
+        "n_bootstrap": len(asyms),
     }
 
 
@@ -1344,8 +1344,8 @@ def analyze_simple_nudging_experiment(
                 )
                 print()
 
-        # Compute and display steerability bias
-        _display_steerability_bias(sorted_results, factor_levels, alpha)
+        # Compute and display steerability asymmetry
+        _display_steerability_asym(sorted_results, factor_levels, alpha)
 
     # Display validity warnings summary if any
     if validity_warnings:
@@ -1390,13 +1390,13 @@ def analyze_simple_nudging_experiment(
     print("=" * 80)
 
 
-def _display_steerability_bias(
+def _display_steerability_asym(
     sorted_results: List[Dict[str, Any]],
     factor_levels: List[str],
     alpha: float = DEFAULT_ALPHA,
 ) -> None:
     """
-    Compute and display steerability bias for pairwise factor level comparisons.
+    Compute and display steerability asymmetry for pairwise factor level comparisons.
 
     Args:
         sorted_results: List of result dictionaries sorted with base first
@@ -1409,7 +1409,7 @@ def _display_steerability_bias(
 
     base_result = next((r for r in sorted_results if r["target_group"] == "base"), None)
     if not base_result:
-        print("Note: Cannot compute steerability bias without base condition")
+        print("Note: Cannot compute steerability asymmetry without base condition")
         return
 
     base_stats = base_result["stats"]
@@ -1423,14 +1423,14 @@ def _display_steerability_bias(
 
     confidence_pct = int((1 - alpha) * 100)
     print("=" * 80)
-    print("STEERABILITY BIAS ANALYSIS")
+    print("STEERABILITY ASYMMETRY ANALYSIS")
     print("=" * 80)
     print()
     print(
         "Steerability measures how much nudging changes the odds ratio for each option."
     )
     print(
-        "Bias measures differential steerability (positive = more steerable toward B)."
+        "Asymmetry measures normalized differential steerability (positive = more steerable toward B)."
     )
     print(f"Bootstrap CIs computed at {confidence_pct}% confidence level.")
     print()
@@ -1486,12 +1486,12 @@ def _display_steerability_bias(
             if f_B_A is None or f_B_B is None or c_B_A is None or c_B_B is None:
                 continue
 
-            # Compute steerability bias using counts with Haldane-Anscombe correction
-            steer_A, steer_B, bias = compute_steerability_bias_from_counts(
+            # Compute steerability asymmetry using counts with Haldane-Anscombe correction
+            steer_A, steer_B, asym = compute_steerability_asym_from_counts(
                 c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
             )
 
-            # Compute bootstrap CI for bias
+            # Compute bootstrap CI for asymmetry
             bootstrap_ci = None
             base_graph = graph_data_by_target.get("base")
             nudge_A_graph = graph_data_by_target.get(level_A)
@@ -1499,7 +1499,7 @@ def _display_steerability_bias(
 
             if base_graph and nudge_A_graph and nudge_B_graph:
                 # print(f"Computing bootstrap CI for {level_A} vs {level_B}...", end=" ")
-                bootstrap_ci = bootstrap_steerability_bias(
+                bootstrap_ci = bootstrap_steerability_asym(
                     base_graph,
                     nudge_A_graph,
                     nudge_B_graph,
@@ -1565,7 +1565,7 @@ def _display_steerability_bias(
                         # Steerability metrics
                         "steerability_A": steer_A,
                         "steerability_B": steer_B,
-                        "bias": bias,
+                        "asym": asym,
                         "bootstrap_ci": bootstrap_ci,
                     }
                 )
@@ -1574,7 +1574,7 @@ def _display_steerability_bias(
 
     if not pairwise_results:
         print(
-            "Could not compute steerability bias (missing nudge conditions or near-zero frequencies)"
+            "Could not compute steerability asymmetry (missing nudge conditions or near-zero frequencies)"
         )
         print()
         return
@@ -1630,39 +1630,41 @@ def _display_steerability_bias(
         )
         print()
 
-        bias = result["bias"]
+        asym = result["asym"]
         bootstrap_ci = result.get("bootstrap_ci")
 
-        if abs(bias) < 0.05:
+        if abs(asym) < 0.05:
             interpretation = "roughly equal steerability"
-        elif bias > 0:
+        elif asym > 0:
             interpretation = f"more steerable towards {level_B}"
         else:
             interpretation = f"more steerable towards {level_A}"
 
-        # Display bias with bootstrap CI
+        # Display asymmetry with bootstrap CI
         if bootstrap_ci and bootstrap_ci.get("ci_low") is not None:
             ci_low = bootstrap_ci["ci_low"]
             ci_high = bootstrap_ci["ci_high"]
             se = bootstrap_ci["se"]
             sig_marker = "*" if bootstrap_ci["is_significant"] else ""
 
-            print(f"  Steerability Bias: {bias:+.3f}{sig_marker} ({interpretation})")
+            print(
+                f"  Steerability Asymmetry: {asym:+.3f}{sig_marker} ({interpretation})"
+            )
             print(f"  {confidence_pct}% Bootstrap CI: [{ci_low:+.3f}, {ci_high:+.3f}]")
             print(f"  Bootstrap SE: {se:.3f}")
             if bootstrap_ci["is_significant"]:
                 print(f"  * Significantly different from zero (p < {alpha})")
         else:
-            print(f"  Steerability Bias: {bias:+.3f} ({interpretation})")
+            print(f"  Steerability Asymmetry: {asym:+.3f} ({interpretation})")
             print("  Bootstrap CI: not available")
         print()
 
     # Summary table if multiple pairs
     if len(pairwise_results) > 1:
-        print("STEERABILITY BIAS SUMMARY:")
+        print("STEERABILITY ASYMMETRY SUMMARY:")
         print("-" * 90)
         print(
-            f"  {'Pair':<25s} {'s(A)':>8s} {'s(B)':>8s} {'Bias':>8s} {f'{confidence_pct}% CI':>20s} {'Sig':>5s}"
+            f"  {'Pair':<25s} {'s(A)':>8s} {'s(B)':>8s} {'Asym':>8s} {f'{confidence_pct}% CI':>20s} {'Sig':>5s}"
         )
         print(f"  {'-'*88}")
         for result in pairwise_results:
@@ -1682,22 +1684,22 @@ def _display_steerability_bias(
                 f"  {pair_name:<25s} "
                 f"{result['steerability_A']:>+8.3f} "
                 f"{result['steerability_B']:>+8.3f} "
-                f"{result['bias']:>+8.3f} "
+                f"{result['asym']:>+8.3f} "
                 f"{ci_str:>20s} "
                 f"{sig_str:>5s}"
             )
         print()
 
-    # Bias matrix for >2 factor levels
+    # Asymmetry matrix for >2 factor levels
     if len(factor_levels) > 2:
-        print("STEERABILITY BIAS MATRIX:")
+        print("STEERABILITY ASYMMETRY MATRIX:")
         print("(positive value in row A, column B means more steerable towards B)")
         print()
 
         # Build lookup for quick access
-        bias_lookup = {}
+        asym_lookup = {}
         for result in pairwise_results:
-            bias_lookup[(result["level_A"], result["level_B"])] = result["bias"]
+            asym_lookup[(result["level_A"], result["level_B"])] = result["asym"]
 
         col_width = max(len(level) for level in factor_levels) + 2
         header = " " * col_width + "".join(
@@ -1711,13 +1713,13 @@ def _display_steerability_bias(
             for level_B in factor_levels:
                 if level_A == level_B:
                     row += f"{'—':>{col_width}}"
-                elif (level_A, level_B) in bias_lookup:
-                    bias = bias_lookup[(level_A, level_B)]
-                    row += f"{bias:>+{col_width}.2f}"
-                elif (level_B, level_A) in bias_lookup:
-                    # Bias is antisymmetric
-                    bias = -bias_lookup[(level_B, level_A)]
-                    row += f"{bias:>+{col_width}.2f}"
+                elif (level_A, level_B) in asym_lookup:
+                    asym = asym_lookup[(level_A, level_B)]
+                    row += f"{asym:>+{col_width}.2f}"
+                elif (level_B, level_A) in asym_lookup:
+                    # Asymmetry is antisymmetric
+                    asym = -asym_lookup[(level_B, level_A)]
+                    row += f"{asym:>+{col_width}.2f}"
                 else:
                     row += f"{'N/A':>{col_width}}"
             print(row)

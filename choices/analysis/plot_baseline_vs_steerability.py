@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import matplotlib.pyplot as plt
 
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
+    compute_steerability_asym_from_counts,
 )
 from choices.analysis.utils import (
     compute_factor_frequencies_with_counts,
@@ -200,7 +200,7 @@ def find_nudge_result_directory(
     return None
 
 
-def compute_baseline_and_steerability_bias(
+def compute_baseline_and_steerability_asym(
     category: str,
     model: str,
     nudge_type: str,
@@ -210,7 +210,7 @@ def compute_baseline_and_steerability_bias(
     Compute baseline bias and steerability bias for a model/category/nudge combination.
 
     Returns:
-        Dictionary with 'baseline_bias' and 'steerability_bias' or None if data not available.
+        Dictionary with 'baseline_bias' and 'steerability_asym' or None if data not available.
     """
     level_A, level_B = get_factor_levels(category)
     if level_A is None:
@@ -283,16 +283,16 @@ def compute_baseline_and_steerability_bias(
     c_B_B = nudge_B_stats.get(level_B, {}).get("wins", 0)
 
     # Compute baseline bias: deviation from 50% for level_B
-    # Positive means biased towards level_B (consistent with steerability_bias)
+    # Positive means biased towards level_B (consistent with steerability_asym)
     baseline_bias = f_0_B - 0.5
 
     # Compute steerability bias using counts with Haldane-Anscombe correction
-    # Positive steerability_bias means more steerable towards B
-    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_counts(
+    # Positive steerability_asym means more steerable towards B
+    steer_A, steer_B, steerability_asym = compute_steerability_asym_from_counts(
         c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
     )
 
-    if steerability_bias is None:
+    if steerability_asym is None:
         # Find which frequencies are at the boundary (0 or 1)
         boundary_issues = []
         if f_0_A < 0.01 or f_0_A > 0.99:
@@ -321,7 +321,7 @@ def compute_baseline_and_steerability_bias(
 
     return {
         "baseline_bias": baseline_bias,
-        "steerability_bias": steerability_bias,
+        "steerability_asym": steerability_asym,
         "f_0_A": f_0_A,
         "f_0_B": f_0_B,
         "steerability_A": steer_A,
@@ -363,7 +363,7 @@ def create_scatter_plot(
 
     for results_base_dir, model, nudge_type in experiments:
         print(f"Processing: {model} / {category} / {nudge_type}")
-        result = compute_baseline_and_steerability_bias(
+        result = compute_baseline_and_steerability_asym(
             category, model, nudge_type, results_base_dir
         )
 
@@ -407,7 +407,7 @@ def create_scatter_plot(
 
         ax.scatter(
             point["baseline_bias"],
-            point["steerability_bias"],
+            point["steerability_asym"],
             c=color,
             marker=marker,
             s=150,
@@ -425,13 +425,13 @@ def create_scatter_plot(
 
     # Labels and title
     ax.set_xlabel(f"Baseline Bias (+ → {level_B})", fontsize=14)
-    ax.set_ylabel(f"Steerability Bias (+ → {level_B})", fontsize=14)
+    ax.set_ylabel(f"Steerability Asymmetry (+ → {level_B})", fontsize=14)
 
     if title:
         ax.set_title(title, fontsize=16, fontweight="bold")
     else:
         ax.set_title(
-            f"Baseline vs Steerability Bias\n(Category: {category.replace('_', ' ').title()})",
+            f"Baseline vs Steerability Asymmetry\n(Category: {category.replace('_', ' ').title()})",
             fontsize=16,
             fontweight="bold",
         )
@@ -598,7 +598,7 @@ Examples:
 
     # Discover experiments
     print("=" * 70)
-    print("Baseline Bias vs Steerability Bias Scatter Plot")
+    print("Baseline Bias vs Steerability Asymmetry Scatter Plot")
     print("=" * 70)
     print(f"Category: {args.category}")
     print(f"Results directories: {args.results_dirs}")
@@ -674,7 +674,7 @@ Examples:
                 f"{dp['reasoning_condition']:<10} "
                 f"{dp['nudge_type']:<20} "
                 f"{dp['baseline_bias']:>+12.3f} "
-                f"{dp['steerability_bias']:>+12.3f}"
+                f"{dp['steerability_asym']:>+12.3f}"
             )
 
     if not args.no_show:

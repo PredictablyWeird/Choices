@@ -39,8 +39,8 @@ from choices.analysis.nudge_effect_size import (
     load_preference_graph,
 )
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
-    wald_test_steerability_bias,
+    compute_steerability_asym_from_counts,
+    wald_test_steerability_asym,
 )
 from choices.analysis.utils import (
     get_model_color,
@@ -71,7 +71,7 @@ class DataPoint:
     steerability_B: float  # How much nudging towards B increases B's odds
     steerability_A_significant: bool  # Whether steerability_A differs from 0
     steerability_B_significant: bool  # Whether steerability_B differs from 0
-    steerability_bias: float  # MSB (steerability_B - steerability_A)
+    steerability_asym: float  # MSB (steerability_B - steerability_A)
     sign_adjusted_msb: float  # MSB adjusted so positive = same direction as baseline
     msb_significant: bool  # Whether MSB is statistically significant
     # Sample info
@@ -178,9 +178,9 @@ def test_msb_significance(
     """
     Test if MSB (steerability bias) differs significantly from 0 using Wald test.
 
-    This is a thin wrapper around wald_test_steerability_bias for backward compatibility.
+    This is a thin wrapper around wald_test_steerability_asym for backward compatibility.
     """
-    return wald_test_steerability_bias(
+    return wald_test_steerability_asym(
         c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B, msb, alpha
     )
 
@@ -473,11 +473,11 @@ def compute_data_point(
     baseline_significant = baseline_test["is_significant"]
 
     # Compute steerability bias (MSB) using counts with Haldane-Anscombe correction
-    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_counts(
+    steer_A, steer_B, steerability_asym = compute_steerability_asym_from_counts(
         c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
     )
 
-    if steerability_bias is None:
+    if steerability_asym is None:
         return None
 
     # Test significance of individual steerabilities
@@ -491,7 +491,7 @@ def compute_data_point(
 
     # Test significance of MSB
     msb_test = test_msb_significance(
-        c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B, steerability_bias
+        c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B, steerability_asym
     )
     msb_significant = msb_test["is_significant"]
 
@@ -499,9 +499,9 @@ def compute_data_point(
     # If baseline_bias > 0 (biased towards B), positive MSB means same direction
     # If baseline_bias < 0 (biased towards A), we flip MSB sign
     if baseline_bias >= 0:
-        sign_adjusted_msb = steerability_bias
+        sign_adjusted_msb = steerability_asym
     else:
-        sign_adjusted_msb = -steerability_bias
+        sign_adjusted_msb = -steerability_asym
 
     # Determine reasoning condition
     reasoning_condition = get_reasoning_condition(model, condition_dirs["base"])
@@ -520,7 +520,7 @@ def compute_data_point(
         steerability_B=steer_B,
         steerability_A_significant=steer_A_significant,
         steerability_B_significant=steer_B_significant,
-        steerability_bias=steerability_bias,
+        steerability_asym=steerability_asym,
         sign_adjusted_msb=sign_adjusted_msb,
         msb_significant=msb_significant,
         n_samples=n_0_B,
@@ -805,7 +805,7 @@ def create_scatter_plot(
         ax.set_title(title, fontsize=16, fontweight="bold")
     else:
         ax.set_title(
-            "Baseline Bias vs Steerability Bias\n(Only Significant Baseline Biases)",
+            "Baseline Bias vs Steerability Asymmetry\n(Only Significant Baseline Biases)",
             fontsize=16,
             fontweight="bold",
         )
@@ -1010,7 +1010,7 @@ Examples:
         # Average absolute value of MSB for significant cases
         if sig_msb_points:
             avg_abs_msb_sig = np.mean(
-                [abs(dp.steerability_bias) for dp in sig_msb_points]
+                [abs(dp.steerability_asym) for dp in sig_msb_points]
             )
             print(f"  Average |MSB| for significant cases: {avg_abs_msb_sig:.4f}")
         print()
@@ -1038,7 +1038,7 @@ Examples:
 
         # Percentile values of |MSB| in steps of 10%
         abs_msb_values = np.array(
-            [abs(dp.steerability_bias) for dp in nonsig_baseline_points]
+            [abs(dp.steerability_asym) for dp in nonsig_baseline_points]
         )
         percentiles = np.arange(0, 101, 10)
         percentile_values = np.percentile(abs_msb_values, percentiles)
@@ -1150,7 +1150,7 @@ Examples:
             f"{dp.factor:<12} "
             f"{dp.nudge_type:<18} "
             f"{dp.baseline_bias:>+10.3f} "
-            f"{dp.steerability_bias:>+10.3f} "
+            f"{dp.steerability_asym:>+10.3f} "
             f"{dp.sign_adjusted_msb:>+10.3f}"
         )
 

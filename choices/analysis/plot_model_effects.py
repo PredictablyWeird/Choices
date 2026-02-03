@@ -139,7 +139,7 @@ def collect_data_by_factor(
 
 def select_best_factor_per_model(
     results: List[FrequencyResult],
-    selection: str = "steer_bias",
+    selection: str = "steer_asym",
 ) -> Dict[Tuple[str, str], Tuple[str, float, Optional[float]]]:
     """
     For each (model, reasoning_condition), select the factor with the largest metric.
@@ -147,14 +147,14 @@ def select_best_factor_per_model(
     Args:
         results: List of FrequencyResult objects
         selection: Metric to use for selection:
-            - "steer_bias": abs of average steerability bias (preserves sign before abs)
-            - "abs_steer_bias": average of absolute steerability bias values
+            - "steer_asym": abs of average steerability bias (preserves sign before abs)
+            - "abs_steer_asym": average of absolute steerability bias values
             - "steerability": average of absolute steerability values
             - "effect": average of absolute effect size values
 
     Returns:
         Dictionary mapping (model, reasoning_condition) -> (best_factor, abs_value, signed_value)
-        signed_value is the original signed average for steer_bias, None for other selections
+        signed_value is the original signed average for steer_asym, None for other selections
     """
     # Group results by (model, reasoning_condition, factor)
     by_model_reason_factor: Dict[Tuple[str, str, str], List[FrequencyResult]] = (
@@ -169,12 +169,12 @@ def select_best_factor_per_model(
         Tuple[str, str, str], Tuple[float, Optional[float]]
     ] = {}
     for (model, reasoning, factor), factor_results in by_model_reason_factor.items():
-        if selection == "steer_bias":
+        if selection == "steer_asym":
             # Average steerability bias first, then take absolute value
             values = [
-                r.steerability_bias
+                r.steerability_asym
                 for r in factor_results
-                if r.steerability_bias is not None
+                if r.steerability_asym is not None
             ]
             if values:
                 avg_bias = sum(values) / len(values)
@@ -183,12 +183,12 @@ def select_best_factor_per_model(
                     avg_bias,
                 )
             continue
-        elif selection == "abs_steer_bias":
+        elif selection == "abs_steer_asym":
             # Average of absolute steerability bias values
             values = [
-                abs(r.steerability_bias)
+                abs(r.steerability_asym)
                 for r in factor_results
-                if r.steerability_bias is not None
+                if r.steerability_asym is not None
             ]
         elif selection == "steerability":
             # Average magnitude of steerability (average of A and B)
@@ -715,8 +715,8 @@ def create_multi_model_effects_plot(
             )
         else:
             selection_labels = {
-                "steer_bias": "Steerability Bias",
-                "abs_steer_bias": "|Steerability Bias|",
+                "steer_asym": "Steerability Asymmetry",
+                "abs_steer_asym": "|Steerability Asymmetry|",
                 "steerability": "Steerability",
                 "effect": "Effect Size",
             }
@@ -1719,9 +1719,9 @@ Examples:
     parser.add_argument(
         "--selection",
         type=str,
-        choices=["steer_bias", "abs_steer_bias", "steerability", "effect"],
-        default="steer_bias",
-        help="Selection metric for multi-model mode: steer_bias (default), abs_steer_bias, steerability, effect",
+        choices=["steer_asym", "abs_steer_asym", "steerability", "effect"],
+        default="steer_asym",
+        help="Selection metric for multi-model mode: steer_asym (default), abs_steer_asym, steerability, effect",
     )
 
     parser.add_argument(

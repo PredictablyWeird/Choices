@@ -320,7 +320,7 @@ def create_scatter_plot(
     figsize: Tuple[float, float] = (10, 6),
 ) -> plt.Figure:
     """
-    Create a scatter plot showing steerability bias vs baseline preference.
+    Create a scatter plot showing steerability asymmetry vs baseline preference.
     """
     if not normalized_results:
         print("No data to plot.")
@@ -329,14 +329,14 @@ def create_scatter_plot(
     baselines = np.array([r.baseline_pref for r in normalized_results])
     steer_towards = np.array([r.steerability_towards for r in normalized_results])
     steer_against = np.array([r.steerability_against for r in normalized_results])
-    steer_bias = steer_towards - steer_against
+    steer_asym = steer_towards - steer_against
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    ax.scatter(baselines, steer_bias, alpha=0.5, s=30, color="#7B68EE")
+    ax.scatter(baselines, steer_asym, alpha=0.5, s=30, color="#7B68EE")
 
     slope, intercept, r_value, p_value, std_err = stats.linregress(
-        baselines, steer_bias
+        baselines, steer_asym
     )
     x_line = np.linspace(baselines.min(), baselines.max(), 100)
     y_line = slope * x_line + intercept
@@ -408,7 +408,7 @@ def create_combined_plot(
     baselines = np.array([r.baseline_pref for r in normalized_results])
     steer_towards = np.array([r.steerability_towards for r in normalized_results])
     steer_against = np.array([r.steerability_against for r in normalized_results])
-    steer_bias = steer_towards - steer_against
+    steer_asym = steer_towards - steer_against
 
     color_towards = "#457B9D"
     color_against = "#E63946"
@@ -562,10 +562,10 @@ def create_combined_plot(
     ax1.grid(axis="y", alpha=0.3)
 
     # === Right panel: Scatter plot of bias ===
-    ax2.scatter(baselines, steer_bias, alpha=0.5, s=25, color=color_bias)
+    ax2.scatter(baselines, steer_asym, alpha=0.5, s=25, color=color_bias)
 
     slope, intercept, r_value, p_value, std_err = stats.linregress(
-        baselines, steer_bias
+        baselines, steer_asym
     )
     x_line = np.linspace(baselines.min(), baselines.max(), 100)
     y_line = slope * x_line + intercept
@@ -764,7 +764,7 @@ Examples:
     baselines = np.array([r.baseline_pref for r in normalized])
     steer_towards = np.array([r.steerability_towards for r in normalized])
     steer_against = np.array([r.steerability_against for r in normalized])
-    steer_bias = steer_towards - steer_against
+    steer_asym = steer_towards - steer_against
 
     print("Summary Statistics:")
     print("-" * 50)
@@ -781,12 +781,12 @@ Examples:
         f"std={np.std(steer_against):.3f}"
     )
     print(
-        f"  Steerability bias:   mean={np.mean(steer_bias):.3f}, "
-        f"std={np.std(steer_bias):.3f}"
+        f"  Steerability asymmetry:   mean={np.mean(steer_asym):.3f}, "
+        f"std={np.std(steer_asym):.3f}"
     )
 
-    r, p = stats.pearsonr(baselines, steer_bias)
-    print(f"  Correlation (baseline vs bias): r={r:.3f}, p={p:.3g}")
+    r, p = stats.pearsonr(baselines, steer_asym)
+    print(f"  Correlation (baseline vs asym): r={r:.3f}, p={p:.3g}")
     print()
 
     if args.plot_type == "line":

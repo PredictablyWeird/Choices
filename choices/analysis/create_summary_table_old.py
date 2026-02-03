@@ -38,7 +38,7 @@ from choices.analysis.nudge_effect_size import (
     load_preference_graph,
 )
 from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
+    compute_steerability_asym_from_counts,
 )
 from choices.analysis.utils import (
     compute_factor_frequencies_with_counts,
@@ -72,7 +72,7 @@ class ExperimentResult:
     # Steerability
     steerability_A: Optional[float]
     steerability_B: Optional[float]
-    steerability_bias: Optional[float]  # Positive = more steerable towards B
+    steerability_asym: Optional[float]  # Positive = more steerable towards B
     # Sample sizes
     n_baseline: int
     n_nudge_A: int
@@ -92,7 +92,7 @@ class AggregatedResult:
     avg_baseline_bias: float
     avg_effect_size: float  # Signed effect size (can be negative if nudges backfire)
     avg_abs_effect_size: float  # Absolute effect size (total responsiveness)
-    avg_steerability_bias: Optional[float]
+    avg_steerability_asym: Optional[float]
     # Count
     n_results: int
     n_steerability: int  # Number of results with valid steerability
@@ -169,20 +169,20 @@ def aggregate_results(
         # Absolute effect size - already computed per-experiment as (|A| + |B|) / 2
         abs_effect_sizes = [r.abs_effect_size for r in group_results]
         # Use magnitude for steerability if aggregating over factors
-        steerability_biases = [
-            abs(r.steerability_bias)
+        steerability_asymes = [
+            abs(r.steerability_asym)
             if steerability_use_magnitude
-            else r.steerability_bias
+            else r.steerability_asym
             for r in group_results
-            if r.steerability_bias is not None
+            if r.steerability_asym is not None
         ]
 
         avg_baseline = sum(baseline_biases) / len(baseline_biases)
         avg_signed_effect = sum(signed_effect_sizes) / len(signed_effect_sizes)
         avg_abs_effect = sum(abs_effect_sizes) / len(abs_effect_sizes)
         avg_steer = (
-            sum(steerability_biases) / len(steerability_biases)
-            if steerability_biases
+            sum(steerability_asymes) / len(steerability_asymes)
+            if steerability_asymes
             else None
         )
 
@@ -195,9 +195,9 @@ def aggregate_results(
                 avg_baseline_bias=avg_baseline,
                 avg_effect_size=avg_signed_effect,
                 avg_abs_effect_size=avg_abs_effect,
-                avg_steerability_bias=avg_steer,
+                avg_steerability_asym=avg_steer,
                 n_results=len(group_results),
-                n_steerability=len(steerability_biases),
+                n_steerability=len(steerability_asymes),
             )
         )
 
@@ -271,14 +271,14 @@ def format_aggregated_table(
         # Format values: use signs only for signed values, not for magnitudes
         if steerability_use_magnitude:
             steer_str = (
-                f"{r.avg_steerability_bias:.3f}"
-                if r.avg_steerability_bias is not None
+                f"{r.avg_steerability_asym:.3f}"
+                if r.avg_steerability_asym is not None
                 else "N/A"
             )
         else:
             steer_str = (
-                f"{r.avg_steerability_bias:+.3f}"
-                if r.avg_steerability_bias is not None
+                f"{r.avg_steerability_asym:+.3f}"
+                if r.avg_steerability_asym is not None
                 else "N/A"
             )
         baseline_str = (
@@ -524,7 +524,7 @@ def compute_experiment_result(
     c_B_A = nudge_B_stats.get(level_A, {}).get("wins", 0)
     c_B_B = nudge_B_stats.get(level_B, {}).get("wins", 0)
 
-    steer_A, steer_B, steerability_bias = compute_steerability_bias_from_counts(
+    steer_A, steer_B, steerability_asym = compute_steerability_asym_from_counts(
         c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
     )
 
@@ -547,7 +547,7 @@ def compute_experiment_result(
         abs_effect_size=abs_effect_size,
         steerability_A=steer_A,
         steerability_B=steer_B,
-        steerability_bias=steerability_bias,
+        steerability_asym=steerability_asym,
         n_baseline=n_baseline,
         n_nudge_A=n_nudge_A,
         n_nudge_B=n_nudge_B,
@@ -694,8 +694,8 @@ def format_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = (
-            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        steer_asym_str = (
+            f"{r.steerability_asym:+.3f}" if r.steerability_asym is not None else "N/A"
         )
         # Show factor with levels so baseline bias can be interpreted
         # Positive bias means biased towards level_B
@@ -710,7 +710,7 @@ def format_table(
                 f"{r.baseline_bias:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
                 f"{r.abs_effect_size:.3f}",
-                steer_bias_str,
+                steer_asym_str,
             ]
         )
 
@@ -775,8 +775,8 @@ def format_detailed_table(
     rows = []
     for r in results:
         model_name = get_model_display_name(r.model) if show_display_names else r.model
-        steer_bias_str = (
-            f"{r.steerability_bias:+.3f}" if r.steerability_bias is not None else "N/A"
+        steer_asym_str = (
+            f"{r.steerability_asym:+.3f}" if r.steerability_asym is not None else "N/A"
         )
         # Show factor with levels so metrics can be interpreted
         factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
@@ -794,7 +794,7 @@ def format_detailed_table(
                 f"{r.effect_size_B:+.3f}",
                 f"{r.avg_effect_size:+.3f}",
                 f"{r.abs_effect_size:.3f}",
-                steer_bias_str,
+                steer_asym_str,
                 str(r.n_baseline),
             ]
         )
@@ -858,7 +858,7 @@ def write_csv(
         "abs_effect_size",
         "steerability_A",
         "steerability_B",
-        "steerability_bias",
+        "steerability_asym",
         "n_baseline",
         "n_nudge_A",
         "n_nudge_B",
@@ -887,7 +887,7 @@ def write_csv(
                     r.abs_effect_size,
                     r.steerability_A if r.steerability_A is not None else "",
                     r.steerability_B if r.steerability_B is not None else "",
-                    r.steerability_bias if r.steerability_bias is not None else "",
+                    r.steerability_asym if r.steerability_asym is not None else "",
                     r.n_baseline,
                     r.n_nudge_A,
                     r.n_nudge_B,
@@ -1084,10 +1084,10 @@ Examples:
                 model_results
             )
             steer_results = [
-                r for r in model_results if r.steerability_bias is not None
+                r for r in model_results if r.steerability_asym is not None
             ]
             avg_steer = (
-                sum(abs(r.steerability_bias) for r in steer_results)
+                sum(abs(r.steerability_asym) for r in steer_results)
                 / len(steer_results)
                 if steer_results
                 else None
@@ -1095,10 +1095,10 @@ Examples:
         else:
             avg_bias = sum(r.baseline_bias for r in model_results) / len(model_results)
             steer_results = [
-                r for r in model_results if r.steerability_bias is not None
+                r for r in model_results if r.steerability_asym is not None
             ]
             avg_steer = (
-                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                sum(r.steerability_asym for r in steer_results) / len(steer_results)
                 if steer_results
                 else None
             )
@@ -1136,18 +1136,18 @@ Examples:
             avg_bias = sum(abs(r.baseline_bias) for r in cond_results) / len(
                 cond_results
             )
-            steer_results = [r for r in cond_results if r.steerability_bias is not None]
+            steer_results = [r for r in cond_results if r.steerability_asym is not None]
             avg_steer = (
-                sum(abs(r.steerability_bias) for r in steer_results)
+                sum(abs(r.steerability_asym) for r in steer_results)
                 / len(steer_results)
                 if steer_results
                 else None
             )
         else:
             avg_bias = sum(r.baseline_bias for r in cond_results) / len(cond_results)
-            steer_results = [r for r in cond_results if r.steerability_bias is not None]
+            steer_results = [r for r in cond_results if r.steerability_asym is not None]
             avg_steer = (
-                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                sum(r.steerability_asym for r in steer_results) / len(steer_results)
                 if steer_results
                 else None
             )
@@ -1179,10 +1179,10 @@ Examples:
                 nudge_results
             )
             steer_results = [
-                r for r in nudge_results if r.steerability_bias is not None
+                r for r in nudge_results if r.steerability_asym is not None
             ]
             avg_steer = (
-                sum(abs(r.steerability_bias) for r in steer_results)
+                sum(abs(r.steerability_asym) for r in steer_results)
                 / len(steer_results)
                 if steer_results
                 else None
@@ -1190,10 +1190,10 @@ Examples:
         else:
             avg_bias = sum(r.baseline_bias for r in nudge_results) / len(nudge_results)
             steer_results = [
-                r for r in nudge_results if r.steerability_bias is not None
+                r for r in nudge_results if r.steerability_asym is not None
             ]
             avg_steer = (
-                sum(r.steerability_bias for r in steer_results) / len(steer_results)
+                sum(r.steerability_asym for r in steer_results) / len(steer_results)
                 if steer_results
                 else None
             )
@@ -1228,9 +1228,9 @@ Examples:
         avg_abs_effect = sum(r.abs_effect_size for r in factor_results) / len(
             factor_results
         )
-        steer_results = [r for r in factor_results if r.steerability_bias is not None]
+        steer_results = [r for r in factor_results if r.steerability_asym is not None]
         avg_steer = (
-            sum(r.steerability_bias for r in steer_results) / len(steer_results)
+            sum(r.steerability_asym for r in steer_results) / len(steer_results)
             if steer_results
             else None
         )

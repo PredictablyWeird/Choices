@@ -23,7 +23,7 @@ from choices.analysis.create_exchange_rates_plots import (
     load_exchange_rates_data,
     two_way_geometric_exchange_rate,
 )
-from choices.analysis.steerability_metric import compute_steerability_bias
+from choices.analysis.steerability_metric import compute_steerability_asym
 from choices.results import ExperimentResults
 from choices.utils import find_result_files
 
@@ -494,7 +494,7 @@ def analyze_nudging_experiment(
                     rate_B_nudge_B = nudge_B_rates.get(group_B, rate_B_base)
 
                     # Pass raw rates to function - it handles the B/A conversion
-                    steer_A, steer_B, bias = compute_steerability_bias(
+                    steer_A, steer_B, asym = compute_steerability_asym(
                         rate_A_base,
                         rate_B_base,
                         rate_A_nudge_A,
@@ -513,7 +513,7 @@ def analyze_nudging_experiment(
                         pairwise_data[(group_A, group_B)] = {
                             "gain_A": gain_A,
                             "gain_B": gain_B,
-                            "bias": bias,
+                            "asym": asym,
                         }
 
             print()
@@ -523,8 +523,8 @@ def analyze_nudging_experiment(
                 print(f"    Nudge {group_B}: {group_B} value × {data['gain_B']:.2f}")
                 print()
 
-            # Display bias matrix
-            print("Bias Matrix (positive = easier to steer toward row):")
+            # Display asymmetry matrix
+            print("Asymmetry Matrix (positive = easier to steer toward row):")
             print()
 
             # Build matrix
@@ -539,11 +539,11 @@ def analyze_nudging_experiment(
                     if group_A == group_B:
                         row += f"{'—':>{col_width}}"
                     elif (group_A, group_B) in pairwise_data:
-                        bias = -pairwise_data[(group_A, group_B)]["bias"]
-                        row += f"{bias:>+{col_width}.2f}"
+                        asym = -pairwise_data[(group_A, group_B)]["asym"]
+                        row += f"{asym:>+{col_width}.2f}"
                     elif (group_B, group_A) in pairwise_data:
-                        bias = pairwise_data[(group_B, group_A)]["bias"]
-                        row += f"{bias:>+{col_width}.2f}"
+                        asym = pairwise_data[(group_B, group_A)]["asym"]
+                        row += f"{asym:>+{col_width}.2f}"
                     else:
                         row += f"{'N/A':>{col_width}}"
                 print(row)
