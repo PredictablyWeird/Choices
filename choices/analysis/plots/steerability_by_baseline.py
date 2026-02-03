@@ -47,7 +47,7 @@ from choices.analysis.create_summary import (
     FrequencyResult,
     compute_all_results,
 )
-from choices.analysis.metrics import freq_to_log_odds
+from choices.analysis.metrics import compute_normalized_asym, freq_to_log_odds
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
@@ -330,7 +330,15 @@ def create_scatter_plot(
     baselines = np.array([r.baseline_pref for r in normalized_results])
     steer_towards = np.array([r.steerability_towards for r in normalized_results])
     steer_against = np.array([r.steerability_against for r in normalized_results])
-    steer_asym = steer_towards - steer_against
+    # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
+    # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
+    # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
+    steer_asym = np.array(
+        [
+            compute_normalized_asym(sa, st)
+            for st, sa in zip(steer_towards, steer_against)
+        ]
+    )
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -409,7 +417,15 @@ def create_combined_plot(
     baselines = np.array([r.baseline_pref for r in normalized_results])
     steer_towards = np.array([r.steerability_towards for r in normalized_results])
     steer_against = np.array([r.steerability_against for r in normalized_results])
-    steer_asym = steer_towards - steer_against
+    # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
+    # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
+    # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
+    steer_asym = np.array(
+        [
+            compute_normalized_asym(sa, st)
+            for st, sa in zip(steer_towards, steer_against)
+        ]
+    )
 
     color_towards = "#457B9D"
     color_against = "#E63946"
@@ -473,7 +489,7 @@ def create_combined_plot(
             color=color_towards,
             linewidth=2,
             markersize=8,
-            label="Nudge towards pref.",
+            label="Influence towards pref.",
         )
         ax1.plot(
             bin_centers,
@@ -482,7 +498,7 @@ def create_combined_plot(
             color=color_against,
             linewidth=2,
             markersize=8,
-            label="Nudge against pref.",
+            label="Influence against pref.",
         )
 
         for i, (x, n) in enumerate(zip(bin_centers, n_per_bin)):
@@ -768,7 +784,15 @@ Examples:
     baselines = np.array([r.baseline_pref for r in normalized])
     steer_towards = np.array([r.steerability_towards for r in normalized])
     steer_against = np.array([r.steerability_against for r in normalized])
-    steer_asym = steer_towards - steer_against
+    # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
+    # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
+    # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
+    steer_asym = np.array(
+        [
+            compute_normalized_asym(sa, st)
+            for st, sa in zip(steer_towards, steer_against)
+        ]
+    )
 
     print("Summary Statistics:")
     print("-" * 50)

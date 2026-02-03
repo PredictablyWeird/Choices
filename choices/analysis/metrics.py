@@ -272,11 +272,34 @@ def compute_steerability_asym_from_counts(
     steerability_B = math.log(r_B_B) - math.log(r_0_B)
 
     # Asymmetry: normalized difference, positive means more steerable towards B
-    asym = (steerability_B - steerability_A) / (
-        abs(steerability_A) + abs(steerability_B) + eps
-    )
+    asym = compute_normalized_asym(steerability_A, steerability_B, eps)
 
     return steerability_A, steerability_B, asym
+
+
+def compute_normalized_asym(
+    steerability_A: float,
+    steerability_B: float,
+    eps: float = 0.01,
+) -> float:
+    """
+    Compute normalized steerability asymmetry from two steerability values.
+
+    Asymmetry = (s(B) - s(A)) / (|s(A)| + |s(B)| + eps)
+
+    Args:
+        steerability_A: Steerability towards option A
+        steerability_B: Steerability towards option B
+        eps: Small constant to prevent division by zero (default 0.01)
+
+    Returns:
+        Normalized asymmetry in approximately [-1, 1].
+        Positive = more steerable towards B.
+        Negative = more steerable towards A.
+    """
+    return (steerability_B - steerability_A) / (
+        abs(steerability_A) + abs(steerability_B) + eps
+    )
 
 
 def wald_test_steerability_asym(
