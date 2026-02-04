@@ -112,7 +112,6 @@ def create_nonsig_analysis_plot(
         The matplotlib Figure object
     """
     from matplotlib.patches import Patch
-    from matplotlib.lines import Line2D
 
     if not normalized_results:
         print("No data to plot.")
@@ -209,38 +208,14 @@ def create_nonsig_analysis_plot(
                 facecolor="white",
                 edgecolor="black",
                 hatch="///",
-                label=f"Sig. asymmetry ({pct_sig_asym:.1f}%)",
+                label=f"Significant ({pct_sig_asym:.1f}%)",
             ),
             Patch(
                 facecolor="white",
                 edgecolor="black",
-                label=f"Non-sig. ({pct_nonsig_asym:.1f}%)",
+                label=f"Non-significant ({pct_nonsig_asym:.1f}%)",
             ),
         ]
-
-        # Add mean/median to legend if showing
-        if show_line == "mean":
-            legend_elements.append(
-                Line2D(
-                    [0],
-                    [0],
-                    color="#D55E00",
-                    linestyle="--",
-                    linewidth=2.5,
-                    label="Mean",
-                )
-            )
-        elif show_line == "median":
-            legend_elements.append(
-                Line2D(
-                    [0],
-                    [0],
-                    color="#0072B2",
-                    linestyle="--",
-                    linewidth=2.5,
-                    label="Median",
-                )
-            )
 
         ax.legend(
             handles=legend_elements, loc="upper right", fontsize=9, framealpha=0.9
@@ -280,48 +255,37 @@ def create_nonsig_analysis_plot(
                 facecolor="white",
                 edgecolor="black",
                 hatch="///",
-                label=f"Sig. asymmetry ({pct_sig_asym:.1f}%)",
+                label=f"Significant ({pct_sig_asym:.1f}%)",
             ),
             Patch(
                 facecolor="white",
                 edgecolor="black",
-                label=f"Non-sig. ({pct_nonsig_asym:.1f}%)",
+                label=f"Non-significant ({pct_nonsig_asym:.1f}%)",
             ),
         ]
-
-        # Add mean/median to legend if showing
-        if show_line == "mean":
-            legend_elements.append(
-                Line2D(
-                    [0],
-                    [0],
-                    color="#D55E00",
-                    linestyle="--",
-                    linewidth=2.5,
-                    label="Mean",
-                )
-            )
-        elif show_line == "median":
-            legend_elements.append(
-                Line2D(
-                    [0],
-                    [0],
-                    color="#0072B2",
-                    linestyle="--",
-                    linewidth=2.5,
-                    label="Median",
-                )
-            )
 
         ax.legend(
             handles=legend_elements, loc="upper right", fontsize=9, framealpha=0.9
         )
 
-    # Add mean or median line (legend entry handled above)
-    if show_line == "mean":
-        mean_val = np.mean(all_abs_biases)
-        ax.axvline(mean_val, color="#D55E00", linestyle="--", linewidth=2.5)
-    elif show_line == "median":
+    # Always show mean line with text annotation
+    mean_val = np.mean(all_abs_biases)
+    ax.axvline(mean_val, color="#D55E00", linestyle="--", linewidth=2.5)
+    # Add bold orange text showing mean value
+    y_max = ax.get_ylim()[1]
+    ax.text(
+        mean_val + 0.02,
+        y_max * 0.95,
+        f"Mean: {mean_val:.2f}",
+        color="#D55E00",
+        fontsize=10,
+        fontweight="bold",
+        va="top",
+        ha="left",
+    )
+
+    # Optionally also show median line if requested
+    if show_line == "median":
         median_val = np.median(all_abs_biases)
         ax.axvline(median_val, color="#0072B2", linestyle="--", linewidth=2.5)
 
