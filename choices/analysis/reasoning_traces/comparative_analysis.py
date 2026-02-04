@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze differences between two sets of reasoning traces using an LLM.
+Comparative analysis of reasoning traces using an LLM.
 
 This script takes a JSON file containing paired reasoning traces (from two conditions)
 and uses an LLM to analyze what's different between them.
@@ -9,13 +9,13 @@ The analysis is done one edge at a time, comparing traces from condition A vs co
 without revealing the experimental context to avoid biasing the analysis.
 
 Usage:
-    uv run python -m choices.analysis.reasoning_traces.analyze_trace_differences \
+    uv run python -m choices.analysis.reasoning_traces.comparative_analysis \
         --input backfire_cases.json \
         --output analysis_results.json \
         --num-samples 50
 
     # Estimate cost first
-    uv run python -m choices.analysis.reasoning_traces.analyze_trace_differences \
+    uv run python -m choices.analysis.reasoning_traces.comparative_analysis \
         --input backfire_cases.json \
         --estimate-cost
 """
