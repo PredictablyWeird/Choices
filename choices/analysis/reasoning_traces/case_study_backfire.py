@@ -350,6 +350,93 @@ def print_sample_cases(
 
 
 # =============================================================================
+# Save Results
+# =============================================================================
+
+
+def save_results(
+    cases: List[BackfireCase],
+    paired_traces: List[PairedTraces],
+    output_path: str,
+    metadata: dict,
+):
+    """
+    Save cases and traces to JSON for later analysis.
+
+    Args:
+        cases: List of BackfireCase objects
+        paired_traces: List of PairedTraces objects (parallel to cases)
+        output_path: Path to save JSON file
+        metadata: Metadata about the run (model, filters, etc.)
+    """
+    import json
+    from datetime import datetime
+
+    data = {
+        "metadata": {
+            **metadata,
+            "saved_at": datetime.now().isoformat(),
+            "n_cases": len(cases),
+        },
+        "cases": [],
+    }
+
+    for case, pair in zip(cases, paired_traces):
+        case_data = {
+            # Edge identification
+            "edge_key": case.edge.edge_key,
+            # Experiment metadata
+            "model": case.edge.model,
+            "factor": case.edge.factor,
+            "nudge_type": case.edge.nudge_type,
+            "level_A": case.edge.level_A,
+            "level_B": case.edge.level_B,
+            # Option info
+            "option_a_label": case.edge.option_a_label,
+            "option_b_label": case.edge.option_b_label,
+            "option_a_n": case.edge.option_a_n,
+            "option_b_n": case.edge.option_b_n,
+            # Cross-condition frequencies
+            "f_0_A": case.edge.f_0_A,
+            "f_A_A": case.edge.f_A_A,
+            "f_B_A": case.edge.f_B_A,
+            # Backfire info
+            "nudged_option": case.nudged_option,
+            "preferred_option": case.preferred_option,
+            "baseline_freq": case.baseline_freq,
+            "nudged_freq": case.nudged_freq,
+            "effect_magnitude": case.effect_magnitude,
+            "nudged_n": case.nudged_n,
+            "other_n": case.other_n,
+            # Traces - condition A is baseline, condition B is nudged
+            "condition_a_name": "baseline",
+            "condition_b_name": f"nudged_towards_{case.nudged_option}",
+            "condition_a_traces": [
+                {
+                    "choice": t.choice,
+                    "reasoning": t.reasoning,
+                    "is_flipped": t.is_flipped,
+                }
+                for t in pair.baseline_traces
+            ],
+            "condition_b_traces": [
+                {
+                    "choice": t.choice,
+                    "reasoning": t.reasoning,
+                    "is_flipped": t.is_flipped,
+                }
+                for t in pair.nudged_traces
+            ],
+        }
+        data["cases"].append(case_data)
+
+    with open(output_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+    print(f"\nSaved {len(cases)} cases to {output_path}")
+
+
+# =============================================================================
 # Main Pipeline
 # =============================================================================
 
@@ -362,6 +449,7 @@ def run_case_study(
     factors: Optional[List[str]] = None,
     nudge_types: Optional[List[str]] = None,
     show_samples: int = 5,
+    output: Optional[str] = None,
 ) -> Tuple[List[BackfireCase], List[PairedTraces], dict]:
     """
     Run the backfire case study.
@@ -374,6 +462,7 @@ def run_case_study(
         factors: Optional list of factors to include
         nudge_types: Optional list of nudge types to include
         show_samples: Number of sample cases to print (0 to skip)
+        output: Optional path to save results JSON
 
     Returns:
         Tuple of (cases, paired_traces, statistics)
@@ -411,6 +500,18 @@ def run_case_study(
     # Step 5: Print sample cases
     if show_samples > 0 and paired_traces:
         print_sample_cases(paired_traces, n_samples=show_samples)
+
+    # Step 6: Save results if output specified
+    if output:
+        metadata = {
+            "model": model,
+            "results_dirs": results_dirs,
+            "min_effect": min_effect,
+            "min_n_diff": min_n_diff,
+            "factors": factors,
+            "nudge_types": nudge_types,
+        }
+        save_results(cases, paired_traces, output, metadata)
 
     return cases, paired_traces, stats
 
@@ -466,6 +567,13 @@ def main():
         default=5,
         help="Number of sample cases to show (default: 5, 0 to skip)",
     )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Save results to JSON file for further analysis",
+    )
 
     args = parser.parse_args()
 
@@ -477,6 +585,7 @@ def main():
         factors=args.factors,
         nudge_types=args.nudge_types,
         show_samples=args.show_samples,
+        output=args.output,
     )
 
 
