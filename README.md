@@ -7,7 +7,9 @@ Framework for running preference elicitation experiments.
 - Clone the repo
 - Run `uv sync --dev`
 - Install pre-commit hooks with `uv run pre-commit install`
+- `cp .env.example .env` and add your API keys to the '.env' file
 
+---
 
 ## Creating Experiments
 
@@ -167,112 +169,115 @@ experiment = Experiment(
 - `choices/experiments/exchange_rates.py` — Multi-variable experiments
 - `choices/experiments/medical_triage.py` — Custom prompts and subclassing
 
+---
+
+## Reproducing Paper Results
+
+This section contains instructions for reproducing the results from the paper "Moral Preferences Under Influence."
+
+### Running Experiments
+
+- Create a batch config file with `uv run python -m choices.experiments.nudging.batch generate-config > config.yaml`
+- Modify the batch config:
+  - Increase `max_requests` for full experiments
+  - Change model selection
+  - You can set `reasoning` to "before" to instruct models to reason before deciding (applies to all models in the batch)
+- Run experiments with `uv run python -m choices.experiments.nudging.batch run --config config.yaml`
+
+### Creating Plots
+
+Assuming you have raw results (as output from the batch script) in the folder `results/`, plots from the main body of the paper are generated as follows:
+
+- Fig. 2: `uv run python -m choices.analysis.plots.model_effects --factor wealth --results-dirs results --reasoning off none`
+- Fig. 3 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
+- Fig. 3 (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
+- Figs. 4 and 5: `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning`
+- Fig. 6: `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
+- Fig. 7: `uv run python -m choices.analysis.surface_form.analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
+  - Note: For this plot you need to also run "_baseline" and "_negation" versions of experiments and put these results into `results_surface/`
+
+For appendix plots:
+
+- Fig. 8 (a): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions none off --significance --no-title`
+- Fig. 8 (b): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions before low --significance --no-title`
+- Fig. 9 (steerability in dependence of baseline bias): `uv run python -m choices.analysis.plots.steerability_by_baseline --results-dirs results --reasoning-conditions none off low before --sig-baseline-only`
+- Fig. 10 (negation results): Use `choices/analysis/surface_form/negation.py`
+- Figs. 11-18: Script `choices/analysis/reasoning_traces/plots.py`
+
+### Table Data
+
+- Table 1 (statistics by influence type for GPT5.2):
+  - `uv run python -m choices.analysis.create_summary --results-dirs results --models gpt-5-2-non-reasoning`
+  - `uv run python -m choices.analysis.create_summary --results-dirs results --models gpt-5-2-reasoning`
+- Table 3-6 (aggregate statistics): `uv run python -m choices.analysis.create_summary --results-dirs results`
+- Table 7 (conditions with maximal steerability asymmetry for GPT5.2): See table output by `uv run python -m choices.analysis.create_summary --results-dirs results --models gpt-5-2-reasoning gpt-5-2-non-reasoning --sort abs-steer_bias --reverse`
+- Table 8 (no-information baseline): TODO
+- Table 10 (negation): TODO
+
+### Results From the Paper
+
+In `data/`, you find summary files of our results. Note that the raw results files are larger and not included in the repo, but using instructions above you can create raw result files of the same format to use for plots.
+
+---
+
 ## Analysis Scripts
 
-Run analysis scripts in `choices/analysis/` on your results:
-
-### Exchange Rate Plots
-
-For experiments with a categorical factor and numerical variable (e.g., N people of different genders):
-
-```bash
-python choices/analysis/create_exchange_rates_plots.py \
-    results/my_experiment/gpt-4o-mini/20251124_120000 \
-    --factor gender \
-    --canonical_x male
-```
-
-Creates bar charts showing exchange rates (e.g., "1 male = 1.5 females").
+These scripts can be used for general analysis of experiment results:
 
 ### Predictive Analysis
 
 Identify which factors drive decisions using logistic regression:
 
 ```bash
-python choices/analysis/predictive_analysis.py \
+uv run python choices/analysis/predictive_analysis.py \
     results/my_experiment/gpt-4o-mini/20251124_120000
 ```
 
 Extracts all pairwise comparisons and fits a model to determine which variables significantly affect choices. Use `--output comparisons.jsonl` to save extracted data.
 
-## Nudging Experiments
+### Exchange Rate Analysis
 
-TODO Update this part.
+Scripts in `choices/analysis/exchange_rates/`:
+- `analyze.py` - Exchange rate computation and value steerability analysis
+- `plots.py` - Exchange rate visualization utilities
+
+### Other Analysis Scripts
+
+**Individual Result Analysis:**
+- `analyze_simple_nudging_results.py` - Detailed analysis of a single simple_nudging experiment (balance, validity, preference stats, steerability asymmetry with bootstrap CIs)
+- `analyze_simple_rates.py` - AMCE analysis for a single simple_rates experiment
+
+**Reasoning Trace Analysis (`reasoning_traces/`):**
+- `reasoning_traces/classify.py` - LLM-based classification of reasoning traces
+- `reasoning_traces/analyze.py` - Analyze classification results
+
+**Data Quality & Diagnostics:**
+- `analyze_invalid_responses.py` - Analyze invalid response rates across experiments
+
+**Other Analysis Tools:**
+- `get_backfiring_rates.py` - Compute backfiring rates stratified by baseline preference
+
+**Helper Modules (used by other scripts):**
+- `utils.py` - Shared utilities (result loading, balance checking, statistical tests, model colors, etc.)
+- `metrics.py` - Steerability asymmetry and nudge effect size calculations
+
+---
+
+## Nudging Experiments
 
 Nudging experiments test how different prompts or instructions affect model preferences. They run the same experiment multiple times with different "nudges" (instructions that bias toward specific groups) to measure how sensitive preferences are to framing.
 
-### Running Nudging Experiments
-
-Nudging experiments are run using `choices/experiments/nudging.py`. They require a base configuration from `choices/config/prompt_configs.yaml`:
-
-```bash
-# Run with a predefined nudge type
-python choices/experiments/nudging.py \
-    --config gender_illness_hospital \
-    --nudge always_save \
-    --model gpt-4o-mini
-
-# Use a different nudge type
-python choices/experiments/nudging.py \
-    --config gender_illness_hospital \
-    --nudge survey_preference \
-    --model gpt-4o-mini
-```
-
-**Available nudge types:**
-- `survey_preference`: "In a recent survey, people preferred saving X over Y."
-- `always_save`: "Always prioritize saving X."
-- `moral_imperative`: "It is morally imperative to prioritize saving X."
-- `expert_recommendation`: "Medical ethics experts recommend prioritizing saving X."
-- `social_norm`: "Social norms suggest that saving X should be prioritized."
-- `custom`: Use your own text (requires `--nudge_text`)
-- *Note that these are all AI-generated and should be revised!*
-
-**Additional options:**
-- `--utility_config`: Utility model config key (default: `thurstonian_active_learning_k5`)
-- `--reasoning`: Reasoning mode - `none`, `before`, or `after` (default: `none`)
-
-**How it works:**
-1. Runs a baseline experiment (no nudge)
-2. Runs the experiment once for each group in the factor, with the nudge targeting that group
-3. Results are saved to: `results/{config_name}/{model}/{nudge_type}/{timestamp}_{target_group}/`
-
-### Analyzing Nudging Experiments
-
-After running nudging experiments, analyze the results to see how nudges affected preferences:
-
-```bash
-python choices/analysis/analyze_nudging_results.py \
-    --config gender_illness_hospital \
-    --model gpt-4o-mini \
-    --nudge always_save
-```
-
-This script:
-- Loads results from all nudging conditions (base + each target group)
-- Computes exchange rates for each condition
-- Compares exchange rates across conditions to measure nudge effectiveness
-- Prints summary statistics and comparisons
-
-**Optional arguments:**
-- `--results_dir`: Base directory for results (default: `results`)
-- `--canonical_group`: Group to use as reference for exchange rates (default: first group alphabetically)
-
-The analysis shows how much preferences shifted when different groups were targeted by the nudge, helping identify which nudges are most effective and which groups are most sensitive to framing effects.
-
-## Simple Nudging Experiments
-
-A simplified version of nudging experiments using binary factors and random edge sampling (no active learning). Useful for quick experiments with straightforward analysis.
+> **Note:** For reproducing paper results, use the batch config approach described in "Reproducing Paper Results" above.
 
 ### Running Simple Nudging Experiments
 
 ```bash
 # List available factors and nudge types
-python choices/experiments/simple_nudging.py --list-factors
-python choices/experiments/simple_nudging.py --list-nudges
+uv run python -m choices.experiments.nudging.simple --list-factors
+uv run python -m choices.experiments.nudging.simple --list-nudges
 
 # Run experiment
-python choices/experiments/simple_nudging.py \
+uv run python -m choices.experiments.nudging.simple \
     --factor gender \
     --nudge always_save \
     --model gpt-4o-mini
@@ -282,10 +287,30 @@ You can also modify the number of requests done in each condition via command li
 
 Results are saved to: `results/simple_{factor}/{model}/{nudge_type}/{timestamp}_{target_group}/`
 
+**Available nudge types** (grouped by influence mechanism):
+
+*Evidence-based* — provide information as justification:
+- `survey_preference`, `weak_evidence`, `strong_evidence`, `expert_recommendation`
+
+*Pressure-based* — apply social or emotional pressure without epistemic justification:
+- `emotional`, `identity`, `user_preference`, `social_norm`
+
+*Direct instruction* — explicit directives:
+- `always_save`, `moral_imperative`
+
+*Other*:
+- `few_shot_N`: In-context learning with N examples (e.g., `few_shot_3`)
+- `custom`: Use your own text (requires `--nudge_text`)
+
+Additionally, `*_baseline` and `*_negation` variants exist for control experiments (see `templates.py`).
+
+**Additional options:**
+- `--reasoning`: Reasoning mode - `none`, `before`, or `after` (default: `none`)
+
 ### Analyzing Simple Nudging Results
 
 ```bash
-python choices/analysis/analyze_simple_nudging_results.py \
+uv run python choices/analysis/analyze_simple_nudging_results.py \
     --factor gender \
     --model gpt-4o-mini \
     --nudge always_save
@@ -296,6 +321,16 @@ The analysis shows:
 - Larger N preference (how often saving more people is preferred)
 - Nudge effects (change from baseline)
 - Nudge effectiveness summary
+
+---
+
+## Notes on Terminology
+
+The codebase previously used the term "nudge" to refer to contextual influence. Some result files may still use this older terminology.
+
+Additionally, some older result files may use "steerability bias" or "steer_bias" instead of "steerability asymmetry". The analysis scripts handle these aliases automatically.
+
+---
 
 ## Origin
 

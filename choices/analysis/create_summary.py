@@ -32,11 +32,11 @@ Usage:
     uv run python -m choices.analysis.create_summary --baseline-sig not-sig  # only unbiased baselines
 
     # Sort by a specific column (ascending by default)
-    uv run python -m choices.analysis.create_summary --sort steer_bias
+    uv run python -m choices.analysis.create_summary --sort steer_asym
     uv run python -m choices.analysis.create_summary --sort abs_effect --reverse
 
     # Sort by absolute value (prefix column with "abs-")
-    uv run python -m choices.analysis.create_summary --sort abs-steer_bias --reverse
+    uv run python -m choices.analysis.create_summary --sort abs-steer_asym --reverse
 
     # Output to CSV
     uv run python -m choices.analysis.create_summary --output summary.csv
@@ -51,24 +51,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from choices.analysis.analyze_simple_nudging_results import (
-    binomial_test_vs_half,
-    two_proportion_z_test,
-)
-from choices.analysis.nudge_effect_size import (
+from choices.analysis.metrics import (
+    compute_steerability_asym_from_counts,
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
     load_preference_graph,
-)
-from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
-    wald_test_steerability_bias,
+    wald_test_steerability_asym,
 )
 from choices.analysis.utils import (
+    binomial_test_vs_half,
     get_base_model_name,
     get_model_display_name,
     get_reasoning_condition,
     get_reasoning_mode_from_results,
+    two_proportion_z_test,
 )
 
 # Default significance level (95% confidence)
@@ -107,9 +103,18 @@ COLUMN_TO_ATTR = {
     "|steer|": "abs_steerability",
     "abs_steer": "abs_steerability",
     "abs_steerability": "abs_steerability",
-    "steer bias": "steerability_bias",
-    "steer_bias": "steerability_bias",
-    "steerability_bias": "steerability_bias",
+    "asym": "steerability_asym",
+    "steer asym": "steerability_asym",
+    "steer_asym": "steerability_asym",
+    "steerability_asym": "steerability_asym",
+    "n-asym": "normalized_steerability_asym",
+    "n_asym": "normalized_steerability_asym",
+    "normalized_asym": "normalized_steerability_asym",
+    "normalized_steerability_asym": "normalized_steerability_asym",
+    # Legacy aliases for backward compatibility
+    "steer bias": "normalized_steerability_asym",
+    "steer_bias": "normalized_steerability_asym",
+    "steerability_bias": "normalized_steerability_asym",
     "n_comparisons": "n_comparisons",
 }
 
@@ -188,7 +193,10 @@ class FrequencyResult:
     steerability_B: Optional[float]  # Steerability towards B
     avg_steerability: Optional[float]  # Average of steerability_A and steerability_B
     abs_steerability: Optional[float]  # (|Steer(A)| + |Steer(B)|) / 2
-    steerability_bias: Optional[float]  # steerability_B - steerability_A
+    steerability_asym: Optional[float]  # s(B) - s(A), non-normalized
+    normalized_steerability_asym: Optional[
+        float
+    ]  # (s(B) - s(A)) / (|s(A)| + |s(B)| + eps), normalized
     # Backfire metrics (nudge decreases frequency of target option)
     backfire_A: bool  # True if f_A(A) < f_0(A) (nudging towards A decreased A)
     backfire_B: bool  # True if f_B(B) < f_0(B) (nudging towards B decreased B)
@@ -197,8 +205,8 @@ class FrequencyResult:
     sig_B: bool  # True if f_B(B) differs significantly from f_0(B)
     # Baseline significance (binomial test vs 0.5)
     sig_baseline_B: bool  # True if f_0(B) differs significantly from 0.5
-    # Steerability bias significance (bootstrap CI excludes 0)
-    sig_bias: bool  # True if steerability bias differs significantly from 0
+    # Steerability asymmetry significance (Wald test)
+    sig_asym: bool  # True if steerability asymmetry differs significantly from 0
     # Sample info
     n_comparisons: int  # Number of pairwise comparisons
     invalid_pct: float  # Percentage of invalid responses
@@ -503,24 +511,27 @@ def _compute_single_frequency_result(
     sig_baseline_B = test_baseline_B["is_significant"]
 
     # Compute steerability metrics using counts (with Haldane-Anscombe correction)
-    steerability_A, steerability_B, steerability_bias = (
-        compute_steerability_bias_from_counts(c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B)
+    steerability_A, steerability_B, steerability_asym, normalized_steerability_asym = (
+        compute_steerability_asym_from_counts(c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B)
     )
 
-    # Test steerability bias significance using Wald test (fast analytical approach)
-    sig_bias = False
-    if steerability_bias is not None:
-        wald_result = wald_test_steerability_bias(
+    # Test steerability asymmetry significance using Wald test (fast analytical approach)
+    # Note: The Wald test uses the non-normalized asymmetry (s(B) - s(A)) because
+    # the variance formula is derived for the raw difference, not the normalized form.
+    # Testing whether s(B) - s(A) ≠ 0 is equivalent to testing whether N-Asym ≠ 0.
+    sig_asym = False
+    if steerability_asym is not None:
+        wald_result = wald_test_steerability_asym(
             c_0_A,
             c_0_B,
             c_A_A,
             c_A_B,
             c_B_A,
             c_B_B,
-            steerability_bias,
+            steerability_asym,
             alpha=DEFAULT_ALPHA,
         )
-        sig_bias = wald_result.get("is_significant", False)
+        sig_asym = wald_result.get("is_significant", False)
 
     # Compute average steerability (signed)
     avg_steerability = None
@@ -569,13 +580,14 @@ def _compute_single_frequency_result(
         steerability_B=steerability_B,
         avg_steerability=avg_steerability,
         abs_steerability=abs_steerability,
-        steerability_bias=steerability_bias,
+        steerability_asym=steerability_asym,
+        normalized_steerability_asym=normalized_steerability_asym,
         backfire_A=backfire_A,
         backfire_B=backfire_B,
         sig_A=sig_A,
         sig_B=sig_B,
         sig_baseline_B=sig_baseline_B,
-        sig_bias=sig_bias,
+        sig_asym=sig_asym,
         n_comparisons=n_comparisons,
         invalid_pct=invalid_pct,
     )
@@ -726,7 +738,8 @@ TABLE_COLUMNS = [
     ("Steer(B)", "steer_b"),
     ("Avg Steer", "avg_steer"),
     ("|Steer|", "abs_steer"),
-    ("Steer Bias", "steer_bias"),
+    ("Asym", "asym"),
+    ("N-Asym", "n_asym"),
     ("Backfire", "backfire"),
 ]
 
@@ -788,9 +801,16 @@ def format_table(
             if r.abs_steerability is not None
             else "N/A"
         )
-        steer_bias_str = (
-            f"{r.steerability_bias:+.{decimals}f}{'*' if r.sig_bias else ''}"
-            if r.steerability_bias is not None
+        asym_str = (
+            f"{r.steerability_asym:+.{decimals}f}{'*' if r.sig_asym else ''}"
+            if r.steerability_asym is not None
+            else "N/A"
+        )
+        # N-Asym doesn't have its own significance test - the Wald test variance
+        # formula is for the simple difference, not the normalized ratio
+        n_asym_str = (
+            f"{r.normalized_steerability_asym:+.{decimals}f}"
+            if r.normalized_steerability_asym is not None
             else "N/A"
         )
         factor_with_levels = f"{r.level_A}/{r.level_B}"
@@ -823,7 +843,8 @@ def format_table(
             "steer_b": steer_B_str,
             "avg_steer": avg_steer_str,
             "abs_steer": abs_steer_str,
-            "steer_bias": steer_bias_str,
+            "asym": asym_str,
+            "n_asym": n_asym_str,
             "backfire": backfire_str,
         }
 
@@ -883,13 +904,14 @@ def write_csv(
         "steerability_B",
         "avg_steerability",
         "abs_steerability",
-        "steerability_bias",
+        "steerability_asym",
+        "normalized_steerability_asym",
         "backfire_A",
         "backfire_B",
         "sig_A",
         "sig_B",
         "sig_baseline_B",
-        "sig_bias",
+        "sig_asym",
     ]
 
     with open(output_path, "w", newline="") as f:
@@ -917,13 +939,16 @@ def write_csv(
                     r.steerability_B if r.steerability_B is not None else "",
                     r.avg_steerability if r.avg_steerability is not None else "",
                     r.abs_steerability if r.abs_steerability is not None else "",
-                    r.steerability_bias if r.steerability_bias is not None else "",
+                    r.steerability_asym if r.steerability_asym is not None else "",
+                    r.normalized_steerability_asym
+                    if r.normalized_steerability_asym is not None
+                    else "",
                     r.backfire_A,
                     r.backfire_B,
                     r.sig_A,
                     r.sig_B,
                     r.sig_baseline_B,
-                    r.sig_bias,
+                    r.sig_asym,
                 ]
             )
 
@@ -953,8 +978,8 @@ Examples:
     python create_frequency_table.py --reasoning none before after
 
     # Sort by a column (use abs- prefix for absolute value sorting)
-    python create_frequency_table.py --sort steer_bias
-    python create_frequency_table.py --sort abs-steer_bias --reverse
+    python create_frequency_table.py --sort steer_asym
+    python create_frequency_table.py --sort abs-steer_asym --reverse
 
     # Output to CSV
     python create_frequency_table.py --output frequencies.csv
@@ -1028,10 +1053,10 @@ Examples:
         type=str,
         default=None,
         help="Column to sort by. Prefix with 'abs-' to sort by absolute value "
-        "(e.g., 'steer_bias', 'abs-steer_bias', 'abs_effect'). "
+        "(e.g., 'steer_asym', 'abs-steer_asym', 'abs_effect'). "
         "Valid columns: model, reasoning, factor, nudge_type, invalid_pct, "
         "f_0_B, f_A_B, f_B_B, avg_f_B, abs_effect, steerability_A, steerability_B, "
-        "avg_steerability, abs_steerability, steerability_bias",
+        "avg_steerability, abs_steerability, steerability_asym",
     )
 
     parser.add_argument(
@@ -1167,7 +1192,9 @@ Examples:
     ) -> Tuple[
         Optional[float],
         Optional[float],
-        Optional[Tuple[float, float]],  # CI for avg_bias
+        Optional[Tuple[float, float]],  # CI for avg_asym (non-normalized)
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_n_asym (normalized)
         float,
         Optional[float],
         float,
@@ -1177,9 +1204,13 @@ Examples:
         Optional[Tuple[float, float]],  # CI for base_bias
     ]:
         """
-        Returns (avg_steer, avg_bias, avg_bias_ci, avg_effect, avg_abs_steer,
-                 sig_rate, sig_backfire_rate, backfire_rate, base_bias, base_bias_ci).
-        - avg_bias_ci: (ci_low, ci_high) for |steer_bias|
+        Returns (avg_steer, avg_asym, avg_asym_ci, avg_n_asym, avg_n_asym_ci,
+                 avg_effect, avg_abs_steer, sig_rate, sig_backfire_rate, backfire_rate,
+                 base_bias, base_bias_ci).
+        - avg_asym: mean of |asym| (non-normalized)
+        - avg_asym_ci: (ci_low, ci_high) for |asym|
+        - avg_n_asym: mean of |n-asym| (normalized)
+        - avg_n_asym_ci: (ci_low, ci_high) for |n-asym|
         - sig_rate: fraction of nudges with significant change
         - sig_backfire_rate: fraction of significant nudges that backfired (as % of sig cases)
         - backfire_rate: fraction of nudges that backfired (regardless of significance)
@@ -1187,7 +1218,10 @@ Examples:
         - base_bias_ci: (ci_low, ci_high) for base_bias
         """
         steer_results = [r for r in result_list if r.avg_steerability is not None]
-        bias_results = [r for r in result_list if r.steerability_bias is not None]
+        asym_results = [r for r in result_list if r.steerability_asym is not None]
+        n_asym_results = [
+            r for r in result_list if r.normalized_steerability_asym is not None
+        ]
         abs_steer_results = [r for r in result_list if r.abs_steerability is not None]
         avg_steer = (
             sum(r.avg_steerability for r in steer_results) / len(steer_results)
@@ -1195,13 +1229,23 @@ Examples:
             else None
         )
 
-        # Compute avg_bias with CI
-        avg_bias = None
-        avg_bias_ci = None
-        if bias_results:
-            abs_bias_values = [abs(r.steerability_bias) for r in bias_results]
-            avg_bias, ci_low, ci_high = compute_ci(abs_bias_values)
-            avg_bias_ci = (ci_low, ci_high)
+        # Compute avg_asym with CI (non-normalized)
+        avg_asym = None
+        avg_asym_ci = None
+        if asym_results:
+            abs_asym_values = [abs(r.steerability_asym) for r in asym_results]
+            avg_asym, ci_low, ci_high = compute_ci(abs_asym_values)
+            avg_asym_ci = (ci_low, ci_high)
+
+        # Compute avg_n_asym with CI (normalized)
+        avg_n_asym = None
+        avg_n_asym_ci = None
+        if n_asym_results:
+            abs_n_asym_values = [
+                abs(r.normalized_steerability_asym) for r in n_asym_results
+            ]
+            avg_n_asym, ci_low, ci_high = compute_ci(abs_n_asym_values)
+            avg_n_asym_ci = (ci_low, ci_high)
 
         avg_effect = (
             sum(r.abs_effect for r in result_list) / len(result_list)
@@ -1246,8 +1290,10 @@ Examples:
 
         return (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1269,8 +1315,10 @@ Examples:
         n_factors = len(set(r.factor for r in model_results))
         (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1308,14 +1356,19 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1327,15 +1380,20 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # By reasoning condition
@@ -1349,8 +1407,10 @@ Examples:
         n_factors = len(set(r.factor for r in reasoning_results))
         (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1382,14 +1442,19 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1401,15 +1466,20 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # Combined reasoning condition groups
@@ -1426,8 +1496,10 @@ Examples:
         n_factors = len(set(r.factor for r in combo_results))
         (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1459,14 +1531,19 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {combo_name}: n={len(combo_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1478,15 +1555,20 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {combo_name}: n={len(combo_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # By factor (single factor by definition)
@@ -1499,8 +1581,10 @@ Examples:
         avg_f_B_B = sum(r.f_B_B for r in factor_results) / len(factor_results)
         (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1523,26 +1607,31 @@ Examples:
             if avg_steer is not None
             else "avg_steer=N/A"
         )
-        # Compute raw (non-absolute) steerability bias for factors
-        bias_results_factor = [
-            r for r in factor_results if r.steerability_bias is not None
+        # Compute raw (non-absolute) steerability asymmetry for factors
+        asym_results_factor = [
+            r for r in factor_results if r.steerability_asym is not None
         ]
-        raw_avg_bias = (
-            sum(r.steerability_bias for r in bias_results_factor)
-            / len(bias_results_factor)
-            if bias_results_factor
+        raw_avg_asym = (
+            sum(r.steerability_asym for r in asym_results_factor)
+            / len(asym_results_factor)
+            if asym_results_factor
             else None
         )
-        raw_bias_str = (
-            f"steer_bias={raw_avg_bias:.{decimals}f}"
-            if raw_avg_bias is not None
-            else "steer_bias=N/A"
+        raw_asym_str = (
+            f"asym={raw_avg_asym:.{decimals}f}"
+            if raw_avg_asym is not None
+            else "asym=N/A"
         )
-        # Format |steer_bias| with CI
-        if avg_bias is not None and avg_bias_ci is not None:
-            abs_bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+        # Format |asym| with CI (non-normalized)
+        if avg_asym is not None and avg_asym_ci is not None:
+            abs_asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
         else:
-            abs_bias_str = "|steer_bias|=N/A"
+            abs_asym_str = "|asym|=N/A"
+        # Format |n-asym| with CI (normalized)
+        if avg_n_asym is not None and avg_n_asym_ci is not None:
+            abs_n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+        else:
+            abs_n_asym_str = "|n-asym|=N/A"
         # Format base_bias with CI
         if base_bias is not None and base_bias_ci is not None:
             base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
@@ -1576,7 +1665,7 @@ Examples:
         print(
             f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_bias_str}, {abs_bias_str}, {base_bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
+            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_asym_str}, {abs_asym_str}, {abs_n_asym_str}, {base_bias_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
         )
 
     # By nudge type
@@ -1587,8 +1676,10 @@ Examples:
         n_factors = len(set(r.factor for r in nudge_results))
         (
             avg_steer,
-            avg_bias,
-            avg_bias_ci,
+            avg_asym,
+            avg_asym_ci,
+            avg_n_asym,
+            avg_n_asym_ci,
             avg_effect,
             avg_abs_steer,
             sig_rate,
@@ -1620,14 +1711,19 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1639,22 +1735,29 @@ Examples:
                 if avg_steer is not None
                 else "avg_steer=N/A"
             )
-            # Format |steer_bias| with CI
-            if avg_bias is not None and avg_bias_ci is not None:
-                bias_str = f"|steer_bias|={avg_bias:.{decimals}f} ({avg_bias_ci[0]:.{decimals}f}, {avg_bias_ci[1]:.{decimals}f})"
+            # Format |asym| with CI (non-normalized)
+            if avg_asym is not None and avg_asym_ci is not None:
+                asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
             else:
-                bias_str = "|steer_bias|=N/A"
+                asym_str = "|asym|=N/A"
+            # Format |n-asym| with CI (normalized)
+            if avg_n_asym is not None and avg_n_asym_ci is not None:
+                n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+            else:
+                n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {bias_str}, {base_bias_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {sig_str}, {backfire_str}"
             )
 
     # Overall statistics
     (
         overall_avg_steer,
-        overall_avg_bias,
-        overall_avg_bias_ci,
+        overall_avg_asym,
+        overall_avg_asym_ci,
+        overall_avg_n_asym,
+        overall_avg_n_asym_ci,
         overall_avg_effect,
         overall_avg_abs_steer,
         overall_sig_rate,
@@ -1678,11 +1781,15 @@ Examples:
         if overall_avg_steer is not None
         else "avg_steer=N/A"
     )
-    if overall_avg_bias is not None and overall_avg_bias_ci is not None:
-        bias_str = f"|steer_bias|={overall_avg_bias:.{decimals}f} ({overall_avg_bias_ci[0]:.{decimals}f}, {overall_avg_bias_ci[1]:.{decimals}f})"
+    if overall_avg_asym is not None and overall_avg_asym_ci is not None:
+        asym_str = f"|asym|={overall_avg_asym:.{decimals}f} ({overall_avg_asym_ci[0]:.{decimals}f}, {overall_avg_asym_ci[1]:.{decimals}f})"
     else:
-        bias_str = "|steer_bias|=N/A"
-    print(f"  {effect_str}, {abs_steer_str}, {avg_steer_str}, {bias_str}")
+        asym_str = "|asym|=N/A"
+    if overall_avg_n_asym is not None and overall_avg_n_asym_ci is not None:
+        n_asym_str = f"|n-asym|={overall_avg_n_asym:.{decimals}f} ({overall_avg_n_asym_ci[0]:.{decimals}f}, {overall_avg_n_asym_ci[1]:.{decimals}f})"
+    else:
+        n_asym_str = "|n-asym|=N/A"
+    print(f"  {effect_str}, {abs_steer_str}, {avg_steer_str}, {asym_str}, {n_asym_str}")
 
     # Significance statistics
     total_sig = sum(int(r.sig_A) + int(r.sig_B) for r in results)

@@ -79,7 +79,8 @@ from choices.analysis.create_summary import (
     compute_all_results,
     discover_experiments,
 )
-from choices.analysis.steerability_metric import freq_to_log_odds
+from choices.analysis.metrics import freq_to_log_odds
+from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
 def transform_data_to_log_odds(
@@ -105,7 +106,7 @@ def transform_data_to_log_odds(
             # Preserve significance data
             "sig_A": factor_data.get("sig_A", []),
             "sig_B": factor_data.get("sig_B", []),
-            "sig_bias": factor_data.get("sig_bias", []),
+            "sig_asym": factor_data.get("sig_asym", []),
         }
     return transformed
 
@@ -151,7 +152,7 @@ def transform_data_to_relative(
             # Preserve significance data
             "sig_A": factor_data.get("sig_A", []),
             "sig_B": factor_data.get("sig_B", []),
-            "sig_bias": factor_data.get("sig_bias", []),
+            "sig_asym": factor_data.get("sig_asym", []),
         }
     return transformed
 
@@ -171,7 +172,7 @@ def collect_data_by_factor(
             'level_B': name of level B (e.g., 'rich'),
             'sig_A': list of significance flags for nudge towards A,
             'sig_B': list of significance flags for nudge towards B,
-            'sig_bias': list of significance flags for steerability bias,
+            'sig_asym': list of significance flags for steerability asymmetry,
         }
     """
     data_by_factor: Dict[str, Dict[str, any]] = defaultdict(
@@ -183,7 +184,7 @@ def collect_data_by_factor(
             "level_B": None,
             "sig_A": [],
             "sig_B": [],
-            "sig_bias": [],
+            "sig_asym": [],
         }
     )
 
@@ -193,7 +194,7 @@ def collect_data_by_factor(
         data_by_factor[r.factor]["f_0_B"].append(r.f_0_B)
         data_by_factor[r.factor]["sig_A"].append(r.sig_A)
         data_by_factor[r.factor]["sig_B"].append(r.sig_B)
-        data_by_factor[r.factor]["sig_bias"].append(r.sig_bias)
+        data_by_factor[r.factor]["sig_asym"].append(r.sig_asym)
         # Store level names (they should be consistent within a factor)
         if data_by_factor[r.factor]["level_A"] is None:
             data_by_factor[r.factor]["level_A"] = r.level_A
@@ -208,7 +209,7 @@ def normalize_direction(
     f_0_B: float,
     sig_A: bool = False,
     sig_B: bool = False,
-    sig_bias: bool = False,
+    sig_asym: bool = False,
 ) -> Tuple[float, float, float, bool, bool, bool]:
     """
     Normalize frequencies so that A corresponds to the less-preferred option at baseline.
@@ -229,18 +230,18 @@ def normalize_direction(
         f_0_B: Baseline frequency of choosing B
         sig_A: Significance flag for nudge towards A
         sig_B: Significance flag for nudge towards B
-        sig_bias: Significance flag for steerability bias
+        sig_asym: Significance flag for steerability asymmetry
 
     Returns:
         Tuple of (normalized_f_A_B, normalized_f_B_B, normalized_f_0_B,
-                  normalized_sig_A, normalized_sig_B, sig_bias)
+                  normalized_sig_A, normalized_sig_B, sig_asym)
     """
     if f_0_B >= 0.5:
         # B is already the preferred option, no change needed
-        return f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias
+        return f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym
     else:
         # A is preferred, swap labels (also swap significance flags)
-        return 1 - f_B_B, 1 - f_A_B, 1 - f_0_B, sig_B, sig_A, sig_bias
+        return 1 - f_B_B, 1 - f_A_B, 1 - f_0_B, sig_B, sig_A, sig_asym
 
 
 def collect_data_by_model(
@@ -262,7 +263,7 @@ def collect_data_by_model(
             'level_B': None (not applicable for model grouping),
             'sig_A': list of significance flags for nudge towards A,
             'sig_B': list of significance flags for nudge towards B,
-            'sig_bias': list of significance flags for steerability bias,
+            'sig_asym': list of significance flags for steerability asymmetry,
         }
     """
     from choices.analysis.utils import get_model_display_name
@@ -276,14 +277,14 @@ def collect_data_by_model(
             "level_B": None,
             "sig_A": [],
             "sig_B": [],
-            "sig_bias": [],
+            "sig_asym": [],
         }
     )
 
     for r in results:
         # Normalize direction so A is always the less-preferred option
-        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias = normalize_direction(
-            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_bias
+        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym = normalize_direction(
+            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_asym
         )
 
         # Include reasoning condition in key to separate different conditions
@@ -293,7 +294,7 @@ def collect_data_by_model(
         data_by_model[model_key]["f_B_B"].append(f_B_B)
         data_by_model[model_key]["sig_A"].append(sig_A)
         data_by_model[model_key]["sig_B"].append(sig_B)
-        data_by_model[model_key]["sig_bias"].append(sig_bias)
+        data_by_model[model_key]["sig_asym"].append(sig_asym)
         data_by_model[model_key]["f_0_B"].append(f_0_B)
 
     return dict(data_by_model)
@@ -317,7 +318,7 @@ def collect_data_by_nudge_type(
             'level_B': None (not applicable for nudge type grouping),
             'sig_A': list of significance flags for nudge towards A,
             'sig_B': list of significance flags for nudge towards B,
-            'sig_bias': list of significance flags for steerability bias,
+            'sig_asym': list of significance flags for steerability asymmetry,
         }
     """
     from choices.analysis.utils import get_nudge_display_name
@@ -331,14 +332,14 @@ def collect_data_by_nudge_type(
             "level_B": None,
             "sig_A": [],
             "sig_B": [],
-            "sig_bias": [],
+            "sig_asym": [],
         }
     )
 
     for r in results:
         # Normalize direction so A is always the less-preferred option
-        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias = normalize_direction(
-            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_bias
+        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym = normalize_direction(
+            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_asym
         )
 
         # Format nudge type for display using shortened names from utils
@@ -348,7 +349,7 @@ def collect_data_by_nudge_type(
         data_by_nudge[nudge_key]["f_0_B"].append(f_0_B)
         data_by_nudge[nudge_key]["sig_A"].append(sig_A)
         data_by_nudge[nudge_key]["sig_B"].append(sig_B)
-        data_by_nudge[nudge_key]["sig_bias"].append(sig_bias)
+        data_by_nudge[nudge_key]["sig_asym"].append(sig_asym)
 
     return dict(data_by_nudge)
 
@@ -379,7 +380,7 @@ def collect_data_by_baseline_bin(
             'level_B': None (not applicable for baseline grouping),
             'sig_A': list of significance flags for nudge towards A,
             'sig_B': list of significance flags for nudge towards B,
-            'sig_bias': list of significance flags for steerability bias,
+            'sig_asym': list of significance flags for steerability asymmetry,
         }
     """
     import numpy as np
@@ -387,10 +388,10 @@ def collect_data_by_baseline_bin(
     # First pass: normalize all data to compute quantile-based bin edges
     normalized_data = []
     for r in results:
-        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias = normalize_direction(
-            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_bias
+        f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym = normalize_direction(
+            r.f_A_B, r.f_B_B, r.f_0_B, r.sig_A, r.sig_B, r.sig_asym
         )
-        normalized_data.append((f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias))
+        normalized_data.append((f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym))
 
     all_f_0_B = np.array([d[2] for d in normalized_data])
 
@@ -427,12 +428,12 @@ def collect_data_by_baseline_bin(
             "level_B": None,
             "sig_A": [],
             "sig_B": [],
-            "sig_bias": [],
+            "sig_asym": [],
             "_bin_index": i,  # For sorting
         }
 
     # Second pass: assign each result to a bin
-    for f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_bias in normalized_data:
+    for f_A_B, f_B_B, f_0_B, sig_A, sig_B, sig_asym in normalized_data:
         # Find which bin this belongs to
         bin_idx = np.searchsorted(bin_edges[1:], f_0_B, side="right")
         bin_idx = min(bin_idx, actual_n_bins - 1)  # Clamp to last bin
@@ -450,7 +451,7 @@ def collect_data_by_baseline_bin(
         data_by_bin[bin_label]["f_0_B"].append(f_0_B)
         data_by_bin[bin_label]["sig_A"].append(sig_A)
         data_by_bin[bin_label]["sig_B"].append(sig_B)
-        data_by_bin[bin_label]["sig_bias"].append(sig_bias)
+        data_by_bin[bin_label]["sig_asym"].append(sig_asym)
 
     # Remove empty bins (shouldn't happen with quantile-based edges, but just in case)
     non_empty = {k: v for k, v in data_by_bin.items() if len(v["f_A_B"]) > 0}
@@ -510,7 +511,7 @@ def create_steerability_violin_plot(
     percentiles: bool = False,
     relative: bool = False,
     row_type: str = "factors",
-    show_bias: bool = False,
+    show_asym: bool = False,
     show_significance: bool = False,
     single_model: bool = False,
     no_title: bool = False,
@@ -531,7 +532,7 @@ def create_steerability_violin_plot(
         percentiles: If True, show median and 25/75 percentiles instead of mean
         relative: If True, values are relative to baseline
         row_type: Type of rows - "factors", "models", or "nudges"
-        show_bias: If True, add a column showing steerability bias as violin plot
+        show_asym: If True, add a column showing steerability asymmetry as violin plot
         show_significance: If True, color non-significant points in grey
         single_model: If True, only show baseline average (not range) since data is from one model
         no_title: If True, suppress the plot title
@@ -550,7 +551,7 @@ def create_steerability_violin_plot(
     height = figsize[1] if figsize[1] else max(4, n_rows * 1.5)
 
     # Create figure with optional bias column
-    if show_bias:
+    if show_asym:
         # Use gridspec for width ratio: violin plot gets 3 parts, bias gets 1 part
         fig, (ax, ax_bias) = plt.subplots(
             1,
@@ -945,7 +946,7 @@ def create_steerability_violin_plot(
 
             # Right label (level B - towards which nudging increases f(B))
             # Skip right label if bias column is shown (would overlap)
-            if not show_bias:
+            if not show_asym:
                 ax.text(
                     x_max + label_offset,
                     y_pos,
@@ -971,18 +972,18 @@ def create_steerability_violin_plot(
                 clip_on=False,
             )
 
-    # Draw steerability bias column if enabled
-    if show_bias and ax_bias is not None:
-        # Compute steerability bias for each row
+    # Draw steerability asymmetry column if enabled
+    if show_asym and ax_bias is not None:
+        # Compute steerability asymmetry for each row
         # steerability_A = ln(odds(A|nudge_A)) - ln(odds(A|baseline))
         # steerability_B = ln(odds(B|nudge_B)) - ln(odds(B|baseline))
         # bias = steerability_B - steerability_A
         # Positive bias = more steerable towards B (right side of violin)
 
-        def compute_steerability_bias_from_freq(
+        def compute_steerability_asym_from_freq(
             f_A_B: float, f_B_B: float, f_0_B: float
         ) -> float:
-            """Compute steerability bias from frequency data."""
+            """Compute steerability asymmetry from frequency data."""
             # Convert to frequencies of A
             f_A_A = 1.0 - f_A_B  # freq of A when nudged towards A
             f_0_A = 1.0 - f_0_B  # baseline freq of A
@@ -997,10 +998,10 @@ def create_steerability_violin_plot(
             # Bias = differential steerability
             return steerability_B - steerability_A
 
-        def compute_steerability_bias_from_log_odds(
+        def compute_steerability_asym_from_log_odds(
             lo_A_B: float, lo_B_B: float, lo_0_B: float
         ) -> float:
-            """Compute steerability bias from log odds data.
+            """Compute steerability asymmetry from log odds data.
 
             When data is in log odds space (ln(odds of B)):
             - steerability_A = log_odds(A|nudge_A) - log_odds(A|baseline)
@@ -1013,10 +1014,10 @@ def create_steerability_violin_plot(
             steerability_B = lo_B_B - lo_0_B
             return steerability_B - steerability_A
 
-        def compute_steerability_bias_from_relative(
+        def compute_steerability_asym_from_relative(
             rel_A_B: float, rel_B_B: float
         ) -> float:
-            """Compute steerability bias from relative log odds data.
+            """Compute steerability asymmetry from relative log odds data.
 
             When data is relative to baseline (baseline = 0):
             - rel_A_B = log_odds(B|nudge_A) - log_odds(B|baseline)
@@ -1027,32 +1028,32 @@ def create_steerability_violin_plot(
             return rel_B_B + rel_A_B
 
         # Compute bias values for each row and collect all values for axis limits
-        bias_by_row = {}
-        sig_bias_by_row = {}
-        all_bias_values = []
+        asym_by_row = {}
+        sig_asym_by_row = {}
+        all_asym_values = []
         for row_key in rows:
             rd = data_by_row[row_key]
             if relative:
-                bias_values = [
-                    compute_steerability_bias_from_relative(f_A, f_B)
+                asym_values = [
+                    compute_steerability_asym_from_relative(f_A, f_B)
                     for f_A, f_B in zip(rd["f_A_B"], rd["f_B_B"])
                 ]
             elif log_odds:
-                bias_values = [
-                    compute_steerability_bias_from_log_odds(f_A, f_B, f_0)
+                asym_values = [
+                    compute_steerability_asym_from_log_odds(f_A, f_B, f_0)
                     for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
                 ]
             else:
-                bias_values = [
-                    compute_steerability_bias_from_freq(f_A, f_B, f_0)
+                asym_values = [
+                    compute_steerability_asym_from_freq(f_A, f_B, f_0)
                     for f_A, f_B, f_0 in zip(rd["f_A_B"], rd["f_B_B"], rd["f_0_B"])
                 ]
-            bias_by_row[row_key] = bias_values
-            sig_bias_by_row[row_key] = rd.get("sig_bias", [])
-            all_bias_values.extend(bias_values)
+            asym_by_row[row_key] = asym_values
+            sig_asym_by_row[row_key] = rd.get("sig_asym", [])
+            all_asym_values.extend(asym_values)
 
         # Determine x-axis limits with padding
-        all_bias = np.array(all_bias_values)
+        all_bias = np.array(all_asym_values)
         bias_min, bias_max = np.min(all_bias), np.max(all_bias)
         bias_range = bias_max - bias_min if bias_max != bias_min else 0.1
         bias_padding = bias_range * 0.1
@@ -1063,14 +1064,14 @@ def create_steerability_violin_plot(
 
         # Draw violin and scatter for each row
         for i, row_key in enumerate(rows):
-            bias_values = bias_by_row[row_key]
-            sig_bias_flags = sig_bias_by_row[row_key]
+            asym_values = asym_by_row[row_key]
+            sig_asym_flags = sig_asym_by_row[row_key]
             y_pos = y_positions[i]
 
             # Draw violin if enough data points
-            if len(bias_values) >= 2:
+            if len(asym_values) >= 2:
                 parts = ax_bias.violinplot(
-                    [bias_values],
+                    [asym_values],
                     positions=[y_pos],
                     vert=False,
                     showmeans=False,
@@ -1084,15 +1085,15 @@ def create_steerability_violin_plot(
                     pc.set_alpha(0.3)
 
             # Draw scatter points with jitter
-            n_points = len(bias_values)
+            n_points = len(asym_values)
             jitter = np.random.uniform(-0.2, 0.2, n_points)
-            if show_significance and sig_bias_flags:
+            if show_significance and sig_asym_flags:
                 # Color by significance: grey for non-significant
                 colors_bias = [
-                    bias_color if sig else color_nonsig for sig in sig_bias_flags
+                    bias_color if sig else color_nonsig for sig in sig_asym_flags
                 ]
                 ax_bias.scatter(
-                    bias_values,
+                    asym_values,
                     y_pos + jitter,
                     c=colors_bias,
                     alpha=0.7,
@@ -1103,7 +1104,7 @@ def create_steerability_violin_plot(
                 )
             else:
                 ax_bias.scatter(
-                    bias_values,
+                    asym_values,
                     y_pos + jitter,
                     color=bias_color,
                     alpha=0.7,
@@ -1114,7 +1115,7 @@ def create_steerability_violin_plot(
                 )
 
             # Add mean marker
-            mean_bias = np.mean(bias_values)
+            mean_bias = np.mean(asym_values)
             ax_bias.scatter(
                 [mean_bias],
                 [y_pos],
@@ -1133,7 +1134,7 @@ def create_steerability_violin_plot(
         ax_bias.invert_yaxis()
 
         # Steerability bias is always in log odds space
-        ax_bias.set_xlabel("Steerability Bias\n(Δ Log Odds)", fontsize=12)
+        ax_bias.set_xlabel("Steerability Asymmetry\n(Normalized)", fontsize=12)
 
         # Style bias axis
         ax_bias.spines["top"].set_visible(False)
@@ -1253,7 +1254,7 @@ def create_steerability_violin_plot(
     ax.invert_yaxis()
 
     # Adjust margins to make room for option labels on left and right
-    if show_bias:
+    if show_asym:
         # With bias column, we need different margins and more space between plots
         plt.subplots_adjust(left=0.10, right=0.98, wspace=0.15)
         plt.tight_layout(rect=[0.06, 0, 1.0, 1])
@@ -1392,7 +1393,7 @@ Examples:
     parser.add_argument(
         "--bias",
         action="store_true",
-        help="Add a column showing steerability bias distribution as violin plot with data points",
+        help="Add a column showing steerability asymmetry distribution as violin plot with data points",
     )
 
     parser.add_argument(
@@ -1413,7 +1414,7 @@ Examples:
     if args.output:
         output_path = args.output
     else:
-        output_path = f"steerability_violins_{args.rows}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/steerability_violins_{args.rows}.pdf"
 
     # Force log odds and relative mode for model/nudge rows (but not baseline)
     use_log_odds = args.log_odds
@@ -1445,7 +1446,7 @@ Examples:
     print(f"Space: {'Log Odds' if use_log_odds else 'Frequency'}")
     print(f"Relative: {'Yes' if use_relative else 'No'}")
     print(f"Statistics: {'Median + IQR' if args.percentiles else 'Mean'}")
-    print(f"Bias column: {'Yes' if args.bias else 'No'}")
+    print(f"Asym column: {'Yes' if args.asym else 'No'}")
     print(f"Significance: {'Yes' if args.significance else 'No'}")
     print(f"Output: {output_path}")
     print("=" * 70)
@@ -1556,7 +1557,7 @@ Examples:
         percentiles=args.percentiles,
         relative=use_relative,
         row_type=args.rows,
-        show_bias=args.bias,
+        show_asym=args.asym,
         show_significance=args.significance,
         single_model=is_single_model,
         no_title=args.no_title,

@@ -13,15 +13,19 @@ Usage:
 
 import argparse
 import json
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy import stats
 
-from choices.analysis.steerability_metric import (
-    compute_steerability_bias_from_counts,
+from choices.analysis.metrics import (
+    compute_steerability_asym_from_counts,
+)
+from choices.analysis.utils import (
+    binomial_test_vs_half,
+    check_balance,
+    load_results,
+    two_proportion_z_test,
 )
 
 # Default significance level (95% confidence)
@@ -29,104 +33,6 @@ DEFAULT_ALPHA = 0.05
 
 # Threshold for warning about invalid responses (1%)
 INVALID_RESPONSE_WARNING_THRESHOLD = 0.01
-
-
-def binomial_test_vs_half(
-    successes: int,
-    n: int,
-    alpha: float = DEFAULT_ALPHA,
-) -> Dict[str, Any]:
-    """
-    Test if a proportion differs significantly from 0.5 using exact binomial test.
-
-    Args:
-        successes: Number of successes (wins)
-        n: Total number of trials
-        alpha: Significance level (default 0.05)
-
-    Returns:
-        Dictionary with p_value, ci_low, ci_high, and is_significant
-    """
-    if n <= 0:
-        return {
-            "p_value": 1.0,
-            "ci_low": 0.0,
-            "ci_high": 1.0,
-            "is_significant": False,
-        }
-
-    result = stats.binomtest(successes, n, p=0.5, alternative="two-sided")
-    ci = result.proportion_ci(confidence_level=1 - alpha)
-
-    return {
-        "p_value": result.pvalue,
-        "ci_low": ci.low,
-        "ci_high": ci.high,
-        "is_significant": result.pvalue < alpha,
-    }
-
-
-def two_proportion_z_test(
-    p1: float,
-    n1: int,
-    p2: float,
-    n2: int,
-    alpha: float = DEFAULT_ALPHA,
-) -> Dict[str, Any]:
-    """
-    Test if two proportions differ significantly using two-proportion z-test.
-
-    This is the standard test for comparing proportions in academic publications.
-
-    Args:
-        p1: First proportion (e.g., base condition)
-        n1: Sample size for first proportion
-        p2: Second proportion (e.g., nudged condition)
-        n2: Sample size for second proportion
-        alpha: Significance level (default 0.05)
-
-    Returns:
-        Dictionary with z_stat, p_value, diff, ci_low, ci_high, and is_significant
-    """
-    if n1 <= 0 or n2 <= 0:
-        return {
-            "z_stat": 0.0,
-            "p_value": 1.0,
-            "diff": 0.0,
-            "ci_low": 0.0,
-            "ci_high": 0.0,
-            "is_significant": False,
-        }
-
-    # Pooled proportion under H0: p1 = p2
-    p_pooled = (p1 * n1 + p2 * n2) / (n1 + n2)
-
-    # Standard error under H0
-    se_pooled = np.sqrt(p_pooled * (1 - p_pooled) * (1 / n1 + 1 / n2))
-
-    # Z statistic
-    if se_pooled > 0:
-        z_stat = (p2 - p1) / se_pooled
-        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
-    else:
-        z_stat = 0.0
-        p_value = 1.0
-
-    # Confidence interval for the difference (using unpooled SE)
-    se_diff = np.sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2)
-    z_crit = stats.norm.ppf(1 - alpha / 2)
-    diff = p2 - p1
-    ci_low = diff - z_crit * se_diff
-    ci_high = diff + z_crit * se_diff
-
-    return {
-        "z_stat": z_stat,
-        "p_value": p_value,
-        "diff": diff,
-        "ci_low": ci_low,
-        "ci_high": ci_high,
-        "is_significant": p_value < alpha,
-    }
 
 
 def compute_factor_frequencies_from_edges(
@@ -201,7 +107,7 @@ def compute_factor_frequencies_from_edges(
     return level_stats
 
 
-def bootstrap_steerability_bias(
+def bootstrap_steerability_asym(
     base_graph_data: Dict[str, Any],
     nudge_A_graph_data: Dict[str, Any],
     nudge_B_graph_data: Dict[str, Any],
@@ -213,10 +119,10 @@ def bootstrap_steerability_bias(
     random_seed: Optional[int] = 42,
 ) -> Dict[str, Any]:
     """
-    Compute bootstrap confidence intervals for steerability bias.
+    Compute bootstrap confidence intervals for steerability asymmetry.
 
     Resamples responses within each edge to generate a distribution of
-    steerability bias estimates.
+    steerability asymmetry estimates.
 
     Args:
         base_graph_data: Graph data for base (no nudge) condition
@@ -340,37 +246,38 @@ def bootstrap_steerability_bias(
         }
 
     # Bootstrap
-    biases = []
+    asyms = []
     for _ in range(n_bootstrap):
         # Resample each condition
         c_0_A, c_0_B = compute_counts_from_edge_list(base_edges, resample=True)
         c_A_A, c_A_B = compute_counts_from_edge_list(nudge_A_edges, resample=True)
         c_B_A, c_B_B = compute_counts_from_edge_list(nudge_B_edges, resample=True)
 
-        # Compute steerability bias using counts with Haldane-Anscombe correction
-        _, _, bias = compute_steerability_bias_from_counts(
+        # Compute steerability asymmetry using counts with Haldane-Anscombe correction
+        # Use non-normalized asymmetry (3rd element) for bootstrap CI
+        _, _, asym, _ = compute_steerability_asym_from_counts(
             c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
         )
 
-        if bias is not None:
-            biases.append(bias)
+        if asym is not None:
+            asyms.append(asym)
 
-    if len(biases) < n_bootstrap * 0.5:
+    if len(asyms) < n_bootstrap * 0.5:
         # Too many failed bootstrap iterations
         return {
             "ci_low": None,
             "ci_high": None,
             "se": None,
             "is_significant": False,
-            "n_bootstrap": len(biases),
+            "n_bootstrap": len(asyms),
         }
 
     # Compute percentile CI
     lower_percentile = (alpha / 2) * 100
     upper_percentile = (1 - alpha / 2) * 100
-    ci_low = np.percentile(biases, lower_percentile)
-    ci_high = np.percentile(biases, upper_percentile)
-    se = np.std(biases)
+    ci_low = np.percentile(asyms, lower_percentile)
+    ci_high = np.percentile(asyms, upper_percentile)
+    se = np.std(asyms)
 
     # Significant if CI excludes 0
     is_significant = ci_low > 0 or ci_high < 0
@@ -380,7 +287,7 @@ def bootstrap_steerability_bias(
         "ci_high": ci_high,
         "se": se,
         "is_significant": is_significant,
-        "n_bootstrap": len(biases),
+        "n_bootstrap": len(asyms),
     }
 
 
@@ -561,165 +468,6 @@ def find_nudging_result_directories(
             print()
 
     return sorted(result_dirs, key=lambda x: x[1] or "")
-
-
-def load_results(results_dir: str) -> Dict[str, Any]:
-    """
-    Load results from a simple_nudging experiment directory.
-
-    Args:
-        results_dir: Path to results directory
-
-    Returns:
-        Dictionary with loaded data
-    """
-    results_path = Path(results_dir)
-
-    # Find preference graph file
-    graph_files = list(results_path.glob("preference_graph_*.json"))
-    if not graph_files:
-        raise FileNotFoundError(f"No preference_graph file found in {results_dir}")
-
-    with open(graph_files[0], "r") as f:
-        graph_data = json.load(f)
-
-    # Also load utility model if available
-    utility_files = list(results_path.glob("utility_model_*.json"))
-    utility_data = None
-    if utility_files:
-        with open(utility_files[0], "r") as f:
-            utility_data = json.load(f)
-
-    return {
-        "graph": graph_data,
-        "utilities": utility_data,
-        "results_dir": results_dir,
-    }
-
-
-def check_balance(
-    options: List[Dict],
-    edges: Dict[str, Dict],
-    variables: List[Dict],
-) -> Dict[str, Any]:
-    """
-    Check if the experiment is balanced.
-
-    For a balanced design:
-    - Each option should appear in approximately equal numbers of comparisons
-    - For each N value, it should be paired with each factor level equally often
-      (e.g., N=1 appears with male and female the same number of times)
-
-    Args:
-        options: List of option dictionaries
-        edges: Dictionary of edges
-        variables: List of variable definitions
-
-    Returns:
-        Dictionary with balance statistics
-    """
-    # Build option lookup
-    options_by_id = {opt["id"]: opt for opt in options}
-
-    # Count appearances per option
-    option_counts = defaultdict(int)
-    for edge_key in edges.keys():
-        try:
-            ids = eval(edge_key)
-            if isinstance(ids, tuple):
-                option_counts[ids[0]] += 1
-                option_counts[ids[1]] += 1
-        except Exception:
-            parts = edge_key.strip("()").split(",")
-            if len(parts) == 2:
-                option_counts[int(parts[0].strip())] += 1
-                option_counts[int(parts[1].strip())] += 1
-
-    # Get N variable and factor variable
-    n_var = None
-    factor_var = None
-    for var in variables:
-        if var["name"] == "N":
-            n_var = var
-        else:
-            factor_var = var
-
-    if not factor_var or not n_var:
-        return {
-            "option_counts": dict(option_counts),
-            "n_factor_balance": {},
-            "is_balanced": True,
-        }
-
-    factor_name = factor_var["name"]
-    factor_levels = factor_var["values"]
-    n_values = sorted(n_var["values"])
-
-    # For each pair of N values, count how often each N is paired with each factor level
-    n_factor_balance = {}
-
-    for i, n1 in enumerate(n_values):
-        for n2 in n_values[i + 1 :]:
-            # For this N pair, count factor level distribution
-            factor_with_lower_n = defaultdict(int)
-            factor_with_higher_n = defaultdict(int)
-
-            for edge_key in edges.keys():
-                try:
-                    ids = eval(edge_key)
-                    opt_a = options_by_id.get(ids[0])
-                    opt_b = options_by_id.get(ids[1])
-
-                    if not opt_a or not opt_b:
-                        continue
-
-                    n_a = opt_a.get("N")
-                    n_b = opt_b.get("N")
-                    factor_a = opt_a.get(factor_name)
-                    factor_b = opt_b.get(factor_name)
-
-                    # Check if this edge involves the N pair (n1, n2)
-                    if n_a == n1 and n_b == n2:
-                        factor_with_lower_n[factor_a] += 1
-                        factor_with_higher_n[factor_b] += 1
-                    elif n_a == n2 and n_b == n1:
-                        factor_with_higher_n[factor_a] += 1
-                        factor_with_lower_n[factor_b] += 1
-
-                except Exception:
-                    pass
-
-            # Skip N pairs with no samples
-            total_samples = sum(factor_with_lower_n.values()) + sum(
-                factor_with_higher_n.values()
-            )
-            if total_samples == 0:
-                continue
-
-            # Check if balanced: each factor level should have equal counts
-            lower_counts = [factor_with_lower_n[f] for f in factor_levels]
-            higher_counts = [factor_with_higher_n[f] for f in factor_levels]
-
-            is_balanced = (
-                len(set(lower_counts)) <= 1
-                and len(set(higher_counts)) <= 1
-                and all(c > 0 for c in lower_counts)
-                and all(c > 0 for c in higher_counts)
-            )
-
-            n_factor_balance[(n1, n2)] = {
-                "factor_with_lower_n": dict(factor_with_lower_n),
-                "factor_with_higher_n": dict(factor_with_higher_n),
-                "balanced": is_balanced,
-            }
-
-    return {
-        "option_counts": dict(option_counts),
-        "n_factor_balance": n_factor_balance,
-        "is_balanced": all(v["balanced"] for v in n_factor_balance.values())
-        if n_factor_balance
-        else True,
-    }
 
 
 def check_response_validity(
@@ -1344,8 +1092,8 @@ def analyze_simple_nudging_experiment(
                 )
                 print()
 
-        # Compute and display steerability bias
-        _display_steerability_bias(sorted_results, factor_levels, alpha)
+        # Compute and display steerability asymmetry
+        _display_steerability_asym(sorted_results, factor_levels, alpha)
 
     # Display validity warnings summary if any
     if validity_warnings:
@@ -1390,13 +1138,13 @@ def analyze_simple_nudging_experiment(
     print("=" * 80)
 
 
-def _display_steerability_bias(
+def _display_steerability_asym(
     sorted_results: List[Dict[str, Any]],
     factor_levels: List[str],
     alpha: float = DEFAULT_ALPHA,
 ) -> None:
     """
-    Compute and display steerability bias for pairwise factor level comparisons.
+    Compute and display steerability asymmetry for pairwise factor level comparisons.
 
     Args:
         sorted_results: List of result dictionaries sorted with base first
@@ -1409,7 +1157,7 @@ def _display_steerability_bias(
 
     base_result = next((r for r in sorted_results if r["target_group"] == "base"), None)
     if not base_result:
-        print("Note: Cannot compute steerability bias without base condition")
+        print("Note: Cannot compute steerability asymmetry without base condition")
         return
 
     base_stats = base_result["stats"]
@@ -1423,14 +1171,14 @@ def _display_steerability_bias(
 
     confidence_pct = int((1 - alpha) * 100)
     print("=" * 80)
-    print("STEERABILITY BIAS ANALYSIS")
+    print("STEERABILITY ASYMMETRY ANALYSIS")
     print("=" * 80)
     print()
     print(
         "Steerability measures how much nudging changes the odds ratio for each option."
     )
     print(
-        "Bias measures differential steerability (positive = more steerable toward B)."
+        "Asymmetry measures normalized differential steerability (positive = more steerable toward B)."
     )
     print(f"Bootstrap CIs computed at {confidence_pct}% confidence level.")
     print()
@@ -1486,12 +1234,12 @@ def _display_steerability_bias(
             if f_B_A is None or f_B_B is None or c_B_A is None or c_B_B is None:
                 continue
 
-            # Compute steerability bias using counts with Haldane-Anscombe correction
-            steer_A, steer_B, bias = compute_steerability_bias_from_counts(
+            # Compute steerability asymmetry using counts with Haldane-Anscombe correction
+            steer_A, steer_B, asym, n_asym = compute_steerability_asym_from_counts(
                 c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
             )
 
-            # Compute bootstrap CI for bias
+            # Compute bootstrap CI for asymmetry
             bootstrap_ci = None
             base_graph = graph_data_by_target.get("base")
             nudge_A_graph = graph_data_by_target.get(level_A)
@@ -1499,7 +1247,7 @@ def _display_steerability_bias(
 
             if base_graph and nudge_A_graph and nudge_B_graph:
                 # print(f"Computing bootstrap CI for {level_A} vs {level_B}...", end=" ")
-                bootstrap_ci = bootstrap_steerability_bias(
+                bootstrap_ci = bootstrap_steerability_asym(
                     base_graph,
                     nudge_A_graph,
                     nudge_B_graph,
@@ -1565,7 +1313,7 @@ def _display_steerability_bias(
                         # Steerability metrics
                         "steerability_A": steer_A,
                         "steerability_B": steer_B,
-                        "bias": bias,
+                        "asym": asym,
                         "bootstrap_ci": bootstrap_ci,
                     }
                 )
@@ -1574,7 +1322,7 @@ def _display_steerability_bias(
 
     if not pairwise_results:
         print(
-            "Could not compute steerability bias (missing nudge conditions or near-zero frequencies)"
+            "Could not compute steerability asymmetry (missing nudge conditions or near-zero frequencies)"
         )
         print()
         return
@@ -1630,39 +1378,41 @@ def _display_steerability_bias(
         )
         print()
 
-        bias = result["bias"]
+        asym = result["asym"]
         bootstrap_ci = result.get("bootstrap_ci")
 
-        if abs(bias) < 0.05:
+        if abs(asym) < 0.05:
             interpretation = "roughly equal steerability"
-        elif bias > 0:
+        elif asym > 0:
             interpretation = f"more steerable towards {level_B}"
         else:
             interpretation = f"more steerable towards {level_A}"
 
-        # Display bias with bootstrap CI
+        # Display asymmetry with bootstrap CI
         if bootstrap_ci and bootstrap_ci.get("ci_low") is not None:
             ci_low = bootstrap_ci["ci_low"]
             ci_high = bootstrap_ci["ci_high"]
             se = bootstrap_ci["se"]
             sig_marker = "*" if bootstrap_ci["is_significant"] else ""
 
-            print(f"  Steerability Bias: {bias:+.3f}{sig_marker} ({interpretation})")
+            print(
+                f"  Steerability Asymmetry: {asym:+.3f}{sig_marker} ({interpretation})"
+            )
             print(f"  {confidence_pct}% Bootstrap CI: [{ci_low:+.3f}, {ci_high:+.3f}]")
             print(f"  Bootstrap SE: {se:.3f}")
             if bootstrap_ci["is_significant"]:
                 print(f"  * Significantly different from zero (p < {alpha})")
         else:
-            print(f"  Steerability Bias: {bias:+.3f} ({interpretation})")
+            print(f"  Steerability Asymmetry: {asym:+.3f} ({interpretation})")
             print("  Bootstrap CI: not available")
         print()
 
     # Summary table if multiple pairs
     if len(pairwise_results) > 1:
-        print("STEERABILITY BIAS SUMMARY:")
+        print("STEERABILITY ASYMMETRY SUMMARY:")
         print("-" * 90)
         print(
-            f"  {'Pair':<25s} {'s(A)':>8s} {'s(B)':>8s} {'Bias':>8s} {f'{confidence_pct}% CI':>20s} {'Sig':>5s}"
+            f"  {'Pair':<25s} {'s(A)':>8s} {'s(B)':>8s} {'Asym':>8s} {f'{confidence_pct}% CI':>20s} {'Sig':>5s}"
         )
         print(f"  {'-'*88}")
         for result in pairwise_results:
@@ -1682,22 +1432,22 @@ def _display_steerability_bias(
                 f"  {pair_name:<25s} "
                 f"{result['steerability_A']:>+8.3f} "
                 f"{result['steerability_B']:>+8.3f} "
-                f"{result['bias']:>+8.3f} "
+                f"{result['asym']:>+8.3f} "
                 f"{ci_str:>20s} "
                 f"{sig_str:>5s}"
             )
         print()
 
-    # Bias matrix for >2 factor levels
+    # Asymmetry matrix for >2 factor levels
     if len(factor_levels) > 2:
-        print("STEERABILITY BIAS MATRIX:")
+        print("STEERABILITY ASYMMETRY MATRIX:")
         print("(positive value in row A, column B means more steerable towards B)")
         print()
 
         # Build lookup for quick access
-        bias_lookup = {}
+        asym_lookup = {}
         for result in pairwise_results:
-            bias_lookup[(result["level_A"], result["level_B"])] = result["bias"]
+            asym_lookup[(result["level_A"], result["level_B"])] = result["asym"]
 
         col_width = max(len(level) for level in factor_levels) + 2
         header = " " * col_width + "".join(
@@ -1711,13 +1461,13 @@ def _display_steerability_bias(
             for level_B in factor_levels:
                 if level_A == level_B:
                     row += f"{'—':>{col_width}}"
-                elif (level_A, level_B) in bias_lookup:
-                    bias = bias_lookup[(level_A, level_B)]
-                    row += f"{bias:>+{col_width}.2f}"
-                elif (level_B, level_A) in bias_lookup:
-                    # Bias is antisymmetric
-                    bias = -bias_lookup[(level_B, level_A)]
-                    row += f"{bias:>+{col_width}.2f}"
+                elif (level_A, level_B) in asym_lookup:
+                    asym = asym_lookup[(level_A, level_B)]
+                    row += f"{asym:>+{col_width}.2f}"
+                elif (level_B, level_A) in asym_lookup:
+                    # Asymmetry is antisymmetric
+                    asym = -asym_lookup[(level_B, level_A)]
+                    row += f"{asym:>+{col_width}.2f}"
                 else:
                     row += f"{'N/A':>{col_width}}"
             print(row)

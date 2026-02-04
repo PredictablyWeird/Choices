@@ -305,7 +305,7 @@ def extract_all_traces(results_dirs: list[str]) -> list[TraceWithMetadata]:
         discover_experiments,
         find_condition_directories,
     )
-    from choices.analysis.nudge_effect_size import load_preference_graph
+    from choices.analysis.metrics import load_preference_graph
 
     all_traces = []
     experiments = discover_experiments(results_dirs)

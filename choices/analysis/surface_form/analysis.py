@@ -43,29 +43,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
-from choices.analysis.nudge_effect_size import (
+from choices.analysis.metrics import (
+    compute_single_steerability,
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
     get_nudge_target_group,
     load_preference_graph,
 )
-from choices.analysis.plot_baseline_vs_nudged_frequency import (
-    get_factor_color,
-    get_nudge_color,
-    get_reasoning_color,
-)
-from choices.analysis.analyze_simple_nudging_results import (
-    two_proportion_z_test,
-)
-from choices.analysis.steerability_metric import (
-    compute_single_steerability,
-)
 from choices.analysis.utils import (
+    PLOTS_OUTPUT_DIR,
     compute_factor_frequencies_with_counts,
+    get_factor_color,
     get_model_color,
     get_model_display_name,
+    get_nudge_color,
+    get_reasoning_color,
     get_reasoning_condition,
     get_reasoning_mode_from_results,
+    two_proportion_z_test,
 )
 
 # Default significance level (95% confidence)
@@ -1567,7 +1562,7 @@ Examples:
             suffix += f"_{args.groups}"
         if args.condition and len(args.condition) == 1:
             suffix += f"_{args.condition[0]}"
-        output_path = f"surface_form_analysis{suffix}.pdf"
+        output_path = f"{PLOTS_OUTPUT_DIR}/surface_form_analysis{suffix}.pdf"
 
     # Print header
     print("=" * 110)

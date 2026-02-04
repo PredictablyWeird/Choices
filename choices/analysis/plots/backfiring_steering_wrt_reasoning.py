@@ -10,11 +10,14 @@ Designed for 2-column paper layout (side-by-side plots).
 Uses CSV data format.
 """
 
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import os
 from scipy import stats
+
+from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
 def load_csv_data(filepath):
@@ -97,7 +100,7 @@ def compute_steerability_magnitude(df):
     return mean, ci[0], ci[1]
 
 
-def create_bar_charts(input_file, output_dir="plots"):
+def create_bar_charts(input_file, output_dir=None):
     """Create two professional bar charts for reasoning comparison by nudge type."""
 
     # Load data from CSV
@@ -199,6 +202,8 @@ def create_bar_charts(input_file, output_dir="plots"):
     color_with_reasoning = "#1B9E77"  # Teal (ColorBrewer Dark2)
 
     # Create output directory
+    if output_dir is None:
+        output_dir = PLOTS_OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     # Bar positions - add extra space before Overall for divider
