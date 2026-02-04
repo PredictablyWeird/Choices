@@ -1049,13 +1049,16 @@ def main():
         top_edges = top_k(edges, "effect_A_magnitude", args.top_k)
         for i, e in enumerate(top_edges, 1):
             print(
-                f"  {i}. {e.model}/{e.factor}: effect_A={e.effect_A:.3f}, "
-                f"n_diff={e.n_difference}, f_0_A={e.f_0_A:.3f}"
+                f"  {i}. {e.model}/{e.factor}/{e.nudge_type} ({e.option_a_n} {e.level_A} vs {e.option_b_n} {e.level_B}): effect_A={e.effect_A:.3f}, "
+                f"n_diff={e.n_difference}, f_0_A={e.f_0_A:.3f}, f_A_A={e.f_A_A:.3f}, f_B_A={e.f_B_A:.3f}"
             )
 
     if args.show_traces and edges:
         print("\nSample traces from first edge:")
         traces = extract_traces_for_edge(edges[0])[:3]
+        print(
+            f"  Edge: {edges[0].model}/{edges[0].factor}/{edges[0].nudge_type} ({edges[0].option_a_n} {edges[0].level_A} vs {edges[0].option_b_n} {edges[0].level_B})"
+        )
         for t in traces:
             print(f"  Condition: {t.condition}, Choice: {t.choice}")
             print(f"  Reasoning: {t.reasoning[:200]}...")
