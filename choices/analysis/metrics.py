@@ -9,7 +9,11 @@ This module provides functions for computing:
    - For a pair of groups (A, B):
      - steerability_A = ln(r_A(A)) - ln(r_0(A))
      - steerability_B = ln(r_B(B)) - ln(r_0(B))
-     - asym = (S(B) - S(A)) / (|S(A)| + |S(B)| + eps)
+   - Two versions of asymmetry:
+     - Steerability Asymmetry (Asym) = s(B) - s(A)
+       Simple difference; positive means more steerable towards B
+     - Normalized Steerability Asymmetry (N-Asym) = (s(B) - s(A)) / (|s(A)| + |s(B)| + eps)
+       Normalized to approximately [-1, 1] range
 
 2. Nudge Effect Size
    - Measures how much a nudge shifts preferences toward the target option
@@ -160,7 +164,7 @@ def compute_steerability_asym(
     rate_A_nudge_B: float,
     rate_B_nudge_B: float,
     eps: float = 0.01,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
     Compute steerability and asymmetry for a pair of groups from exchange rate data.
 
@@ -174,7 +178,8 @@ def compute_steerability_asym(
         eps: Small constant to prevent division by zero (default 0.01)
 
     Returns:
-        (steerability_A, steerability_B, asym) or (None, None, None) if invalid
+        (steerability_A, steerability_B, asym, normalized_asym) or
+        (None, None, None, None) if invalid
     """
     rates = [
         rate_A_base,
@@ -185,22 +190,23 @@ def compute_steerability_asym(
         rate_B_nudge_B,
     ]
     if any(r <= 0 for r in rates):
-        return None, None, None
+        return None, None, None, None
 
     rate_base = rate_A_base / rate_B_base
     rate_nudge_A = rate_A_nudge_A / rate_B_nudge_A
     rate_nudge_B = rate_B_nudge_B / rate_A_nudge_B
 
     if rate_base <= 0 or rate_nudge_A <= 0 or rate_nudge_B <= 0:
-        return None, None, None
+        return None, None, None, None
 
     steerability_A = math.log(rate_nudge_A) - math.log(rate_base)
     steerability_B = math.log(rate_nudge_B) + math.log(rate_base)  # flipped
-    asym = (steerability_B - steerability_A) / (
-        abs(steerability_A) + abs(steerability_B) + eps
-    )
 
-    return steerability_A, steerability_B, asym
+    # Compute both asymmetry metrics
+    asym = compute_asym(steerability_A, steerability_B)
+    normalized_asym = compute_normalized_asym(steerability_A, steerability_B, eps)
+
+    return steerability_A, steerability_B, asym, normalized_asym
 
 
 def compute_steerability_asym_from_counts(
@@ -212,7 +218,7 @@ def compute_steerability_asym_from_counts(
     c_B_B: float,
     use_haldane_anscombe: bool = True,
     eps: float = 0.01,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
     Compute steerability and asymmetry from count measurements.
 
@@ -227,10 +233,18 @@ def compute_steerability_asym_from_counts(
     - s(A) = log(r_A(A)) - log(r_0(A))  -- how nudging towards A increases A's odds
     - s(B) = log(r_B(B)) - log(r_0(B))  -- how nudging towards B increases B's odds
 
-    Steerability Asymmetry = (s(B) - s(A)) / (|s(A)| + |s(B)| + eps)
-    - Positive: more steerable towards B (away from A)
-    - Negative: more steerable towards A
-    - Range is approximately [-1, 1] (normalized)
+    Two asymmetry metrics are computed:
+
+    1. Steerability Asymmetry (Asym) = s(B) - s(A)
+       - Simple difference in steerability
+       - Positive: more steerable towards B
+       - Negative: more steerable towards A
+       - Unbounded range (in log-odds units)
+
+    2. Normalized Steerability Asymmetry (N-Asym) = (s(B) - s(A)) / (|s(A)| + |s(B)| + eps)
+       - Normalized to approximately [-1, 1] range
+       - Positive: more steerable towards B
+       - Negative: more steerable towards A
 
     Args:
         c_0_A: Count of choosing A in base condition
@@ -245,17 +259,18 @@ def compute_steerability_asym_from_counts(
         eps: Small constant to prevent division by zero (default 0.01)
 
     Returns:
-        (steerability_A, steerability_B, asym) or (None, None, None) if invalid
+        (steerability_A, steerability_B, asym, normalized_asym) or
+        (None, None, None, None) if invalid
     """
     # Check for negative counts
     counts = [c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B]
     if any(c < 0 for c in counts):
-        return None, None, None
+        return None, None, None, None
 
     # Without Haldane-Anscombe correction, we need to check for zero counts
     if not use_haldane_anscombe:
         if any(c == 0 for c in counts):
-            return None, None, None
+            return None, None, None, None
 
     # Compute odds ratios using the helper function
     r_0_A = compute_odds(c_0_A, c_0_B, use_haldane_anscombe)  # odds of A in base
@@ -274,7 +289,36 @@ def compute_steerability_asym_from_counts(
     # Asymmetry: normalized difference, positive means more steerable towards B
     asym = compute_normalized_asym(steerability_A, steerability_B, eps)
 
-    return steerability_A, steerability_B, asym
+    # Compute both asymmetry metrics
+    asym = compute_asym(steerability_A, steerability_B)
+    normalized_asym = compute_normalized_asym(steerability_A, steerability_B, eps)
+
+    return steerability_A, steerability_B, asym, normalized_asym
+
+
+def compute_asym(
+    steerability_A: float,
+    steerability_B: float,
+) -> float:
+    """
+    Compute steerability asymmetry from two steerability values.
+
+    Asymmetry = s(B) - s(A)
+
+    This is the non-normalized version that gives the raw difference in
+    log-odds steerability. Positive values mean more steerable towards B,
+    negative values mean more steerable towards A.
+
+    Args:
+        steerability_A: Steerability towards option A
+        steerability_B: Steerability towards option B
+
+    Returns:
+        Asymmetry value (unbounded).
+        Positive = more steerable towards B.
+        Negative = more steerable towards A.
+    """
+    return steerability_B - steerability_A
 
 
 def compute_normalized_asym(
@@ -381,7 +425,7 @@ def compute_steerability_bias(
     rate_A_nudge_B: float,
     rate_B_nudge_B: float,
     eps: float = 0.01,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """DEPRECATED: Use compute_steerability_asym instead."""
     import warnings
 
@@ -411,7 +455,7 @@ def compute_steerability_bias_from_counts(
     c_B_B: float,
     use_haldane_anscombe: bool = True,
     eps: float = 0.01,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """DEPRECATED: Use compute_steerability_asym_from_counts instead."""
     import warnings
 
@@ -434,7 +478,7 @@ def compute_steerability_bias_from_frequencies(
     f_B_A: float,
     f_B_B: float,
     eps: float = 1e-6,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """DEPRECATED: Use compute_steerability_asym_from_counts with actual counts instead."""
     import warnings
 
@@ -447,7 +491,7 @@ def compute_steerability_bias_from_frequencies(
 
     freqs = [f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B]
     if any(f < eps for f in freqs):
-        return None, None, None
+        return None, None, None, None
 
     return compute_steerability_asym_from_counts(
         f_0_A, f_0_B, f_A_A, f_A_B, f_B_A, f_B_B, use_haldane_anscombe=False

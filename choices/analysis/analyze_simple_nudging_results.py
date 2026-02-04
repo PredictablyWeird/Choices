@@ -254,7 +254,8 @@ def bootstrap_steerability_asym(
         c_B_A, c_B_B = compute_counts_from_edge_list(nudge_B_edges, resample=True)
 
         # Compute steerability asymmetry using counts with Haldane-Anscombe correction
-        _, _, asym = compute_steerability_asym_from_counts(
+        # Use non-normalized asymmetry (3rd element) for bootstrap CI
+        _, _, asym, _ = compute_steerability_asym_from_counts(
             c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
         )
 
@@ -1234,7 +1235,7 @@ def _display_steerability_asym(
                 continue
 
             # Compute steerability asymmetry using counts with Haldane-Anscombe correction
-            steer_A, steer_B, asym = compute_steerability_asym_from_counts(
+            steer_A, steer_B, asym, n_asym = compute_steerability_asym_from_counts(
                 c_0_A, c_0_B, c_A_A, c_A_B, c_B_A, c_B_B
             )
 

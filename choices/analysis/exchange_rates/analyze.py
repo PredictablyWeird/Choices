@@ -494,7 +494,7 @@ def analyze_nudging_experiment(
                     rate_B_nudge_B = nudge_B_rates.get(group_B, rate_B_base)
 
                     # Pass raw rates to function - it handles the B/A conversion
-                    steer_A, steer_B, asym = compute_steerability_asym(
+                    steer_A, steer_B, asym, n_asym = compute_steerability_asym(
                         rate_A_base,
                         rate_B_base,
                         rate_A_nudge_A,

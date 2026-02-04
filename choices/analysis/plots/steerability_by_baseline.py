@@ -47,7 +47,11 @@ from choices.analysis.create_summary import (
     FrequencyResult,
     compute_all_results,
 )
-from choices.analysis.metrics import compute_normalized_asym, freq_to_log_odds
+from choices.analysis.metrics import (
+    compute_asym,
+    compute_normalized_asym,
+    freq_to_log_odds,
+)
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
@@ -319,6 +323,7 @@ def create_scatter_plot(
     output_path: Optional[str] = None,
     title: Optional[str] = None,
     figsize: Tuple[float, float] = (10, 6),
+    use_normalized: bool = False,
 ) -> plt.Figure:
     """
     Create a scatter plot showing steerability asymmetry vs baseline preference.
@@ -333,12 +338,17 @@ def create_scatter_plot(
     # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
     # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
     # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
-    steer_asym = np.array(
-        [
-            compute_normalized_asym(sa, st)
-            for st, sa in zip(steer_towards, steer_against)
-        ]
-    )
+    if use_normalized:
+        steer_asym = np.array(
+            [
+                compute_normalized_asym(sa, st)
+                for st, sa in zip(steer_towards, steer_against)
+            ]
+        )
+    else:
+        steer_asym = np.array(
+            [compute_asym(sa, st) for st, sa in zip(steer_towards, steer_against)]
+        )
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -359,9 +369,12 @@ def create_scatter_plot(
     ax.set_xlabel(
         "Baseline Preference Strength\n(frequency of preferred option)", fontsize=12
     )
-    ax.set_ylabel(
-        "Steerability Asymmetry\n(towards pref. minus against pref.)", fontsize=12
+    ylabel = (
+        "Normalized Steerability Asymmetry (N-Asym)"
+        if use_normalized
+        else "Steerability Asymmetry (Asym)"
     )
+    ax.set_ylabel(f"{ylabel}\n(towards pref. minus against pref.)", fontsize=12)
 
     if title:
         ax.set_title(title, fontsize=14, fontweight="bold")
@@ -406,9 +419,14 @@ def create_combined_plot(
     n_bins: Optional[int] = None,
     figsize: Tuple[float, float] = (14, 5),
     show_scatter: bool = True,
+    use_normalized: bool = False,
 ) -> plt.Figure:
     """
     Create a combined plot with both views side by side.
+
+    Args:
+        use_normalized: If True, use normalized asymmetry. If False (default),
+                       use non-normalized asymmetry (Asym = towards - against).
     """
     if not normalized_results:
         print("No data to plot.")
@@ -417,15 +435,19 @@ def create_combined_plot(
     baselines = np.array([r.baseline_pref for r in normalized_results])
     steer_towards = np.array([r.steerability_towards for r in normalized_results])
     steer_against = np.array([r.steerability_against for r in normalized_results])
-    # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
-    # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
-    # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
-    steer_asym = np.array(
-        [
-            compute_normalized_asym(sa, st)
-            for st, sa in zip(steer_towards, steer_against)
-        ]
-    )
+    # Compute asymmetry: positive = easier towards baseline preference
+    # Note: We want (towards - against), so we pass (against, towards)
+    if use_normalized:
+        steer_asym = np.array(
+            [
+                compute_normalized_asym(sa, st)
+                for st, sa in zip(steer_towards, steer_against)
+            ]
+        )
+    else:
+        steer_asym = np.array(
+            [compute_asym(sa, st) for st, sa in zip(steer_towards, steer_against)]
+        )
 
     color_towards = "#457B9D"
     color_against = "#E63946"
@@ -556,7 +578,7 @@ def create_combined_plot(
             "-",
             color=color_towards,
             linewidth=2.5,
-            label="Nudge towards pref.",
+            label="Influence towards pref.",
         )
         ax1.plot(
             smooth_x,
@@ -564,7 +586,7 @@ def create_combined_plot(
             "-",
             color=color_against,
             linewidth=2.5,
-            label="Nudge against pref.",
+            label="Influence against pref.",
         )
 
     ax1.axhline(y=0, color="gray", linestyle=":", linewidth=1, alpha=0.7)
@@ -711,6 +733,11 @@ Examples:
         action="store_true",
         help="Only include cases with significant baseline preference",
     )
+    parser.add_argument(
+        "--normalized-asym",
+        action="store_true",
+        help="Use normalized asymmetry (N-Asym) instead of non-normalized (Asym)",
+    )
 
     args = parser.parse_args()
 
@@ -784,15 +811,20 @@ Examples:
     baselines = np.array([r.baseline_pref for r in normalized])
     steer_towards = np.array([r.steerability_towards for r in normalized])
     steer_against = np.array([r.steerability_against for r in normalized])
-    # Note: compute_normalized_asym expects (steer_A, steer_B) and returns (B - A) normalized
-    # Here steer_towards corresponds to the "preferred" option, so we pass (against, towards)
-    # to get (towards - against) normalized, i.e., positive = easier towards baseline pref
-    steer_asym = np.array(
-        [
-            compute_normalized_asym(sa, st)
-            for st, sa in zip(steer_towards, steer_against)
-        ]
-    )
+    # Compute asymmetry: positive = easier towards baseline preference
+    if args.normalized_asym:
+        steer_asym = np.array(
+            [
+                compute_normalized_asym(sa, st)
+                for st, sa in zip(steer_towards, steer_against)
+            ]
+        )
+        asym_label = "N-Asym (normalized)"
+    else:
+        steer_asym = np.array(
+            [compute_asym(sa, st) for st, sa in zip(steer_towards, steer_against)]
+        )
+        asym_label = "Asym (non-normalized)"
 
     print("Summary Statistics:")
     print("-" * 50)
@@ -809,12 +841,12 @@ Examples:
         f"std={np.std(steer_against):.3f}"
     )
     print(
-        f"  Steerability asymmetry:   mean={np.mean(steer_asym):.3f}, "
+        f"  {asym_label}:   mean={np.mean(steer_asym):.3f}, "
         f"std={np.std(steer_asym):.3f}"
     )
 
     r, p = stats.pearsonr(baselines, steer_asym)
-    print(f"  Correlation (baseline vs asym): r={r:.3f}, p={p:.3g}")
+    print(f"  Correlation (baseline vs {asym_label}): r={r:.3f}, p={p:.3g}")
     print()
 
     if args.plot_type == "line":
@@ -830,7 +862,11 @@ Examples:
     elif args.plot_type == "scatter":
         figsize = tuple(args.figsize) if args.figsize else (10, 6)
         fig = create_scatter_plot(
-            normalized, output_path=output_path, title=args.title, figsize=figsize
+            normalized,
+            output_path=output_path,
+            title=args.title,
+            figsize=figsize,
+            use_normalized=args.normalized_asym,
         )
     else:
         figsize = tuple(args.figsize) if args.figsize else (14, 5)
@@ -841,6 +877,7 @@ Examples:
             n_bins=args.bins,
             figsize=figsize,
             show_scatter=not args.no_scatter,
+            use_normalized=args.normalized_asym,
         )
 
     if fig is None:

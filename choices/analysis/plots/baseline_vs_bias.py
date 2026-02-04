@@ -23,7 +23,7 @@ from choices.analysis.create_summary import (
     FrequencyResult,
     compute_all_results,
 )
-from choices.analysis.metrics import freq_to_log_odds
+from choices.analysis.metrics import compute_asym, freq_to_log_odds
 from choices.analysis.utils import get_model_display_name, PLOTS_OUTPUT_DIR
 
 
@@ -34,9 +34,7 @@ class NormalizedResult:
     baseline_pref: float  # f_0(preferred) - always >= 0.5
     steerability_towards: float  # Steerability when nudging towards baseline pref
     steerability_against: float  # Steerability when nudging against baseline pref
-    steerability_asym: (
-        float  # normalized (towards - against) / (|towards| + |against| + eps)
-    )
+    steerability_asym: float  # towards - against (non-normalized)
     sig_baseline: bool  # Whether baseline preference is significant
     sig_asym: bool  # Whether steerability asymmetry is significant
     sig_any_nudge: bool  # Whether at least one nudge effect is significant
@@ -63,11 +61,8 @@ def normalize_result(r: FrequencyResult) -> NormalizedResult:
         steer_towards = compute_steerability(1 - r.f_A_B, 1 - r.f_0_B)
         steer_against = compute_steerability(r.f_B_B, r.f_0_B)
 
-    # Compute normalized asymmetry using the new formula
-    eps = 0.01
-    asym = (steer_towards - steer_against) / (
-        abs(steer_towards) + abs(steer_against) + eps
-    )
+    # Compute asymmetry: positive = easier towards baseline preference
+    asym = compute_asym(steer_against, steer_towards)
 
     return NormalizedResult(
         baseline_pref=baseline_pref,
@@ -247,7 +242,9 @@ def create_nonsig_analysis_plot(
                 )
             )
 
-        ax.legend(handles=legend_elements, loc="upper left", fontsize=9, framealpha=0.9)
+        ax.legend(
+            handles=legend_elements, loc="upper right", fontsize=9, framealpha=0.9
+        )
 
     else:
         # Non-split case: just stack by sig_asym
@@ -316,7 +313,9 @@ def create_nonsig_analysis_plot(
                 )
             )
 
-        ax.legend(handles=legend_elements, loc="upper left", fontsize=9, framealpha=0.9)
+        ax.legend(
+            handles=legend_elements, loc="upper right", fontsize=9, framealpha=0.9
+        )
 
     # Add mean or median line (legend entry handled above)
     if show_line == "mean":
@@ -413,7 +412,6 @@ Examples:
         default=None,
         help="Show a vertical line for mean or median (default: none)",
     )
-
     args = parser.parse_args()
 
     output_path = args.output or f"{PLOTS_OUTPUT_DIR}/nonsig_baseline_analysis.pdf"
