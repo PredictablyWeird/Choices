@@ -175,9 +175,12 @@ def extract_paired_traces(
     """
     Extract paired traces for a backfire case.
 
-    Gets traces from:
-    - Baseline condition
-    - The nudged condition (where backfire occurred)
+    For a backfire case where nudging towards X backfires, we compare:
+    - Baseline traces that CHOSE X (the nudged option was preferred in baseline)
+    - Nudged traces that CHOSE the OTHER option (the backfire - rejected X despite nudge)
+
+    This gives us the most relevant comparison for understanding backfire:
+    why did the model prefer X in baseline, but reject X when nudged?
 
     Args:
         case: BackfireCase to extract traces for
@@ -193,11 +196,15 @@ def extract_paired_traces(
     else:
         nudge_condition = edge.level_B
 
-    # Extract baseline traces
+    # Extract baseline traces that chose the nudged option (X)
+    # These are the "good" cases where X was preferred without nudging
     baseline_traces = extract_traces_for_edge(edge, conditions=["base"])
+    baseline_traces = [t for t in baseline_traces if t.choice == case.nudged_option]
 
-    # Extract nudged condition traces
+    # Extract nudged traces that chose the OTHER option (the backfire)
+    # These are the cases where the model rejected X despite being nudged towards it
     nudged_traces = extract_traces_for_edge(edge, conditions=[nudge_condition])
+    nudged_traces = [t for t in nudged_traces if t.choice == case.preferred_option]
 
     return PairedTraces(
         case=case,
