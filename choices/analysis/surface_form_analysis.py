@@ -648,22 +648,18 @@ def create_grouped_bar_chart(
         linewidth=1,
     )
 
-    # Styling (font sizes matched to negation bar chart)
-    ax.set_ylabel("Average Nudge |Steerability|", fontsize=11)
-    ax.set_xlabel("Model", fontsize=11)
+    # Styling
+    ax.set_ylabel("Average |Steerability|", fontsize=14)
+    ax.set_xlabel("Model", fontsize=14)
     ax.set_xticks(x)
-    ax.set_xticklabels(models, fontsize=9)
-    ax.legend(loc="upper right", fontsize=9)
+    ax.set_xticklabels(models, fontsize=11)
+    ax.legend(loc="upper right", fontsize=11)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_ylim(0, max(normal_means + baseline_means) * 1.15)
 
     if title:
-        ax.set_title(title, fontsize=12, fontweight="bold")
-    else:
-        ax.set_title(
-            "Informative vs Irrelevant Nudge Effects", fontsize=12, fontweight="bold"
-        )
+        ax.set_title(title, fontsize=14, fontweight="bold")
 
     plt.tight_layout()
 
