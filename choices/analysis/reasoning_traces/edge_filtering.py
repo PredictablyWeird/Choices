@@ -696,8 +696,10 @@ def extract_traces_for_edge(
         # Determine which option is level_A
         first_is_level_a = opt_first.get(factor_var_name) == edge.level_A
 
-        # Extract original traces
-        orig_reasoning = aux.get("original_reasoning_summaries", [])
+        # Extract original traces (summaries preferred, fall back to full reasoning)
+        orig_reasoning = aux.get("original_reasoning_summaries") or aux.get(
+            "original_reasoning", []
+        )
         orig_parsed = aux.get("original_parsed", [])
 
         for reasoning, choice in zip(orig_reasoning, orig_parsed):
@@ -720,8 +722,10 @@ def extract_traces_for_edge(
                 )
             )
 
-        # Extract flipped traces
-        flip_reasoning = aux.get("flipped_reasoning_summaries", [])
+        # Extract flipped traces (summaries preferred, fall back to full reasoning)
+        flip_reasoning = aux.get("flipped_reasoning_summaries") or aux.get(
+            "flipped_reasoning", []
+        )
         flip_parsed = aux.get("flipped_parsed", [])
 
         for reasoning, choice in zip(flip_reasoning, flip_parsed):
