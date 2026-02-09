@@ -69,7 +69,7 @@ class PromptConfig:
         fixed_variables: Optional[Dict[str, Any]] = None,
         # Nudge configuration
         nudge_text: Optional[str] = None,
-        nudge_position: str = "after_setup",  # "system", "start", "after_setup", "after_options", "end"
+        nudge_position: str = "after_setup",  # "system", "system_replace", "start", "after_setup", "after_options", "end"
         nudge_brackets: str = "parentheses",  # "parentheses", "quotes", "none", "italic"
     ):
         self._system_prompt = system_prompt
@@ -112,6 +112,8 @@ class PromptConfig:
         if self.nudge_text and self.nudge_position == "system":
             nudge = self._format_nudge()
             return f"{self._system_prompt}\n\n{nudge}"
+        if self.nudge_text and self.nudge_position == "system_replace":
+            return self._format_nudge()
         return self._system_prompt
 
     def _format_nudge(self) -> Optional[str]:

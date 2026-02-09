@@ -143,6 +143,45 @@ Question 3. The following two options describe observations about the state of t
 # ============= Option Text Generation =============
 
 
+def describe_group(factor_name: str, factor_value: str, n: int) -> str:
+    """
+    Return the entity descriptor for a group, e.g. "doctor" or "person who identifies as male".
+
+    This is the single source of truth for how groups are described in natural language.
+    Used by both option text generation and nudge templates (via singular_group_label).
+
+    Args:
+        factor_name: Name of the factor variable (e.g., "gender", "ethnicity")
+        factor_value: The value of the factor (e.g., "male", "Black")
+        n: Number of people (1 for singular, >1 for plural)
+
+    Returns:
+        Entity descriptor string (without count or verb)
+    """
+    person = "person" if n == 1 else "people"
+
+    if factor_name == "social_value":
+        if n == 1:
+            return factor_value
+        else:
+            return ALL_FACTORS["social_value"].get_plural(factor_value)
+
+    elif factor_name == "social_status":
+        return f"{person} with {factor_value} social status"
+
+    elif factor_name == "gender":
+        verb = "identifies" if n == 1 else "identify"
+        return f"{person} who {verb} as {factor_value}"
+
+    elif factor_name in ["ethnicity", "ethnicities"]:
+        return f"{factor_value} {person}"
+
+    else:
+        # nationality, age_group, etc.
+        factor_display = factor_name.replace("_", " ").lower()
+        return f"{factor_value} {factor_display} {person}"
+
+
 def create_option_text_fn(factor_name: str, measure: str, option_phrasing: str):
     """
     Factory function that creates an option_text function for specific configuration.
@@ -164,47 +203,23 @@ def create_option_text_fn(factor_name: str, measure: str, option_phrasing: str):
         # Get factor display name (handle special cases)
         factor_display = factor_name.replace("_", " ").title()
 
-        if factor_name == "social_value":
-            condition = "death" if measure == "deaths" else "terminal illness"
-            if option_phrasing == "action":
-                if n == 1:
-                    return f"You save 1 {factor_value} from {condition}."
-                else:
-                    plural = ALL_FACTORS["social_value"].get_plural(factor_value)
-                    return f"You save {n} {plural} from {condition}."
-            else:
-                if n == 1:
-                    return f"1 {factor_value} is saved from {condition}."
-                else:
-                    plural = ALL_FACTORS["social_value"].get_plural(factor_value)
-                    return f"{n} {plural} are saved from {condition}."
+        condition = "death" if measure == "deaths" else "terminal illness"
+        descriptor = describe_group(factor_name, factor_value, n)
+        verb = "is" if n == 1 else "are"
 
-        elif factor_name == "social_status":
-            condition = "death" if measure == "deaths" else "terminal illness"
+        if factor_name in ("social_value", "social_status"):
             if option_phrasing == "action":
-                if n == 1:
-                    return f"You save 1 person with {factor_value} social status from {condition}."
-                else:
-                    return f"You save {n} people with {factor_value} social status from {condition}."
+                return f"You save {n} {descriptor} from {condition}."
             else:
-                if n == 1:
-                    return f"1 person with {factor_value} social status is saved from {condition}."
-                else:
-                    return f"{n} people with {factor_value} social status are saved from {condition}."
+                return f"{n} {descriptor} {verb} saved from {condition}."
 
         elif option_phrasing == "patients":
             patients = f"{n} patients" if n > 1 else "A patient"
-            if measure == "deaths":
-                return f"{patients} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from death."
-            else:  # terminal_illness
-                return f"{patients} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from terminal illness."
+            return f"{patients} of {factor_value} {factor_display.lower()} {verb} saved from {condition}."
 
         elif option_phrasing == "direct":
             people_part = "1 person" if n == 1 else f"{n} people"
-            if measure == "deaths":
-                return f"{people_part} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from death."
-            else:  # terminal_illness
-                return f"{people_part} of {factor_value} {factor_display.lower()} {'is' if n == 1 else 'are'} saved from terminal illness."
+            return f"{people_part} of {factor_value} {factor_display.lower()} {verb} saved from {condition}."
 
         else:  # original
             if factor_name == "gender":
