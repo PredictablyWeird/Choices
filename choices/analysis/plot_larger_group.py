@@ -128,6 +128,7 @@ def plot_heatmaps(
     display_names: bool = True,
     output_path: Optional[str] = None,
     decimals: int = 2,
+    subtitle: Optional[str] = None,
 ) -> None:
     """
     Create side-by-side heatmaps for P_0(Large) and P_AB(Large).
@@ -230,8 +231,9 @@ def plot_heatmaps(
     ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha="right")
     ax2.tick_params(axis="y", rotation=0)
 
+    title_suffix = subtitle if subtitle else f"aggregated over {aggregated_aspect}"
     fig.suptitle(
-        f"Larger-Group Preference (aggregated over {aggregated_aspect})",
+        f"Larger-Group Preference ({title_suffix})",
         fontsize=14,
         fontweight="bold",
         y=1.02,
@@ -333,6 +335,12 @@ Examples:
         help="Number of decimal places for cell annotations (default: 2)",
     )
 
+    parser.add_argument(
+        "--pdf",
+        action="store_true",
+        help="Save as PDF instead of PNG",
+    )
+
     args = parser.parse_args()
 
     x_aspect, y_aspect = args.axes
@@ -377,7 +385,20 @@ Examples:
 
     display_names = not args.no_display_names
 
+    # Determine subtitle: if aggregated aspect has a single unique value, show it
+    agg_values = sorted(
+        set(
+            get_aspect_value(r, aggregated_aspect, display_names)
+            for r in results_with_lg
+        )
+    )
+    if len(agg_values) == 1:
+        subtitle = f"{aggregated_aspect}: {agg_values[0]}"
+    else:
+        subtitle = f"aggregated over {aggregated_aspect} (n={len(agg_values)})"
+
     # Determine output path
+    ext = "pdf" if args.pdf else "png"
     output_path = args.output
     if output_path is None:
         import os
@@ -385,7 +406,7 @@ Examples:
         os.makedirs(PLOTS_OUTPUT_DIR, exist_ok=True)
         output_path = os.path.join(
             PLOTS_OUTPUT_DIR,
-            f"larger_group_{x_aspect}_vs_{y_aspect}.png",
+            f"larger_group_{x_aspect}_vs_{y_aspect}.{ext}",
         )
 
     plot_heatmaps(
@@ -396,6 +417,7 @@ Examples:
         display_names=display_names,
         output_path=output_path,
         decimals=args.decimals,
+        subtitle=subtitle,
     )
 
 
