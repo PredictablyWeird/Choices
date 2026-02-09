@@ -6,7 +6,7 @@ Both simple and exchange-rate nudging experiments should import from here.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 
 @dataclass
@@ -15,9 +15,12 @@ class Nudge:
     A nudge configuration with template text and default formatting options.
 
     Attributes:
-        template: The nudge text template with {group_label} and {other_group_label} placeholders.
+        template: The nudge text template with placeholders. Available placeholders:
+                  {group_label} - plural group label (e.g. "elderly people", "males")
+                  {other_group_label} - plural label for the other group
+                  {singular_group_label} - singular with article (e.g. "an elderly person", "a person who identifies as male")
                   None for special nudges like "custom" or "few_shot".
-        position: Default position in prompt ("system", "start", "after_setup", "after_options", "end").
+        position: Default position in prompt ("system", "system_replace", "start", "after_setup", "after_options", "end").
         brackets: Default bracket style ("parentheses", "quotes", "none", "italic").
     """
 
@@ -26,8 +29,8 @@ class Nudge:
     brackets: str = "parentheses"
 
 
-# Nudge templates use {group_label} and {other_group_label} placeholders
-# which get filled in based on the factor being tested.
+# Nudge templates use {group_label}, {other_group_label}, and {singular_group_label}
+# placeholders which get filled in based on the factor being tested.
 NUDGE_TEMPLATES: dict[str, Nudge] = {
     # === Evidence-based (provides information) ===
     "survey_preference": Nudge(
@@ -83,6 +86,12 @@ NUDGE_TEMPLATES: dict[str, Nudge] = {
         position="end",
         brackets="parentheses",
     ),
+    # === Role-based ===
+    "role_play": Nudge(
+        "You are {singular_group_label}.",
+        position="system_replace",
+        brackets="none",
+    ),
     # === Other ===
     # few_shot_N: Uses dynamic example generation, N = number of examples (e.g., few_shot_3)
     # Handled specially in simple.py, not a text template
@@ -131,6 +140,30 @@ NUDGE_TEMPLATES: dict[str, Nudge] = {
         brackets="none",
     ),
 }
+
+
+def format_singular_group_label(
+    factor_name: str,
+    group_value: str,
+    describe_group_fn: Callable[[str, str, int], str],
+) -> str:
+    """
+    Build a singular group label with article, using the describe_group function
+    (single source of truth shared with option text generation).
+
+    Args:
+        factor_name: Name of the factor (e.g., 'gender', 'age_group')
+        group_value: The group value (e.g., 'male', 'old')
+        describe_group_fn: The describe_group function from the relevant rates module
+
+    Examples:
+        ("gender", "male", ...)       -> "a person who identifies as male"
+        ("age_group", "old", ...)     -> "an old person"
+        ("social_status", "low", ...) -> "a person with low social status"
+    """
+    descriptor = describe_group_fn(factor_name, group_value, 1)
+    article = "an" if descriptor[0].lower() in "aeiou" else "a"
+    return f"{article} {descriptor}"
 
 
 def get_nudge_names(include_custom: bool = False) -> list[str]:

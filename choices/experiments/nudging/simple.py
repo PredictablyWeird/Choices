@@ -48,12 +48,17 @@ from choices.experiments.simple_rates import (
     MAX_REQUESTS,
     N_VALUES,
     create_option_text_fn,
+    describe_group,
     sample_balanced_edges,
     _get_config_path,
 )
 
 # Import shared nudge templates
-from choices.experiments.nudging.templates import NUDGE_TEMPLATES, get_nudge_defaults
+from choices.experiments.nudging.templates import (
+    NUDGE_TEMPLATES,
+    format_singular_group_label,
+    get_nudge_defaults,
+)
 
 
 def parse_nudge_type(nudge_type: str) -> Tuple[str, Optional[int]]:
@@ -194,10 +199,16 @@ def generate_nudge_text(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
 
-    # Format template with both group labels (works whether template uses them or not)
+    # Derive singular label from describe_group (single source of truth)
+    singular_label = format_singular_group_label(
+        factor_name, target_group, describe_group
+    )
+
+    # Format template with all label variants (works whether template uses them or not)
     return nudge.template.format(
         group_label=group_label,
         other_group_label=other_group_label,
+        singular_group_label=singular_label,
     )
 
 

@@ -37,6 +37,7 @@ from choices.experiments.exchange_rates import (
     N_VALUES,
     SETUPS,
     create_option_text_fn,
+    describe_group,
     load_prompt_configs,
 )
 
@@ -44,6 +45,7 @@ from choices.experiments.exchange_rates import (
 from choices.experiments.nudging.templates import (
     NUDGE_TEMPLATES as BASE_NUDGE_TEMPLATES,
     Nudge,
+    format_singular_group_label,
 )
 
 # ============= Nudge Definitions =============
@@ -150,6 +152,11 @@ def generate_nudge_text(
             f"Unknown nudge type: {nudge_type}. Available: {list(NUDGE_TEMPLATES.keys())}"
         )
 
+    # Derive singular label from describe_group (single source of truth)
+    singular_label = format_singular_group_label(
+        factor_name, target_group, describe_group
+    )
+
     # For survey_preference, we need example numbers (exchange rate specific)
     if nudge_type == "survey_preference":
         # Use placeholder values - these are just examples in the nudge
@@ -158,12 +165,14 @@ def generate_nudge_text(
             group_label=group_label,
             other_n=4,
             other_group_label=other_group_label,
+            singular_group_label=singular_label,
         )
     else:
-        # Format template with both group labels (works whether template uses them or not)
+        # Format template with all label variants (works whether template uses them or not)
         return nudge.template.format(
             group_label=group_label,
             other_group_label=other_group_label,
+            singular_group_label=singular_label,
         )
 
 
