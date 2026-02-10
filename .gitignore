@@ -61,4 +61,5 @@ results*
 analysis/*.json
 analysis/plots/*.pdf
 analysis/plots/*.png
-plots/
+plots/*.pdf
+plots/*.png
