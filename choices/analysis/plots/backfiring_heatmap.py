@@ -9,6 +9,10 @@ nudge directions (A and B), so the backfire rate per experiment is in [0, 1].
 Two of {model, factor, nudge} are chosen as axes; the third is aggregated over.
 A single heatmap is produced showing the backfire rate in each cell.
 
+With --bidirectional, each cell also shows a directional breakdown:
+- If factor is an axis: (towards A, towards B) per factor
+- If factor is aggregated: (towards baseline pref, away from baseline pref)
+
 Usage:
     # Model (x) vs Factor (y), aggregating over nudge types
     uv run python -m choices.analysis.plots.backfiring_heatmap --axes model factor
@@ -19,6 +23,9 @@ Usage:
 
     # Only count statistically significant backfires
     uv run python -m choices.analysis.plots.backfiring_heatmap --axes model factor --sig-only
+
+    # Bidirectional breakdown
+    uv run python -m choices.analysis.plots.backfiring_heatmap --axes model factor --bidirectional
 """
 
 import argparse
@@ -41,6 +48,13 @@ from choices.analysis.plots.larger_group import (
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 
+def _get_backfire_counts(r: FrequencyResult, sig_only: bool) -> Tuple[int, int]:
+    """Return (bf_a, bf_b) backfire indicators for a result."""
+    if sig_only:
+        return int(r.backfire_A and r.sig_A), int(r.backfire_B and r.sig_B)
+    return int(r.backfire_A), int(r.backfire_B)
+
+
 def build_backfire_data(
     results: List[FrequencyResult],
     x_aspect: str,
@@ -54,13 +68,6 @@ def build_backfire_data(
     Each experiment contributes 2 nudge directions. The backfire rate per cell
     is the fraction of nudges that backfired.
 
-    Args:
-        results: List of FrequencyResult objects
-        x_aspect: Aspect for x-axis (columns)
-        y_aspect: Aspect for y-axis (rows)
-        sig_only: If True, only count backfires that are also statistically significant
-        display_names: Whether to use display names for models
-
     Returns:
         (data_array, x_labels, y_labels) where data values are in [0, 1]
     """
@@ -71,14 +78,7 @@ def build_backfire_data(
         x_val = get_aspect_value(r, x_aspect, display_names)
         y_val = get_aspect_value(r, y_aspect, display_names)
         key = (x_val, y_val)
-
-        if sig_only:
-            bf_a = int(r.backfire_A and r.sig_A)
-            bf_b = int(r.backfire_B and r.sig_B)
-        else:
-            bf_a = int(r.backfire_A)
-            bf_b = int(r.backfire_B)
-
+        bf_a, bf_b = _get_backfire_counts(r, sig_only)
         cell_counts[key][0] += bf_a + bf_b
         cell_counts[key][1] += 2  # 2 nudge directions per experiment
 
@@ -96,43 +96,170 @@ def build_backfire_data(
     return data, x_labels, y_labels
 
 
-def plot_backfire_heatmap(
+def build_backfire_data_bidirectional(
     results: List[FrequencyResult],
     x_aspect: str,
     y_aspect: str,
     sig_only: bool = False,
     display_names: bool = True,
-    decimals: int = 2,
-    subtitle: str = "",
-    output_path: Optional[str] = None,
-) -> None:
-    """Create a single heatmap of backfire rates."""
-    if not results:
-        print("No results to plot.")
-        return
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    List[str],
+    List[str],
+    bool,
+    Dict[str, Tuple[str, str]],
+]:
+    """
+    Build 2D arrays of backfire rates with directional breakdown.
 
-    data, x_labels, y_labels = build_backfire_data(
-        results, x_aspect, y_aspect, sig_only=sig_only, display_names=display_names
+    Returns:
+        (data_main, data_dir1, data_dir2, x_labels, y_labels,
+         factor_is_axis, factor_level_map)
+
+    If factor IS an axis (Case 2):
+        dir1 = backfire when nudging towards A
+        dir2 = backfire when nudging towards B
+        factor_level_map maps factor_display_name -> (level_A, level_B)
+
+    If factor is NOT an axis (Case 1):
+        dir1 = backfire when nudging towards baseline preference
+        dir2 = backfire when nudging away from baseline preference
+        factor_level_map is empty
+    """
+    factor_is_axis = "factor" in (x_aspect, y_aspect)
+
+    # key -> [bf_total, total, bf_d1, total_d1, bf_d2, total_d2]
+    cell_counts: Dict[Tuple[str, str], List[int]] = defaultdict(
+        lambda: [0, 0, 0, 0, 0, 0]
+    )
+    # factor display name -> (level_A, level_B)
+    factor_level_map: Dict[str, Tuple[str, str]] = {}
+
+    for r in results:
+        x_val = get_aspect_value(r, x_aspect, display_names)
+        y_val = get_aspect_value(r, y_aspect, display_names)
+        key = (x_val, y_val)
+        bf_a, bf_b = _get_backfire_counts(r, sig_only)
+
+        # Main rate
+        cell_counts[key][0] += bf_a + bf_b
+        cell_counts[key][1] += 2
+
+        if factor_is_axis:
+            # Case 2: dir1 = towards A, dir2 = towards B
+            cell_counts[key][2] += bf_a
+            cell_counts[key][3] += 1
+            cell_counts[key][4] += bf_b
+            cell_counts[key][5] += 1
+            # Track factor levels for labels
+            factor_label = get_aspect_value(r, "factor", display_names)
+            if factor_label not in factor_level_map:
+                factor_level_map[factor_label] = (r.level_A, r.level_B)
+        else:
+            # Case 1: dir1 = towards baseline pref, dir2 = away from baseline pref
+            baseline_prefers_B = r.f_0_B > 0.5
+            if baseline_prefers_B:
+                bf_towards, bf_away = bf_b, bf_a
+            else:
+                bf_towards, bf_away = bf_a, bf_b
+            cell_counts[key][2] += bf_towards
+            cell_counts[key][3] += 1
+            cell_counts[key][4] += bf_away
+            cell_counts[key][5] += 1
+
+    x_labels = sorted(set(k[0] for k in cell_counts))
+    y_labels = sorted(set(k[1] for k in cell_counts))
+
+    n_y, n_x = len(y_labels), len(x_labels)
+    data_main = np.full((n_y, n_x), np.nan)
+    data_d1 = np.full((n_y, n_x), np.nan)
+    data_d2 = np.full((n_y, n_x), np.nan)
+
+    for (x_val, y_val), c in cell_counts.items():
+        xi = x_labels.index(x_val)
+        yi = y_labels.index(y_val)
+        data_main[yi, xi] = c[0] / c[1] if c[1] else np.nan
+        data_d1[yi, xi] = c[2] / c[3] if c[3] else np.nan
+        data_d2[yi, xi] = c[4] / c[5] if c[5] else np.nan
+
+    return (
+        data_main,
+        data_d1,
+        data_d2,
+        x_labels,
+        y_labels,
+        factor_is_axis,
+        factor_level_map,
     )
 
-    if data.size == 0 or np.all(np.isnan(data)):
-        print("No valid data to plot.")
-        return
 
-    # Color range: 0 to max observed, sequential colormap
-    valid = data[~np.isnan(data)]
-    vmax = max(valid.max(), 0.1)  # at least 0.1 for visual clarity
-
-    fig_w = 3 + len(x_labels) * 1.2
-    fig_h = 2 + len(y_labels) * 0.7
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-
+def _build_annot_array(
+    data_main: np.ndarray,
+    data_d1: np.ndarray,
+    data_d2: np.ndarray,
+    decimals: int,
+) -> np.ndarray:
+    """Build a string annotation array with main rate and directional breakdown."""
+    n_y, n_x = data_main.shape
+    annot = np.empty((n_y, n_x), dtype=object)
     fmt = f".{decimals}f"
+    for yi in range(n_y):
+        for xi in range(n_x):
+            m = data_main[yi, xi]
+            d1 = data_d1[yi, xi]
+            d2 = data_d2[yi, xi]
+            if np.isnan(m):
+                annot[yi, xi] = ""
+            else:
+                main_str = f"{m:{fmt}}"
+                d1_str = f"{d1:{fmt}}" if not np.isnan(d1) else "–"
+                d2_str = f"{d2:{fmt}}" if not np.isnan(d2) else "–"
+                annot[yi, xi] = f"{main_str}\n({d1_str}, {d2_str})"
+    return annot
+
+
+def _add_factor_level_suffixes(
+    labels: List[str], factor_level_map: Dict[str, Tuple[str, str]]
+) -> List[str]:
+    """Append 'A vs B' to factor labels."""
+    new_labels = []
+    for label in labels:
+        if label in factor_level_map:
+            a, b = factor_level_map[label]
+            new_labels.append(f"{label}\n({a} vs {b})")
+        else:
+            new_labels.append(label)
+    return new_labels
+
+
+def _plot_heatmap_common(
+    ax,
+    data: np.ndarray,
+    x_labels: List[str],
+    y_labels: List[str],
+    x_aspect: str,
+    y_aspect: str,
+    sig_only: bool,
+    subtitle: str,
+    decimals: int,
+    annot=True,
+    fmt: Optional[str] = None,
+    vmax: Optional[float] = None,
+) -> None:
+    """Shared heatmap rendering logic."""
+    valid = data[~np.isnan(data)]
+    if vmax is None:
+        vmax = max(valid.max(), 0.1) if len(valid) > 0 else 0.1
+
+    if fmt is None:
+        fmt = f".{decimals}f"
 
     sns.heatmap(
         data,
         ax=ax,
-        annot=True,
+        annot=annot,
         fmt=fmt,
         cmap="YlOrRd",
         vmin=0,
@@ -156,6 +283,89 @@ def plot_backfire_heatmap(
     ax.set_ylabel(y_aspect.capitalize(), fontsize=11)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
     ax.tick_params(axis="y", rotation=0)
+
+
+def plot_backfire_heatmap(
+    results: List[FrequencyResult],
+    x_aspect: str,
+    y_aspect: str,
+    sig_only: bool = False,
+    bidirectional: bool = False,
+    display_names: bool = True,
+    decimals: int = 2,
+    subtitle: str = "",
+    output_path: Optional[str] = None,
+) -> None:
+    """Create a single heatmap of backfire rates."""
+    if not results:
+        print("No results to plot.")
+        return
+
+    if bidirectional:
+        (
+            data,
+            data_d1,
+            data_d2,
+            x_labels,
+            y_labels,
+            factor_is_axis,
+            factor_level_map,
+        ) = build_backfire_data_bidirectional(
+            results, x_aspect, y_aspect, sig_only=sig_only, display_names=display_names
+        )
+
+        # Build custom annotation strings
+        annot = _build_annot_array(data, data_d1, data_d2, decimals)
+
+        # Add factor level suffixes to the appropriate axis labels
+        if factor_is_axis:
+            if x_aspect == "factor":
+                x_labels = _add_factor_level_suffixes(x_labels, factor_level_map)
+            else:
+                y_labels = _add_factor_level_suffixes(y_labels, factor_level_map)
+    else:
+        data, x_labels, y_labels = build_backfire_data(
+            results, x_aspect, y_aspect, sig_only=sig_only, display_names=display_names
+        )
+        annot = True
+
+    if data.size == 0 or np.all(np.isnan(data)):
+        print("No valid data to plot.")
+        return
+
+    fig_w = 3 + len(x_labels) * 1.2
+    fig_h = 2 + len(y_labels) * 0.7
+    # Extra height for bidirectional annotations
+    if bidirectional:
+        fig_h = 2.5 + len(y_labels) * 0.9
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    if bidirectional:
+        _plot_heatmap_common(
+            ax,
+            data,
+            x_labels,
+            y_labels,
+            x_aspect,
+            y_aspect,
+            sig_only,
+            subtitle,
+            decimals,
+            annot=annot,
+            fmt="",
+        )
+    else:
+        _plot_heatmap_common(
+            ax,
+            data,
+            x_labels,
+            y_labels,
+            x_aspect,
+            y_aspect,
+            sig_only,
+            subtitle,
+            decimals,
+        )
 
     plt.tight_layout()
 
@@ -233,6 +443,14 @@ Examples:
         "--sig-only",
         action="store_true",
         help="Only count backfires that are also statistically significant",
+    )
+
+    parser.add_argument(
+        "--bidirectional",
+        action="store_true",
+        help="Show directional breakdown in each cell. "
+        "If factor is an axis: (towards A, towards B). "
+        "If factor is aggregated: (towards baseline pref, away from baseline pref).",
     )
 
     parser.add_argument(
@@ -319,12 +537,13 @@ Examples:
     # Determine output path
     ext = "pdf" if args.pdf else "png"
     sig_suffix = "_sig" if args.sig_only else ""
+    bidir_suffix = "_bidir" if args.bidirectional else ""
     output_path = args.output
     if output_path is None:
         os.makedirs(PLOTS_OUTPUT_DIR, exist_ok=True)
         output_path = os.path.join(
             PLOTS_OUTPUT_DIR,
-            f"backfire{sig_suffix}_{x_aspect}_vs_{y_aspect}.{ext}",
+            f"backfire{sig_suffix}{bidir_suffix}_{x_aspect}_vs_{y_aspect}.{ext}",
         )
 
     plot_backfire_heatmap(
@@ -332,6 +551,7 @@ Examples:
         x_aspect,
         y_aspect,
         sig_only=args.sig_only,
+        bidirectional=args.bidirectional,
         display_names=display_names,
         decimals=args.decimals,
         subtitle=subtitle,
