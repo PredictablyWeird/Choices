@@ -59,5 +59,6 @@ results*
 
 # Analysis outputs (regenerable)
 analysis/*.json
-analysis/plots/
+analysis/plots/*.pdf
+analysis/plots/*.png
 plots/

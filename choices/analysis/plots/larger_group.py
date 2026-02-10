@@ -14,18 +14,18 @@ Two of {model, factor, nudge} are chosen as axes; the third is aggregated over.
 
 Usage:
     # Model (x) vs Factor (y), aggregating over nudge types
-    uv run python -m choices.analysis.plot_larger_group --axes model factor
+    uv run python -m choices.analysis.plots.larger_group --axes model factor
 
     # Factor (x) vs Nudge (y), aggregating over models
-    uv run python -m choices.analysis.plot_larger_group --axes factor nudge
+    uv run python -m choices.analysis.plots.larger_group --axes factor nudge
 
     # With filters
-    uv run python -m choices.analysis.plot_larger_group --axes model factor \\
+    uv run python -m choices.analysis.plots.larger_group --axes model factor \\
         --results-dirs results results_anthropic \\
         --nudge-types user_preference
 
     # Save to file
-    uv run python -m choices.analysis.plot_larger_group --axes model factor -o heatmaps.png
+    uv run python -m choices.analysis.plots.larger_group --axes model factor -o heatmaps.png
 """
 
 import argparse
@@ -515,13 +515,13 @@ def main():
         epilog="""
 Examples:
     # Model (x) vs Factor (y), aggregating over nudge types
-    uv run python -m choices.analysis.plot_larger_group --axes model factor
+    uv run python -m choices.analysis.plots.larger_group --axes model factor
 
     # Factor (x) vs Nudge (y), aggregating over models
-    uv run python -m choices.analysis.plot_larger_group --axes factor nudge
+    uv run python -m choices.analysis.plots.larger_group --axes factor nudge
 
     # With filters and output
-    uv run python -m choices.analysis.plot_larger_group --axes model factor \\
+    uv run python -m choices.analysis.plots.larger_group --axes model factor \\
         --results-dirs results results_anthropic -o heatmaps.png
         """,
     )
