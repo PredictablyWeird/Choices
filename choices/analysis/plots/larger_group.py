@@ -45,6 +45,7 @@ from choices.analysis.utils import (
     PLOTS_OUTPUT_DIR,
     get_base_model_name,
     get_model_display_name,
+    get_nudge_display_name,
 )
 
 # Aspect keys
@@ -66,8 +67,12 @@ def get_aspect_value(
         # Append reasoning condition
         return f"{name} ({result.reasoning_condition})"
     elif aspect == "factor":
-        return f"{result.level_A}/{result.level_B}"
+        if display_names:
+            return result.factor.replace("_", " ").title()
+        return result.factor
     elif aspect == "nudge":
+        if display_names:
+            return get_nudge_display_name(result.nudge_type)
         return result.nudge_type
     else:
         raise ValueError(f"Unknown aspect: {aspect}")
@@ -271,7 +276,9 @@ def plot_nudge_axis_heatmap(
 
     for r in results:
         other_val = get_aspect_value(r, other_aspect, display_names)
-        nudge_val = r.nudge_type
+        nudge_val = (
+            get_nudge_display_name(r.nudge_type) if display_names else r.nudge_type
+        )
 
         # Baseline
         if r.larger_group_rate_base is not None:
