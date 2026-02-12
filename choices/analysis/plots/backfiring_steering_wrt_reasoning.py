@@ -10,6 +10,7 @@ Designed for 2-column paper layout (side-by-side plots).
 Uses CSV data format.
 """
 
+import argparse
 import os
 
 import matplotlib.pyplot as plt
@@ -17,7 +18,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from choices.analysis.utils import PLOTS_OUTPUT_DIR
+from choices.analysis.utils import PLOTS_OUTPUT_DIR, get_nudge_display_name
 
 
 def load_csv_data(filepath):
@@ -100,7 +101,7 @@ def compute_steerability_magnitude(df):
     return mean, ci[0], ci[1]
 
 
-def create_bar_charts(input_file, output_dir=None):
+def create_bar_charts(input_file, output_dir=None, figsize=None):
     """Create two professional bar charts for reasoning comparison by nudge type."""
 
     # Load data from CSV
@@ -118,22 +119,11 @@ def create_bar_charts(input_file, output_dir=None):
 
     df["reasoning_group"] = df["reasoning"].map(reasoning_map)
 
-    # Nudge types with display labels (+ Overall at the end)
-    nudge_types = [
-        "emotional",
-        "few_shot_3",
-        "survey_preference",
-        "user_preference",
-        "weak_evidence",
-        "overall",
-    ]
-    nudge_labels = [
-        "Emotional\nAppeal",
-        "Few-Shot\nExamples",
-        "Survey\nResults",
-        "User\nPreference",
-        "Weak\nEvidence",
-        "Overall",
+    # Discover nudge types from data and build display labels using utils mapping
+    nudge_types_in_data = sorted(df["nudge_type"].unique().tolist())
+    nudge_types = nudge_types_in_data + ["overall"]
+    nudge_labels = [get_nudge_display_name(nt) for nt in nudge_types_in_data] + [
+        "Overall"
     ]
 
     # Compute metrics for each nudge type and reasoning group
@@ -212,6 +202,9 @@ def create_bar_charts(input_file, output_dir=None):
     width = 0.38
     divider_x = x[-2] + 0.85  # Position for vertical divider line
 
+    if figsize is None:
+        figsize = (10, 5.5)
+
     # Set professional style with larger fonts
     plt.rcParams.update(
         {
@@ -227,7 +220,7 @@ def create_bar_charts(input_file, output_dir=None):
     # =========================================================================
     # Plot 1: Backfiring Rate by Nudge Type
     # =========================================================================
-    fig1, ax1 = plt.subplots(figsize=(10, 5.5))
+    fig1, ax1 = plt.subplots(figsize=figsize)
 
     # Compute error bar values (distance from mean to CI bounds)
     # Handle edge cases where CIs might be invalid
@@ -354,7 +347,7 @@ def create_bar_charts(input_file, output_dir=None):
     # =========================================================================
     # Plot 2: Steerability Magnitude by Nudge Type
     # =========================================================================
-    fig2, ax2 = plt.subplots(figsize=(10, 5.5))
+    fig2, ax2 = plt.subplots(figsize=figsize)
 
     # Compute error bar values for steerability
     steer_no_err_lower = []
@@ -478,5 +471,28 @@ def create_bar_charts(input_file, output_dir=None):
 
 
 if __name__ == "__main__":
-    input_file = "main_results_jan28.csv"
-    create_bar_charts(input_file)
+    parser = argparse.ArgumentParser(
+        description="Create bar charts comparing reasoning vs non-reasoning conditions by nudge type."
+    )
+    parser.add_argument(
+        "input_file",
+        type=str,
+        help="Path to the input CSV file with results data.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help=f"Output directory for plots (default: {PLOTS_OUTPUT_DIR}).",
+    )
+    parser.add_argument(
+        "--figsize",
+        type=float,
+        nargs=2,
+        metavar=("WIDTH", "HEIGHT"),
+        default=None,
+        help="Figure size in inches, e.g. --figsize 12 6 (default: 10 5.5).",
+    )
+    args = parser.parse_args()
+    figsize = tuple(args.figsize) if args.figsize else None
+    create_bar_charts(args.input_file, output_dir=args.output_dir, figsize=figsize)

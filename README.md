@@ -191,7 +191,7 @@ Assuming you have raw results (as output from the batch script) in the folder `r
 - Fig. 2: `uv run python -m choices.analysis.plots.model_effects --factor wealth --results-dirs results --reasoning off none`
 - Fig. 3 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
 - Fig. 3 (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
-- Figs. 4 and 5: `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning`
+- Figs. 4 and 5: `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning [csv summary file]`
 - Fig. 6: `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
 - Fig. 7: `uv run python -m choices.analysis.surface_form.analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
   - Note: For this plot you need to also run "_baseline" and "_negation" versions of experiments and put these results into `results_surface/`
