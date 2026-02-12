@@ -195,7 +195,7 @@ def plot_two_heatmaps(
         figsize = (7 + len(x_labels) * 1.2, 2 + len(y_labels) * 0.7)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     fmt = f".{decimals}f"
-    cmap = "RdBu_r"
+    cmap = "RdBu"
 
     # Plot P_0(Large)
     sns.heatmap(
@@ -348,7 +348,7 @@ def plot_nudge_axis_heatmap(
     vmin, vmax = _compute_color_range(data)
 
     fmt = f".{decimals}f"
-    cmap = "RdBu_r"
+    cmap = "RdBu"
     heatmap_kws = dict(
         annot=True,
         fmt=fmt,
