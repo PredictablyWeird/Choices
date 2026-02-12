@@ -295,6 +295,7 @@ def plot_backfire_heatmap(
     decimals: int = 2,
     subtitle: str = "",
     output_path: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """Create a single heatmap of backfire rates."""
     if not results:
@@ -333,12 +334,14 @@ def plot_backfire_heatmap(
         print("No valid data to plot.")
         return
 
-    fig_w = 3 + len(x_labels) * 1.2
-    fig_h = 2 + len(y_labels) * 0.7
-    # Extra height for bidirectional annotations
-    if bidirectional:
-        fig_h = 2.5 + len(y_labels) * 0.9
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    if figsize is None:
+        fig_w = 3 + len(x_labels) * 1.2
+        fig_h = 2 + len(y_labels) * 0.7
+        # Extra height for bidirectional annotations
+        if bidirectional:
+            fig_h = 2.5 + len(y_labels) * 0.9
+        figsize = (fig_w, fig_h)
+    fig, ax = plt.subplots(figsize=figsize)
 
     if bidirectional:
         _plot_heatmap_common(
@@ -477,6 +480,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--figsize",
+        nargs=2,
+        type=float,
+        default=None,
+        metavar=("WIDTH", "HEIGHT"),
+        help="Figure size in inches as WIDTH HEIGHT (default: auto-computed)",
+    )
+
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -546,6 +558,8 @@ Examples:
             f"backfire{sig_suffix}{bidir_suffix}_{x_aspect}_vs_{y_aspect}.{ext}",
         )
 
+    figsize = tuple(args.figsize) if args.figsize else None
+
     plot_backfire_heatmap(
         results,
         x_aspect,
@@ -556,6 +570,7 @@ Examples:
         decimals=args.decimals,
         subtitle=subtitle,
         output_path=output_path,
+        figsize=figsize,
     )
 
 

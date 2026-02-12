@@ -52,7 +52,7 @@ from choices.analysis.utils import (
 VALID_AXES = {"model", "factor", "nudge"}
 
 # Label for the baseline row/column when nudge is an axis
-BASELINE_LABEL = "none (baseline)"
+BASELINE_LABEL = "Baseline"
 
 
 def get_aspect_value(
@@ -158,6 +158,7 @@ def plot_two_heatmaps(
     decimals: int = 2,
     subtitle: str = "",
     output_path: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """
     Create side-by-side heatmaps for P_0(Large) and P_AB(Large).
@@ -190,9 +191,9 @@ def plot_two_heatmaps(
 
     vmin, vmax = _compute_color_range(data_p0, data_pab)
 
-    fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(7 + len(x_labels) * 1.2, 2 + len(y_labels) * 0.7)
-    )
+    if figsize is None:
+        figsize = (7 + len(x_labels) * 1.2, 2 + len(y_labels) * 0.7)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     fmt = f".{decimals}f"
     cmap = "RdBu_r"
 
@@ -259,6 +260,7 @@ def plot_nudge_axis_heatmap(
     decimals: int = 2,
     subtitle: str = "",
     output_path: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """
     Create a single heatmap with a baseline 'none' row/column and per-nudge-type
@@ -368,7 +370,7 @@ def plot_nudge_axis_heatmap(
         width_ratios = [n_base_cols, gap_ratio, n_nudge_cols, 0.4]
         fig_w = 3 + (n_base_cols + n_nudge_cols) * 1.2
         fig_h = 2 + n_other * 0.7
-        fig = plt.figure(figsize=(fig_w, fig_h))
+        fig = plt.figure(figsize=figsize or (fig_w, fig_h))
         gs = GridSpec(1, 4, figure=fig, width_ratios=width_ratios, wspace=0.05)
         ax_base = fig.add_subplot(gs[0, 0])
         ax_nudge = fig.add_subplot(gs[0, 2])
@@ -411,7 +413,7 @@ def plot_nudge_axis_heatmap(
         height_ratios = [n_base_rows, gap_ratio, n_nudge_rows]
         fig_w = 3 + n_other * 1.2
         fig_h = 2 + (n_base_rows + n_nudge_rows) * 0.7
-        fig = plt.figure(figsize=(fig_w, fig_h))
+        fig = plt.figure(figsize=figsize or (fig_w, fig_h))
         gs = GridSpec(
             3,
             2,
@@ -478,6 +480,7 @@ def plot_heatmaps(
     output_path: Optional[str] = None,
     decimals: int = 2,
     subtitle: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """
     Dispatch to the appropriate plotting function based on whether nudge is an axis.
@@ -502,6 +505,7 @@ def plot_heatmaps(
             decimals=decimals,
             subtitle=sub,
             output_path=output_path,
+            figsize=figsize,
         )
     else:
         plot_two_heatmaps(
@@ -512,6 +516,7 @@ def plot_heatmaps(
             decimals=decimals,
             subtitle=sub,
             output_path=output_path,
+            figsize=figsize,
         )
 
 
@@ -603,6 +608,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--figsize",
+        nargs=2,
+        type=float,
+        default=None,
+        metavar=("WIDTH", "HEIGHT"),
+        help="Figure size in inches as WIDTH HEIGHT (default: auto-computed)",
+    )
+
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -676,6 +690,8 @@ Examples:
             f"larger_group_{x_aspect}_vs_{y_aspect}.{ext}",
         )
 
+    figsize = tuple(args.figsize) if args.figsize else None
+
     plot_heatmaps(
         results_with_lg,
         x_aspect,
@@ -685,6 +701,7 @@ Examples:
         output_path=output_path,
         decimals=args.decimals,
         subtitle=subtitle,
+        figsize=figsize,
     )
 
 
