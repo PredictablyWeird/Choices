@@ -82,10 +82,47 @@ qwen3-235b-a22b-2507-non-reasoning:
   reasoning_effort:
     enabled: false
 
+qwen3-235b-a22b-2507:  # Alias for backwards compatibility
+  model_name: "openrouter/qwen/qwen3-235b-a22b-2507"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B"
+  reasoning_effort:
+    enabled: false
+
 qwen3-235b-a22b-2507-reasoning:
   model_name: "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
   model_type: openrouter
   display_name: "Qwen 3.2 235B (reasoning)"
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+kimi-k25-non-reasoning:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5"
+  reasoning_effort:
+    enabled: false
+
+kimi-k25-reasoning:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5 (reasoning)"
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+glm-5-non-reasoning:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5"
+  reasoning_effort:
+    enabled: false
+
+glm-5-reasoning:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5 (reasoning)"
   reasoning_effort:
     enabled: true
     effort: "low"
