@@ -75,6 +75,21 @@ grok-41-fast-reasoning:
     enabled: true
     effort: "low"
 
+qwen3-235b-a22b-2507-non-reasoning:
+  model_name: "openrouter/qwen/qwen3-235b-a22b-2507"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B"
+  reasoning_effort:
+    enabled: false
+
+qwen3-235b-a22b-2507-reasoning:
+  model_name: "openrouter/qwen/qwen3-235b-a22b-thinking-2507"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B (reasoning)"
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
 
 # ------------------------------
 # OpenRouter
@@ -102,11 +117,6 @@ qwen3-32b:
   model_name: "openrouter/qwen/qwen3-32b"
   model_type: openrouter
   display_name: "Qwen 3.3 32B"
-
-qwen3-235b-a22b-2507:
-  model_name: "openrouter/qwen/qwen3-235b-a22b-2507"
-  model_type: openrouter
-  display_name: "Qwen 3.2 235B"
 
 llama-33-70b:
   model_name: "openrouter/meta-llama/llama-3.3-70b-instruct"
