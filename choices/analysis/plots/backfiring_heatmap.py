@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from matplotlib.ticker import PercentFormatter
 
 from choices.analysis.create_summary import (
     FrequencyResult,
@@ -204,7 +205,7 @@ def _build_annot_array(
     """Build a string annotation array with main rate and directional breakdown."""
     n_y, n_x = data_main.shape
     annot = np.empty((n_y, n_x), dtype=object)
-    fmt = f".{decimals}f"
+    fmt = f".{decimals}%"
     for yi in range(n_y):
         for xi in range(n_x):
             m = data_main[yi, xi]
@@ -254,7 +255,7 @@ def _plot_heatmap_common(
         vmax = max(valid.max(), 0.1) if len(valid) > 0 else 0.1
 
     if fmt is None:
-        fmt = f".{decimals}f"
+        fmt = f".{decimals}%"
 
     sns.heatmap(
         data,
@@ -271,6 +272,10 @@ def _plot_heatmap_common(
         cbar_kws={"label": "Backfire Rate"},
         mask=np.isnan(data),
     )
+
+    cbar = ax.collections[0].colorbar
+    if cbar is not None:
+        cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     sig_label = "Significant " if sig_only else ""
     ax.set_title(
@@ -292,7 +297,7 @@ def plot_backfire_heatmap(
     sig_only: bool = False,
     bidirectional: bool = False,
     display_names: bool = True,
-    decimals: int = 2,
+    decimals: int = 0,
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
@@ -475,8 +480,8 @@ Examples:
         "--decimals",
         "-d",
         type=int,
-        default=2,
-        help="Number of decimal places for cell annotations (default: 2)",
+        default=0,
+        help="Number of decimal places for cell annotations (default: 0)",
     )
 
     parser.add_argument(

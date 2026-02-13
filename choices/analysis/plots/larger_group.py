@@ -36,6 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import PercentFormatter
 
 from choices.analysis.create_summary import (
     FrequencyResult,
@@ -155,7 +156,7 @@ def plot_two_heatmaps(
     x_aspect: str,
     y_aspect: str,
     display_names: bool = True,
-    decimals: int = 2,
+    decimals: int = 0,
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
@@ -194,7 +195,7 @@ def plot_two_heatmaps(
     if figsize is None:
         figsize = (7 + len(x_labels) * 1.2, 2 + len(y_labels) * 0.7)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-    fmt = f".{decimals}f"
+    fmt = f".{decimals}%"
     cmap = "RdBu"
 
     # Plot P_0(Large)
@@ -216,6 +217,9 @@ def plot_two_heatmaps(
     )
     ax1.set_title(r"$P_0$(Large) — Baseline", fontsize=13, fontweight="bold")
     _style_heatmap_ax(ax1, x_aspect, y_aspect)
+    cbar = ax1.collections[0].colorbar
+    if cbar is not None:
+        cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     # Plot P_AB(Large)
     sns.heatmap(
@@ -236,6 +240,9 @@ def plot_two_heatmaps(
     )
     ax2.set_title(r"$P_{AB}$(Large) — Nudged", fontsize=13, fontweight="bold")
     _style_heatmap_ax(ax2, x_aspect, y_aspect)
+    cbar = ax2.collections[0].colorbar
+    if cbar is not None:
+        cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     fig.suptitle(
         f"Larger-Group Preference ({subtitle})",
@@ -257,7 +264,7 @@ def plot_nudge_axis_heatmap(
     x_aspect: str,
     y_aspect: str,
     display_names: bool = True,
-    decimals: int = 2,
+    decimals: int = 0,
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
@@ -347,7 +354,7 @@ def plot_nudge_axis_heatmap(
 
     vmin, vmax = _compute_color_range(data)
 
-    fmt = f".{decimals}f"
+    fmt = f".{decimals}%"
     cmap = "RdBu"
     heatmap_kws = dict(
         annot=True,
@@ -457,6 +464,8 @@ def plot_nudge_axis_heatmap(
         ax_nudge.set_xticklabels(ax_nudge.get_xticklabels(), rotation=45, ha="right")
         ax_nudge.tick_params(axis="y", rotation=0)
 
+    ax_cbar.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+
     fig.suptitle(
         f"Larger-Group Preference ({subtitle})",
         fontsize=14,
@@ -478,7 +487,7 @@ def plot_heatmaps(
     aggregated_aspect: str,
     display_names: bool = True,
     output_path: Optional[str] = None,
-    decimals: int = 2,
+    decimals: int = 0,
     subtitle: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
@@ -603,8 +612,8 @@ Examples:
         "--decimals",
         "-d",
         type=int,
-        default=2,
-        help="Number of decimal places for cell annotations (default: 2)",
+        default=0,
+        help="Number of decimal places for cell annotations (default: 0)",
     )
 
     parser.add_argument(
