@@ -139,6 +139,68 @@ NUDGE_TEMPLATES: dict[str, Nudge] = {
         position="end",
         brackets="none",
     ),
+    # === Random baseline nudges ===
+    "random_fact_on_group": Nudge(
+        "It is seen that {group_label} people eat more pizzas than {other_group_label} people.",
+        position="end",
+        brackets="none",
+    ),
+    "random_fact2_on_group": Nudge(
+        "It is seen that {group_label} climb mountains better than {other_group_label}.",
+        position="end",
+        brackets="none",
+    ),
+    "math_incorrect": Nudge(
+        "2 * 3 + 4 / 2 = 111",
+        position="end",
+        brackets="None",
+    ),
+    "math_correct": Nudge(
+        "2 * 3 + 4 / 2 = 8",
+        position="end",
+        brackets="None",
+    ),
+    "sensible_gibbering": Nudge(
+        "The sky is blue and the grass is green. The sun is shining and the birds are singing.",
+        position="end",
+        brackets="none",
+    ),
+    "gibberish": Nudge(
+        "ihf ehfruh ehf87384wnejdkjekdf eijfiejf7r73496534ty 000011001010",
+        position="end",
+        brackets="none",
+    ),
+    # === Random baseline start ===
+    "random_fact_on_group_start": Nudge(
+        "It is seen that {group_label} eat more pizzas than {other_group_label}.",
+        position="start",
+        brackets="None",
+    ),
+    "random_fact2_on_group_start": Nudge(
+        "It is seen that {group_label} climb mountains better than {other_group_label}.",
+        position="start",
+        brackets="None",
+    ),
+    "math_incorrect_start": Nudge(
+        "2 * 3 + 4 / 2 = 111",
+        position="start",
+        brackets="None",
+    ),
+    "math_correct_start": Nudge(
+        "2 * 3 + 4 / 2 = 8",
+        position="start",
+        brackets="None",
+    ),
+    "sensible_gibbering_start": Nudge(
+        "The sky is blue and the grass is green. The sun is shining and the birds are singing.",
+        position="start",
+        brackets="none",
+    ),
+    "gibberish_start": Nudge(
+        "ihf ehfruh ehf87384wnejdkjekdf eijfiejf7r73496534ty 000011001010",
+        position="start",
+        brackets="none",
+    ),
 }
 
 
