@@ -203,7 +203,7 @@ def create_bar_charts(input_file, output_dir=None, figsize=None):
     divider_x = x[-2] + 0.85  # Position for vertical divider line
 
     if figsize is None:
-        figsize = (10, 5.5)
+        figsize = (10, 6)
 
     # Set professional style with larger fonts
     plt.rcParams.update(
@@ -307,10 +307,12 @@ def create_bar_charts(input_file, output_dir=None, figsize=None):
         )
 
     # Style axes with larger fonts, no title
-    ax1.set_xlabel("Influence Type", fontsize=20, fontweight="bold", labelpad=12)
+    # ax1.set_xlabel("Influence Type", fontsize=20, fontweight="bold", labelpad=12)
     ax1.set_ylabel("Backfire Rate (%)", fontsize=20, fontweight="bold", labelpad=12)
     ax1.set_xticks(x)
-    ax1.set_xticklabels(nudge_labels, fontsize=16, fontweight="medium")
+    ax1.set_xticklabels(
+        nudge_labels, fontsize=16, fontweight="medium", rotation=30, ha="right"
+    )
     ax1.set_ylim(0, max_backfire * 1.3)
     ax1.tick_params(axis="y", labelsize=16)
 
@@ -428,12 +430,14 @@ def create_bar_charts(input_file, output_dir=None, figsize=None):
         )
 
     # Style axes with larger fonts, no title
-    ax2.set_xlabel("Influence Type", fontsize=20, fontweight="bold", labelpad=12)
+    # ax2.set_xlabel("Influence Type", fontsize=20, fontweight="bold", labelpad=12)
     ax2.set_ylabel(
         "Mean Absolute Steerability", fontsize=20, fontweight="bold", labelpad=12
     )
     ax2.set_xticks(x)
-    ax2.set_xticklabels(nudge_labels, fontsize=16, fontweight="medium")
+    ax2.set_xticklabels(
+        nudge_labels, fontsize=16, fontweight="medium", rotation=30, ha="right"
+    )
     ax2.set_ylim(0, max_steer * 1.3)
     ax2.tick_params(axis="y", labelsize=16)
 
@@ -491,7 +495,7 @@ if __name__ == "__main__":
         nargs=2,
         metavar=("WIDTH", "HEIGHT"),
         default=None,
-        help="Figure size in inches, e.g. --figsize 12 6 (default: 10 5.5).",
+        help="Figure size in inches, e.g. --figsize 12 6 (default: 10 6).",
     )
     args = parser.parse_args()
     figsize = tuple(args.figsize) if args.figsize else None
