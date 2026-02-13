@@ -44,6 +44,7 @@ from choices.analysis.create_summary import (
 )
 from choices.analysis.plots.larger_group import (
     VALID_AXES,
+    get_aspect_display_name,
     get_aspect_value,
 )
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
@@ -284,8 +285,8 @@ def _plot_heatmap_common(
         fontweight="bold",
         pad=12,
     )
-    ax.set_xlabel(x_aspect.capitalize(), fontsize=11)
-    ax.set_ylabel(y_aspect.capitalize(), fontsize=11)
+    ax.set_xlabel(get_aspect_display_name(x_aspect), fontsize=11)
+    ax.set_ylabel(get_aspect_display_name(y_aspect), fontsize=11)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
     ax.tick_params(axis="y", rotation=0)
 
@@ -546,10 +547,11 @@ Examples:
     agg_values = sorted(
         set(get_aspect_value(r, aggregated_aspect, display_names) for r in results)
     )
+    agg_display = get_aspect_display_name(aggregated_aspect)
     if len(agg_values) == 1:
-        subtitle = f"{aggregated_aspect}: {agg_values[0]}"
+        subtitle = f"{agg_display}: {agg_values[0]}"
     else:
-        subtitle = f"aggregated over {aggregated_aspect} (n={len(agg_values)})"
+        subtitle = f"aggregated over {agg_display} (n={len(agg_values)})"
 
     # Determine output path
     ext = "pdf" if args.pdf else "png"
