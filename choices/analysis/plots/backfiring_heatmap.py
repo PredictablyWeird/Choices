@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from matplotlib.ticker import PercentFormatter
 
 from choices.analysis.create_summary import (
     FrequencyResult,
@@ -43,6 +44,7 @@ from choices.analysis.create_summary import (
 )
 from choices.analysis.plots.larger_group import (
     VALID_AXES,
+    get_aspect_display_name,
     get_aspect_value,
 )
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
@@ -204,7 +206,7 @@ def _build_annot_array(
     """Build a string annotation array with main rate and directional breakdown."""
     n_y, n_x = data_main.shape
     annot = np.empty((n_y, n_x), dtype=object)
-    fmt = f".{decimals}f"
+    fmt = f".{decimals}%"
     for yi in range(n_y):
         for xi in range(n_x):
             m = data_main[yi, xi]
@@ -254,7 +256,7 @@ def _plot_heatmap_common(
         vmax = max(valid.max(), 0.1) if len(valid) > 0 else 0.1
 
     if fmt is None:
-        fmt = f".{decimals}f"
+        fmt = f".{decimals}%"
 
     sns.heatmap(
         data,
@@ -272,6 +274,10 @@ def _plot_heatmap_common(
         mask=np.isnan(data),
     )
 
+    cbar = ax.collections[0].colorbar
+    if cbar is not None:
+        cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+
     sig_label = "Significant " if sig_only else ""
     ax.set_title(
         f"{sig_label}Backfire Rate ({subtitle})",
@@ -279,8 +285,8 @@ def _plot_heatmap_common(
         fontweight="bold",
         pad=12,
     )
-    ax.set_xlabel(x_aspect.capitalize(), fontsize=11)
-    ax.set_ylabel(y_aspect.capitalize(), fontsize=11)
+    ax.set_xlabel(get_aspect_display_name(x_aspect), fontsize=11)
+    ax.set_ylabel(get_aspect_display_name(y_aspect), fontsize=11)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
     ax.tick_params(axis="y", rotation=0)
 
@@ -292,7 +298,7 @@ def plot_backfire_heatmap(
     sig_only: bool = False,
     bidirectional: bool = False,
     display_names: bool = True,
-    decimals: int = 2,
+    decimals: int = 0,
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
@@ -475,8 +481,8 @@ Examples:
         "--decimals",
         "-d",
         type=int,
-        default=2,
-        help="Number of decimal places for cell annotations (default: 2)",
+        default=0,
+        help="Number of decimal places for cell annotations (default: 0)",
     )
 
     parser.add_argument(
@@ -541,10 +547,11 @@ Examples:
     agg_values = sorted(
         set(get_aspect_value(r, aggregated_aspect, display_names) for r in results)
     )
+    agg_display = get_aspect_display_name(aggregated_aspect)
     if len(agg_values) == 1:
-        subtitle = f"{aggregated_aspect}: {agg_values[0]}"
+        subtitle = f"{agg_display}: {agg_values[0]}"
     else:
-        subtitle = f"aggregated over {aggregated_aspect} (n={len(agg_values)})"
+        subtitle = f"aggregated over {agg_display} (n={len(agg_values)})"
 
     # Determine output path
     ext = "pdf" if args.pdf else "png"

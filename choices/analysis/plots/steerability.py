@@ -1403,6 +1403,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--asym",
+        action="store_true",
+        help="Add a column showing steerability asymmetry as violin plot",
+    )
+
+    parser.add_argument(
         "--no-title",
         action="store_true",
         help="Suppress the plot title",
