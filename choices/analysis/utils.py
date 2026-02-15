@@ -537,7 +537,7 @@ NUDGE_TYPE_ABBREVIATIONS = {
     "expert_recommendation": "Expert",
     # Pressure-based
     "emotional": "Emotional",
-    "identity": "Identity",
+    "virtue_appeal": "Virtue",
     "user_preference": "User Pref.",
     "social_norm": "Social",
     # Direct instruction
