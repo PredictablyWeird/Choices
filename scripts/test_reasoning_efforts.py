@@ -15,7 +15,7 @@ Sends one moral triage prompt to each model at each effort level to verify:
 Tests both the Responses API (reasoning={...}) and Chat Completions API
 (extra_body with provider-specific params) to find working disable methods.
 
-Run with: uv run python test_reasoning_efforts.py
+Run with: uv run python scripts/test_reasoning_efforts.py
 """
 
 import asyncio
