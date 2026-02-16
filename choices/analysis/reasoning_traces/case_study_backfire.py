@@ -34,6 +34,10 @@ from choices.analysis.reasoning_traces.edge_filtering import (
     extract_traces_for_edge,
     n_difference,
 )
+from choices.analysis.reasoning_traces.sample_edges import (
+    edge_to_case_dict,
+    save_cases_json,
+)
 
 
 # =============================================================================
@@ -370,77 +374,29 @@ def save_results(
     """
     Save cases and traces to JSON for later analysis.
 
+    Uses the shared ``edge_to_case_dict`` helper for the common fields and
+    adds backfire-specific fields (``preferred_option``, ``effect_magnitude``).
+
     Args:
         cases: List of BackfireCase objects
         paired_traces: List of PairedTraces objects (parallel to cases)
         output_path: Path to save JSON file
         metadata: Metadata about the run (model, filters, etc.)
     """
-    import json
-    from datetime import datetime
-
-    data = {
-        "metadata": {
-            **metadata,
-            "saved_at": datetime.now().isoformat(),
-            "n_cases": len(cases),
-        },
-        "cases": [],
-    }
-
+    case_dicts: list[dict] = []
     for case, pair in zip(cases, paired_traces):
-        case_data = {
-            # Edge identification
-            "edge_key": case.edge.edge_key,
-            # Experiment metadata
-            "model": case.edge.model,
-            "factor": case.edge.factor,
-            "nudge_type": case.edge.nudge_type,
-            "level_A": case.edge.level_A,
-            "level_B": case.edge.level_B,
-            # Option info
-            "option_a_label": case.edge.option_a_label,
-            "option_b_label": case.edge.option_b_label,
-            "option_a_n": case.edge.option_a_n,
-            "option_b_n": case.edge.option_b_n,
-            # Cross-condition frequencies
-            "f_0_A": case.edge.f_0_A,
-            "f_A_A": case.edge.f_A_A,
-            "f_B_A": case.edge.f_B_A,
-            # Backfire info
-            "nudged_option": case.nudged_option,
-            "preferred_option": case.preferred_option,
-            "baseline_freq": case.baseline_freq,
-            "nudged_freq": case.nudged_freq,
-            "effect_magnitude": case.effect_magnitude,
-            "nudged_n": case.nudged_n,
-            "other_n": case.other_n,
-            # Traces - condition A is baseline, condition B is nudged
-            "condition_a_name": "baseline",
-            "condition_b_name": f"nudged_towards_{case.nudged_option}",
-            "condition_a_traces": [
-                {
-                    "choice": t.choice,
-                    "reasoning": t.reasoning,
-                    "is_flipped": t.is_flipped,
-                }
-                for t in pair.baseline_traces
-            ],
-            "condition_b_traces": [
-                {
-                    "choice": t.choice,
-                    "reasoning": t.reasoning,
-                    "is_flipped": t.is_flipped,
-                }
-                for t in pair.nudged_traces
-            ],
-        }
-        data["cases"].append(case_data)
+        case_data = edge_to_case_dict(
+            case.edge,
+            case.nudged_option,
+            pair.baseline_traces,
+            pair.nudged_traces,
+        )
+        # Backfire-specific fields
+        case_data["preferred_option"] = case.preferred_option
+        case_data["effect_magnitude"] = case.effect_magnitude
+        case_dicts.append(case_data)
 
-    with open(output_path, "w") as f:
-        json.dump(data, f, indent=2)
-
-    print(f"\nSaved {len(cases)} cases to {output_path}")
+    save_cases_json(case_dicts, metadata, output_path)
 
 
 # =============================================================================
