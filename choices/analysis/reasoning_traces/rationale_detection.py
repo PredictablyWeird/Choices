@@ -78,6 +78,7 @@ RATIONALE_CODES = [
     "random_or_arbitrary",
     "task_compliance",
     "feels_right",
+    "context",
     "other",
 ]
 
@@ -134,6 +135,9 @@ class RationaleSetAnnotation:
         default_factory=lambda: RationaleAnnotation(status="not_mentioned")
     )
     feels_right: RationaleAnnotation = field(
+        default_factory=lambda: RationaleAnnotation(status="not_mentioned")
+    )
+    context: RationaleAnnotation = field(
         default_factory=lambda: RationaleAnnotation(status="not_mentioned")
     )
     other: RationaleAnnotation = field(
@@ -207,7 +211,11 @@ RATIONALE_PROMPT = (
     "13. **feels_right**: The model says the decision feels right, feels "
     "intuitive, or goes with a gut feeling without providing a substantive "
     "reason.\n"
-    "14. **other**: Any other rationale not covered above. If present, "
+    "14. **context**: The model references specific information from the "
+    "prompt context such as a survey result, user preference, expert "
+    "recommendation, emotional appeal, or any other contextual nudge "
+    "embedded in the prompt.\n"
+    "15. **other**: Any other rationale not covered above. If present, "
     "include a brief description.\n"
     "\n"
     "Also identify the **primary_rationale**: the single rationale code that "
@@ -231,6 +239,7 @@ RATIONALE_PROMPT = (
     '    "random_or_arbitrary": {{"status": "...", "quote": "..."}},\n'
     '    "task_compliance": {{"status": "...", "quote": "..."}},\n'
     '    "feels_right": {{"status": "...", "quote": "..."}},\n'
+    '    "context": {{"status": "...", "quote": "..."}},\n'
     '    "other": {{"status": "...", "quote": "...", "description": '
     '"brief description of the rationale or null"}},\n'
     '    "primary_rationale": "rationale_code or none"\n'
