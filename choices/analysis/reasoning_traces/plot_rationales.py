@@ -25,6 +25,7 @@ Usage:
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -71,7 +72,7 @@ RATIONALE_DISPLAY_NAMES = {
     "random_or_arbitrary": "Random / arbitrary",
     "task_compliance": "Task compliance",
     "feels_right": "Feels right",
-    "context": "Context (nudge reference)",
+    "context": "Contextual information",
     "other": "Other",
 }
 
@@ -122,12 +123,34 @@ def collect_traces(cases: list[dict], condition: str) -> list[dict]:
     return traces
 
 
+@dataclass
+class RationaleRate:
+    """Rate and 95 % Wilson-score CI for a single rationale."""
+
+    rate: float
+    ci_low: float
+    ci_high: float
+    count: int
+    n: int
+
+
+def _wilson_ci(count: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n == 0:
+        return 0.0, 0.0
+    p = count / n
+    denom = 1 + z**2 / n
+    centre = (p + z**2 / (2 * n)) / denom
+    margin = (z / denom) * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))
+    return max(0.0, centre - margin), min(1.0, centre + margin)
+
+
 def compute_rationale_rates(
     traces: list[dict],
     metric: str = "mentioned",
-) -> dict[str, float]:
+) -> dict[str, RationaleRate]:
     """
-    Compute the rate of each rationale across *traces*.
+    Compute the rate and 95 % CI of each rationale across *traces*.
 
     Args:
         traces: List of trace dicts with ``rationales`` annotations.
@@ -137,13 +160,16 @@ def compute_rationale_rates(
             ``"primary"``  – fraction where this rationale is the primary one.
 
     Returns:
-        Dict mapping rationale code to rate (0–1).
+        Dict mapping rationale code to :class:`RationaleRate`.
     """
     n = len(traces)
     if n == 0:
-        return {code: 0.0 for code in RATIONALE_CODES}
+        return {
+            code: RationaleRate(rate=0.0, ci_low=0.0, ci_high=0.0, count=0, n=0)
+            for code in RATIONALE_CODES
+        }
 
-    rates: dict[str, float] = {}
+    rates: dict[str, RationaleRate] = {}
     for code in RATIONALE_CODES:
         if metric == "primary":
             count = sum(
@@ -163,7 +189,10 @@ def compute_rationale_rates(
                 if t["rationales"].get(code, {}).get("status")
                 in ("mentioned_but_not_acted_on", "mentioned_and_acted_on")
             )
-        rates[code] = count / n
+        ci_low, ci_high = _wilson_ci(count, n)
+        rates[code] = RationaleRate(
+            rate=count / n, ci_low=ci_low, ci_high=ci_high, count=count, n=n
+        )
 
     return rates
 
@@ -207,7 +236,7 @@ def plot_rationale_comparison(
     setup_plot_style()
 
     # Collect rates for each source
-    all_rates: list[dict[str, float]] = []
+    all_rates: list[dict[str, RationaleRate]] = []
     labels: list[str] = []
     trace_counts: list[int] = []
 
@@ -224,7 +253,7 @@ def plot_rationale_comparison(
 
     # Sort rationales by the average rate across sources (descending)
     avg_rates = {
-        code: np.mean([r[code] for r in all_rates]) for code in RATIONALE_CODES
+        code: np.mean([r[code].rate for r in all_rates]) for code in RATIONALE_CODES
     }
     sorted_codes = sorted(RATIONALE_CODES, key=lambda c: avg_rates[c], reverse=True)
 
@@ -238,24 +267,33 @@ def plot_rationale_comparison(
 
     for i, (rates, label, n_traces) in enumerate(zip(all_rates, labels, trace_counts)):
         offsets = y - 0.4 + bar_height * (i + 0.5)
-        values = [rates[code] * 100 for code in sorted_codes]
+        values = [rates[code].rate * 100 for code in sorted_codes]
+
+        # Asymmetric error bars from Wilson CI
+        ci_lo = [rates[code].ci_low * 100 for code in sorted_codes]
+        ci_hi = [rates[code].ci_high * 100 for code in sorted_codes]
+        xerr_low = [max(0.0, v - lo) for v, lo in zip(values, ci_lo)]
+        xerr_high = [max(0.0, hi - v) for v, hi in zip(values, ci_hi)]
+
         color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
         bars = ax.barh(
             offsets,
             values,
             height=bar_height * 0.9,
+            xerr=[xerr_low, xerr_high],
+            error_kw={"linewidth": 1.0, "capsize": 2, "color": "0.3"},
             label=f"{label} (n={n_traces})",
             color=color,
             edgecolor="white",
             linewidth=0.5,
         )
 
-        # Value labels for bars > 3%
-        for bar in bars:
+        # Value labels for bars whose upper CI extends past 3 %
+        for bar, hi in zip(bars, ci_hi):
             width = bar.get_width()
             if width > 3:
                 ax.text(
-                    width + 0.5,
+                    hi + 0.8,
                     bar.get_y() + bar.get_height() / 2,
                     f"{width:.1f}%",
                     va="center",
