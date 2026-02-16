@@ -177,11 +177,15 @@ async def call_openrouter_async(
         )
 
         if response.status_code == 429:
-            wait_time = (2**attempt) * 2 + 1  # 3, 5, 9, 17, 33 seconds
-            print(
-                f"  Rate limited, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})",
-                flush=True,
-            )
+            wait_time = (2**attempt) + 1  # 2, 3, 5, 9, 17 seconds
+            if attempt == 0:
+                # Don't log every first retry to reduce noise
+                pass
+            else:
+                print(
+                    f"  Rate limited, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})",
+                    flush=True,
+                )
             await asyncio.sleep(wait_time)
             continue
 
@@ -348,11 +352,11 @@ def extract_all_traces(results_dirs: list[str]) -> list[TraceWithMetadata]:
 
                         aux_data = edge_data.get("aux_data", {})
                         original_reasoning = aux_data.get(
-                            "original_reasoning_summaries", []
-                        )
+                            "original_reasoning_summaries"
+                        ) or aux_data.get("original_reasoning", [])
                         flipped_reasoning = aux_data.get(
-                            "flipped_reasoning_summaries", []
-                        )
+                            "flipped_reasoning_summaries"
+                        ) or aux_data.get("flipped_reasoning", [])
                         original_parsed = aux_data.get("original_parsed", [])
                         flipped_parsed = aux_data.get("flipped_parsed", [])
 
@@ -540,41 +544,40 @@ async def classify_all_traces_async(
     semaphore = asyncio.Semaphore(max_concurrent)
     completed = 0
     start_time = time.time()
+    last_checkpoint = 0
 
     async with httpx.AsyncClient(timeout=120.0) as client:
-        # Process in batches for checkpoint purposes
-        batch_size = checkpoint_interval
-        for batch_start in range(0, len(unclassified), batch_size):
-            batch = unclassified[batch_start : batch_start + batch_size]
-
-            # Create tasks for this batch
-            tasks = [
+        # Launch ALL tasks at once; the semaphore controls concurrency.
+        # Use as_completed so slow retries don't block progress reporting.
+        all_tasks = [
+            asyncio.ensure_future(
                 classify_trace_with_semaphore(semaphore, client, trace, idx, model)
-                for idx, trace in batch
-            ]
-
-            # Run batch concurrently
-            results = await asyncio.gather(*tasks)
-
-            # Process results
-            for trace_id, classification in results:
-                if classification:
-                    traces[trace_id].classification = classification
-                    classified_indices.add(trace_id)
-                completed += 1
-
-            # Progress report
-            done = len(classified_indices)
-            total = len(traces)
-            elapsed = time.time() - start_time
-            rate = completed / elapsed if elapsed > 0 else 0
-            print(
-                f"Progress: {done}/{total} ({done/total*100:.1f}%) - {rate:.1f} traces/sec",
-                flush=True,
             )
+            for idx, trace in unclassified
+        ]
 
-            # Checkpoint after each batch
-            save_checkpoint(traces, classified_indices, checkpoint_file)
+        for future in asyncio.as_completed(all_tasks):
+            trace_id, classification = await future
+            if classification:
+                traces[trace_id].classification = classification
+                classified_indices.add(trace_id)
+            completed += 1
+
+            # Progress report every 100 completions
+            if completed % 100 == 0:
+                done = len(classified_indices)
+                total = len(traces)
+                elapsed = time.time() - start_time
+                rate = completed / elapsed if elapsed > 0 else 0
+                print(
+                    f"Progress: {done}/{total} ({done/total*100:.1f}%) - {rate:.1f} traces/sec",
+                    flush=True,
+                )
+
+            # Checkpoint periodically
+            if completed - last_checkpoint >= checkpoint_interval:
+                save_checkpoint(traces, classified_indices, checkpoint_file)
+                last_checkpoint = completed
 
     # Final checkpoint
     save_checkpoint(traces, classified_indices, checkpoint_file)
@@ -631,6 +634,10 @@ def save_results(traces: list[TraceWithMetadata], filepath: str):
 
 
 def main():
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Classify reasoning traces using LLM")
     parser.add_argument(
         "--results-dirs",
