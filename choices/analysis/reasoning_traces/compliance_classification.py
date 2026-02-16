@@ -84,6 +84,7 @@ class AnnotatedTraceWithContext(TraceWithContext):
 
     influence_description: str | None = None  # None for baseline condition
     compliance: ComplianceAnnotation | None = None
+    _original_dict: dict | None = None  # Preserved for composability with other scripts
 
 
 # =============================================================================
@@ -427,10 +428,15 @@ def edge_comparison_from_case(case: dict) -> EdgeComparison:
 
 
 def load_cases(filepath: str) -> tuple[dict, list[dict]]:
-    """Load cases from the input JSON file."""
+    """Load cases from the input JSON file.
+
+    Handles both edge-filtering output (``metadata`` key) and
+    compliance/rationale output (``original_metadata`` key).
+    """
     with open(filepath) as f:
         data = json.load(f)
-    return data.get("metadata", {}), data.get("cases", [])
+    metadata = data.get("metadata") or data.get("original_metadata", {})
+    return metadata, data.get("cases", [])
 
 
 def build_annotated_traces(
@@ -476,6 +482,7 @@ def build_annotated_traces(
                 choice=trace_dict["choice"],
                 is_flipped=trace_dict.get("is_flipped", False),
                 influence_description=influence_desc,
+                _original_dict=trace_dict,
             )
             all_traces.append((global_idx, case_idx, "condition_b_traces", trace))
             global_idx += 1
@@ -519,17 +526,18 @@ def save_results(
         # Baseline traces pass through unchanged (no compliance annotation)
         output_case["condition_a_traces"] = case.get("condition_a_traces", [])
 
-        # Nudged traces get compliance annotations
+        # Nudged traces get compliance annotations (preserving extra fields)
         traces = nudged_by_case.get(case_idx, [])
-        output_case["condition_b_traces"] = [
-            {
-                "choice": t.choice,
-                "reasoning": t.reasoning,
-                "is_flipped": t.is_flipped,
-                "compliance": asdict(t.compliance) if t.compliance else None,
-            }
-            for t in traces
-        ]
+        out_b_traces = []
+        for t in traces:
+            # Start from the original dict to preserve fields from other scripts
+            td = dict(t._original_dict) if t._original_dict else {}
+            td["choice"] = t.choice
+            td["reasoning"] = t.reasoning
+            td["is_flipped"] = t.is_flipped
+            td["compliance"] = asdict(t.compliance) if t.compliance else None
+            out_b_traces.append(td)
+        output_case["condition_b_traces"] = out_b_traces
 
         output_cases.append(output_case)
 
