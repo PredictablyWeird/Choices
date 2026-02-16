@@ -249,6 +249,7 @@ def _plot_heatmap_common(
     annot=True,
     fmt: Optional[str] = None,
     vmax: Optional[float] = None,
+    no_title: bool = False,
 ) -> None:
     """Shared heatmap rendering logic."""
     valid = data[~np.isnan(data)]
@@ -278,13 +279,14 @@ def _plot_heatmap_common(
     if cbar is not None:
         cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
-    sig_label = "Significant " if sig_only else ""
-    ax.set_title(
-        f"{sig_label}Backfire Rate ({subtitle})",
-        fontsize=14,
-        fontweight="bold",
-        pad=12,
-    )
+    if not no_title:
+        sig_label = "Significant " if sig_only else ""
+        ax.set_title(
+            f"{sig_label}Backfire Rate ({subtitle})",
+            fontsize=14,
+            fontweight="bold",
+            pad=12,
+        )
     ax.set_xlabel(get_aspect_display_name(x_aspect), fontsize=11)
     ax.set_ylabel(get_aspect_display_name(y_aspect), fontsize=11)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
@@ -302,6 +304,7 @@ def plot_backfire_heatmap(
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    no_title: bool = False,
 ) -> None:
     """Create a single heatmap of backfire rates."""
     if not results:
@@ -362,6 +365,7 @@ def plot_backfire_heatmap(
             decimals,
             annot=annot,
             fmt="",
+            no_title=no_title,
         )
     else:
         _plot_heatmap_common(
@@ -374,6 +378,7 @@ def plot_backfire_heatmap(
             sig_only,
             subtitle,
             decimals,
+            no_title=no_title,
         )
 
     plt.tight_layout()
@@ -500,6 +505,12 @@ Examples:
         help="Save as PDF instead of PNG",
     )
 
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Suppress the plot title",
+    )
+
     args = parser.parse_args()
 
     x_aspect, y_aspect = args.axes
@@ -578,6 +589,7 @@ Examples:
         subtitle=subtitle,
         output_path=output_path,
         figsize=figsize,
+        no_title=args.no_title,
     )
 
 

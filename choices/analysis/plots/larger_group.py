@@ -169,6 +169,7 @@ def plot_two_heatmaps(
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    no_title: bool = False,
 ) -> None:
     """
     Create side-by-side heatmaps for P_0(Large) and P_AB(Large).
@@ -253,12 +254,13 @@ def plot_two_heatmaps(
     if cbar is not None:
         cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
-    fig.suptitle(
-        f"Larger-Group Preference ({subtitle})",
-        fontsize=14,
-        fontweight="bold",
-        y=1.02,
-    )
+    if not no_title:
+        fig.suptitle(
+            f"Larger-Group Preference ({subtitle})",
+            fontsize=14,
+            fontweight="bold",
+            y=1.02,
+        )
     plt.tight_layout()
 
     if output_path:
@@ -277,6 +279,7 @@ def plot_nudge_axis_heatmap(
     subtitle: str = "",
     output_path: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    no_title: bool = False,
 ) -> None:
     """
     Create a single heatmap with a baseline 'none' row/column and per-nudge-type
@@ -475,12 +478,13 @@ def plot_nudge_axis_heatmap(
 
     ax_cbar.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
-    fig.suptitle(
-        f"Larger-Group Preference ({subtitle})",
-        fontsize=14,
-        fontweight="bold",
-        y=1.02,
-    )
+    if not no_title:
+        fig.suptitle(
+            f"Larger-Group Preference ({subtitle})",
+            fontsize=14,
+            fontweight="bold",
+            y=1.02,
+        )
 
     if output_path:
         fig.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -499,6 +503,7 @@ def plot_heatmaps(
     decimals: int = 0,
     subtitle: Optional[str] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    no_title: bool = False,
 ) -> None:
     """
     Dispatch to the appropriate plotting function based on whether nudge is an axis.
@@ -524,6 +529,7 @@ def plot_heatmaps(
             subtitle=sub,
             output_path=output_path,
             figsize=figsize,
+            no_title=no_title,
         )
     else:
         plot_two_heatmaps(
@@ -535,6 +541,7 @@ def plot_heatmaps(
             subtitle=sub,
             output_path=output_path,
             figsize=figsize,
+            no_title=no_title,
         )
 
 
@@ -640,6 +647,12 @@ Examples:
         help="Save as PDF instead of PNG",
     )
 
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Suppress the plot title",
+    )
+
     args = parser.parse_args()
 
     x_aspect, y_aspect = args.axes
@@ -721,6 +734,7 @@ Examples:
         decimals=args.decimals,
         subtitle=subtitle,
         figsize=figsize,
+        no_title=args.no_title,
     )
 
 
