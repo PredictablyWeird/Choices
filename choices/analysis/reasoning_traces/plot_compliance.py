@@ -186,6 +186,7 @@ def plot_compliance_vs_effect(
     output_path: str,
     color_by: str | None = None,
     title: str | None = None,
+    figsize: tuple[float, float] = (12, 7),
 ):
     """
     Create a strip + violin plot of compliance category vs signed effect.
@@ -195,6 +196,7 @@ def plot_compliance_vs_effect(
         output_path: Where to save the figure.
         color_by: Optional grouping for point colours (``"factor"``, ``"nudge_type"``, or ``"model"``).
         title: Optional custom title.
+        figsize: Figure size as ``(width, height)`` in inches.
     """
     setup_plot_style()
 
@@ -204,7 +206,7 @@ def plot_compliance_vs_effect(
     ]
     cat_to_x = {c: i for i, c in enumerate(categories_present)}
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # ── Violin bodies ────────────────────────────────────────────────────
     for cat in categories_present:
@@ -355,6 +357,14 @@ def main():
         help="Omit the plot title",
     )
     parser.add_argument(
+        "--figsize",
+        type=float,
+        nargs=2,
+        metavar=("WIDTH", "HEIGHT"),
+        default=None,
+        help="Figure size in inches, e.g. --figsize 10 6",
+    )
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -392,11 +402,16 @@ def main():
 
     title = None if args.no_title else "Compliance Category vs Actual Steerability"
 
+    kwargs = {}
+    if args.figsize:
+        kwargs["figsize"] = tuple(args.figsize)
+
     plot_compliance_vs_effect(
         points,
         output_path,
         color_by=args.color_by,
         title=title,
+        **kwargs,
     )
 
 

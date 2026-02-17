@@ -225,6 +225,7 @@ def plot_rationale_comparison(
     output_path: str,
     metric: str = "mentioned",
     title: str | None = None,
+    figsize: tuple[float, float] | None = None,
 ):
     """
     Create a horizontal grouped bar chart comparing rationale rates.
@@ -234,6 +235,8 @@ def plot_rationale_comparison(
         output_path: Where to save the figure.
         metric: ``"mentioned"``, ``"acted_on"``, or ``"primary"``.
         title: Optional custom title.
+        figsize: Figure size as ``(width, height)`` in inches. Defaults to
+            ``(12, max(7, n_rationales * 0.55))``.
     """
     setup_plot_style()
 
@@ -253,19 +256,26 @@ def plot_rationale_comparison(
     n_sources = len(sources)
     n_rationales = len(RATIONALE_CODES)
 
-    # Sort rationales by the average rate across sources (descending)
+    # Sort rationales by the average rate across sources (descending),
+    # keeping only those with at least one non-zero bar.
     avg_rates = {
         code: np.mean([r[code].rate for r in all_rates]) for code in RATIONALE_CODES
     }
-    sorted_codes = sorted(RATIONALE_CODES, key=lambda c: avg_rates[c], reverse=True)
+    sorted_codes = [
+        c
+        for c in sorted(RATIONALE_CODES, key=lambda c: avg_rates[c], reverse=True)
+        if any(r[c].rate > 0 for r in all_rates)
+    ]
 
     display_names = [RATIONALE_DISPLAY_NAMES.get(c, c) for c in sorted_codes]
 
     # Bar geometry
+    n_rationales = len(sorted_codes)
     bar_height = 0.8 / n_sources
     y = np.arange(n_rationales)
 
-    fig, ax = plt.subplots(figsize=(12, max(7, n_rationales * 0.55)))
+    effective_figsize = figsize or (12, max(7, n_rationales * 0.55))
+    fig, ax = plt.subplots(figsize=effective_figsize)
 
     for i, (rates, label, n_traces) in enumerate(zip(all_rates, labels, trace_counts)):
         offsets = y - 0.4 + bar_height * (i + 0.5)
@@ -378,6 +388,14 @@ def main():
         help="Omit the plot title",
     )
     parser.add_argument(
+        "--figsize",
+        type=float,
+        nargs=2,
+        metavar=("WIDTH", "HEIGHT"),
+        default=None,
+        help="Figure size in inches, e.g. --figsize 10 6",
+    )
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -407,11 +425,16 @@ def main():
 
     title = None if args.no_title else f"Rationale {metric_label} Comparison"
 
+    kwargs = {}
+    if args.figsize:
+        kwargs["figsize"] = tuple(args.figsize)
+
     plot_rationale_comparison(
         sources,
         output_path,
         metric=args.metric,
         title=title,
+        **kwargs,
     )
 
 
