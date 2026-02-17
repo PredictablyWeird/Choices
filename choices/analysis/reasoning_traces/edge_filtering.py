@@ -718,7 +718,7 @@ def extract_traces_for_edge(
                     condition=condition,
                     reasoning=reasoning,
                     choice=actual_choice,
-                    is_flipped=False,
+                    is_flipped=not first_is_level_a,
                 )
             )
 
@@ -745,7 +745,7 @@ def extract_traces_for_edge(
                     condition=condition,
                     reasoning=reasoning,
                     choice=actual_choice,
-                    is_flipped=True,
+                    is_flipped=first_is_level_a,
                 )
             )
 
