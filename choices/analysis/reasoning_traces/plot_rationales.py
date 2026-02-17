@@ -69,6 +69,8 @@ RATIONALE_DISPLAY_NAMES = {
     "external_evidence_or_authority": "External evidence / authority",
     "social_norms": "Social norms",
     "emotional_or_compassion": "Emotional / compassion",
+    "identity_based": "Identity-based",
+    "influence_resistance": "Influence resistance",
     "random_or_arbitrary": "Random / arbitrary",
     "task_compliance": "Task compliance",
     "feels_right": "Feels right",
