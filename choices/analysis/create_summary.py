@@ -648,8 +648,8 @@ def discover_experiments(
         results_path = Path(results_base_dir)
         if not results_path.exists():
             continue
-
         # Iterate through experiment directories (simple_{factor})
+        print(f"Results path: {results_path}, iterdir: {list(results_path.iterdir())}")
         for exp_dir in results_path.iterdir():
             if not exp_dir.is_dir() or not exp_dir.name.startswith("simple_"):
                 continue

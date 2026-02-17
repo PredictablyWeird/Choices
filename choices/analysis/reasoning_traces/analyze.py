@@ -49,6 +49,24 @@ def analyze_classifications(filepath: str):
         pct = count / len(classifications) * 100
         print(f"  {reason}: {count} ({pct:.1f}%)")
 
+    # Show sample reasoning for top reasons
+    print("\n--- Sample Reasoning for Top Reasons ---")
+    for reason in list(reason_counts.keys())[:3]:  # Top 3 reasons
+        # Find a trace that endorsed this reason
+        sample = None
+        for d in data:
+            c = d.get("classification", {})
+            reasons = c.get("reasons", {})
+            value = reasons.get(reason, {})
+            valence = value.get("valence") if isinstance(value, dict) else value
+            if valence == "endorsed":
+                sample = d
+                break
+        if sample:
+            reasoning = sample.get("reasoning", "")[:300]
+            print(f"\n  [{reason}] (endorsed):")
+            print(f"    {reasoning}...")
+
     print("\nReasons by valence:")
     for valence in ["endorsed", "rejected", "mentioned"]:
         print(f"\n  {valence.upper()}:")
@@ -72,6 +90,21 @@ def analyze_classifications(filepath: str):
     for move, count in rhetorical_counts.most_common():
         pct = count / len(classifications) * 100
         print(f"  {move}: {count} ({pct:.1f}%)")
+
+    # Show sample reasoning for top rhetorical moves
+    print("\n--- Sample Reasoning for Top Rhetorical Moves ---")
+    for move in list(rhetorical_counts.keys())[:3]:  # Top 3 moves
+        sample = None
+        for d in data:
+            c = d.get("classification", {})
+            moves = c.get("rhetorical_moves", {})
+            if moves.get(move):
+                sample = d
+                break
+        if sample:
+            reasoning = sample.get("reasoning", "")[:300]
+            print(f"\n  [{move}]:")
+            print(f"    {reasoning}...")
 
     # 3. Process markers
     print("\n" + "=" * 60)
@@ -129,6 +162,20 @@ def analyze_classifications(filepath: str):
     for reason, count in primary_reasons.most_common(10):
         pct = count / len(classifications) * 100
         print(f"  {reason}: {count} ({pct:.1f}%)")
+
+    # Show sample reasoning for top primary reasons
+    print("\n--- Sample Reasoning for Top Primary Reasons ---")
+    shown_reasons = set()
+    for d in data:
+        c = d.get("classification", {})
+        primary = c.get("primary_reason", "unknown")
+        if primary not in shown_reasons and primary != "unknown" and primary != "none":
+            reasoning = d.get("reasoning", "")[:300]
+            print(f"\n  [Primary: {primary}]:")
+            print(f"    {reasoning}...")
+            shown_reasons.add(primary)
+            if len(shown_reasons) >= 3:  # Show top 3
+                break
 
     # 5. Cross-analysis: reasons by factor
     print("\n" + "=" * 60)
@@ -191,6 +238,16 @@ def analyze_classifications(filepath: str):
         pct = count / len(backfire_traces) * 100 if backfire_traces else 0
         print(f"  {move}: {count} ({pct:.1f}%)")
 
+    # Show sample backfire reasoning
+    print("\n--- Sample BACKFIRE Reasoning ---")
+    for i, d in enumerate(backfire_traces[:3]):
+        reasoning = d.get("reasoning", "")[:300]
+        factor = d.get("factor", "unknown")
+        condition = d.get("condition", "unknown")
+        choice = d.get("choice", "?")
+        print(f"\n  Sample {i+1} [{factor}, nudged={condition}, chose={choice}]:")
+        print(f"    {reasoning}...")
+
     print("\nRhetorical moves in FOLLOW traces:")
     follow_moves = Counter()
     for d in follow_traces:
@@ -203,6 +260,16 @@ def analyze_classifications(filepath: str):
     for move, count in follow_moves.most_common(5):
         pct = count / len(follow_traces) * 100 if follow_traces else 0
         print(f"  {move}: {count} ({pct:.1f}%)")
+
+    # Show sample follow reasoning
+    print("\n--- Sample FOLLOW Reasoning ---")
+    for i, d in enumerate(follow_traces[:3]):
+        reasoning = d.get("reasoning", "")[:300]
+        factor = d.get("factor", "unknown")
+        condition = d.get("condition", "unknown")
+        choice = d.get("choice", "?")
+        print(f"\n  Sample {i+1} [{factor}, nudged={condition}, chose={choice}]:")
+        print(f"    {reasoning}...")
 
 
 if __name__ == "__main__":
