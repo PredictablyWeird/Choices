@@ -317,10 +317,8 @@ def plot_rationale_comparison(
     ax.invert_yaxis()
     ax.legend(loc="lower right")
 
-    if title:
+    if title is not None:
         ax.set_title(title)
-    else:
-        ax.set_title(f"Rationale {metric_label} Comparison")
 
     ax.set_xlim(0, ax.get_xlim()[1] * 1.12)  # room for labels
 
@@ -375,10 +373,9 @@ def main():
         help="Which metric to plot (default: mentioned)",
     )
     parser.add_argument(
-        "--title",
-        "-t",
-        default=None,
-        help="Custom plot title",
+        "--no-title",
+        action="store_true",
+        help="Omit the plot title",
     )
     parser.add_argument(
         "--pdf",
@@ -402,11 +399,19 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(out_dir / f"rationale_comparison.{fmt}")
 
+    metric_label = {
+        "mentioned": "Mention rate",
+        "acted_on": "Acted-on rate",
+        "primary": "Primary rationale rate",
+    }.get(args.metric, args.metric)
+
+    title = None if args.no_title else f"Rationale {metric_label} Comparison"
+
     plot_rationale_comparison(
         sources,
         output_path,
         metric=args.metric,
-        title=args.title,
+        title=title,
     )
 
 

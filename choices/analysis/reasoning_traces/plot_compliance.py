@@ -284,16 +284,14 @@ def plot_compliance_vs_effect(
     ax.set_ylabel("Effect on P(nudged option)  (pp)")
     ax.set_xlabel("Majority compliance category")
 
-    if title:
+    if title is not None:
         ax.set_title(title)
-    else:
-        ax.set_title("Compliance Category vs Actual Steerability")
 
     if legend_handles:
         ax.legend(
             legend_handles.values(),
             legend_handles.keys(),
-            loc="lower left",
+            loc="upper right",
             framealpha=0.9,
         )
 
@@ -352,10 +350,9 @@ def main():
         help="Colour points by this grouping variable",
     )
     parser.add_argument(
-        "--title",
-        "-t",
-        default=None,
-        help="Custom plot title",
+        "--no-title",
+        action="store_true",
+        help="Omit the plot title",
     )
     parser.add_argument(
         "--pdf",
@@ -393,11 +390,13 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(out_dir / f"compliance_vs_effect.{fmt}")
 
+    title = None if args.no_title else "Compliance Category vs Actual Steerability"
+
     plot_compliance_vs_effect(
         points,
         output_path,
         color_by=args.color_by,
-        title=args.title,
+        title=title,
     )
 
 
