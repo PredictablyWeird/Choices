@@ -232,10 +232,20 @@ def build_compliance_prompt(
         nudged_group=nudged_group,
     )
 
+    # Show option labels and choice as the model originally saw them.
+    # When is_flipped, the model saw option_b_label as "A" and vice versa,
+    # and the canonical choice letter has been remapped, so we reverse both.
+    option_a_label = case["option_a_label"]
+    option_b_label = case["option_b_label"]
+    choice = trace.choice
+    if trace.is_flipped:
+        option_a_label, option_b_label = option_b_label, option_a_label
+        choice = "B" if choice == "A" else "A"
+
     return COMPLIANCE_PROMPT.format(
-        option_a_label=case["option_a_label"],
-        option_b_label=case["option_b_label"],
-        choice=trace.choice,
+        option_a_label=option_a_label,
+        option_b_label=option_b_label,
+        choice=choice,
         influence_section=influence_section,
         reasoning=trace.reasoning[:2000],
         nudge_display_name=nudge_display_name,
