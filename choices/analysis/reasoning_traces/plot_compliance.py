@@ -18,10 +18,14 @@ Usage:
         --input compliance_results.json \
         --output compliance_vs_effect.png
 
-    # Colour by factor or nudge type
+    # Colour by factor, nudge type, or model
     uv run python -m choices.analysis.reasoning_traces.plot_compliance \
         --input compliance_results.json \
         --color-by factor
+
+    uv run python -m choices.analysis.reasoning_traces.plot_compliance \
+        --input compliance_results.json \
+        --color-by model
 """
 
 import argparse
@@ -36,7 +40,12 @@ import numpy as np
 from choices.analysis.reasoning_traces.compliance_classification import (
     ComplianceCategory,
 )
-from choices.analysis.utils import PLOTS_OUTPUT_DIR
+from choices.analysis.utils import (
+    PLOTS_OUTPUT_DIR,
+    get_factor_color,
+    get_model_color,
+    get_nudge_color,
+)
 
 # ── Style ────────────────────────────────────────────────────────────────────
 
@@ -73,35 +82,12 @@ CATEGORY_COLORS = {
     "not_mentioning": "#95a5a6",
 }
 
-# Palettes for colouring by metadata
-FACTOR_COLORS = {
-    "age_group": "#2A9D8F",
-    "gender": "#E63946",
-    "nationality": "#457B9D",
-    "wealth": "#E9C46A",
-    "handedness": "#9B5DE5",
-    "social_status": "#F4A261",
+# Color-getter dispatch for --color-by options
+_COLOR_GETTERS: dict[str, callable] = {
+    "factor": get_factor_color,
+    "nudge_type": get_nudge_color,
+    "model": get_model_color,
 }
-
-NUDGE_COLORS = {
-    "survey_preference": "#1f77b4",
-    "user_preference": "#ff7f0e",
-    "emotional": "#2ca02c",
-    "weak_evidence": "#d62728",
-    "few_shot_3": "#9467bd",
-    "always_save": "#8c564b",
-}
-
-_EXTRA_COLORS = [
-    "#264653",
-    "#e76f51",
-    "#8338ec",
-    "#ff006e",
-    "#3a86ff",
-    "#fb5607",
-    "#ffbe0b",
-    "#06d6a0",
-]
 
 
 def setup_plot_style():
@@ -132,6 +118,7 @@ class EdgePoint:
     unanimity: float  # fraction of traces in the majority category
     factor: str
     nudge_type: str
+    model: str
 
 
 def load_compliance_data(filepath: str) -> tuple[dict, list[dict]]:
@@ -185,19 +172,13 @@ def build_edge_points(cases: list[dict]) -> list[EdgePoint]:
                 unanimity=unanimity,
                 factor=case.get("factor", ""),
                 nudge_type=case.get("nudge_type", ""),
+                model=case.get("model", ""),
             )
         )
     return points
 
 
 # ── Plotting ─────────────────────────────────────────────────────────────────
-
-
-def _get_color_for(value: str, palette: dict[str, str]) -> str:
-    if value in palette:
-        return palette[value]
-    idx = hash(value) % len(_EXTRA_COLORS)
-    return _EXTRA_COLORS[idx]
 
 
 def plot_compliance_vs_effect(
@@ -212,7 +193,7 @@ def plot_compliance_vs_effect(
     Args:
         points: List of EdgePoint objects.
         output_path: Where to save the figure.
-        color_by: Optional grouping for point colours (``"factor"`` or ``"nudge_type"``).
+        color_by: Optional grouping for point colours (``"factor"``, ``"nudge_type"``, or ``"model"``).
         title: Optional custom title.
     """
     setup_plot_style()
@@ -244,13 +225,7 @@ def plot_compliance_vs_effect(
             body.set_edgecolor("none")
 
     # ── Strip points ─────────────────────────────────────────────────────
-    # Determine colour scheme
-    if color_by == "factor":
-        palette = FACTOR_COLORS
-    elif color_by == "nudge_type":
-        palette = NUDGE_COLORS
-    else:
-        palette = None
+    color_getter = _COLOR_GETTERS.get(color_by) if color_by else None
 
     # Collect legend handles
     legend_handles: dict[str, plt.Artist] = {}
@@ -264,9 +239,9 @@ def plot_compliance_vs_effect(
         jitter = rng.uniform(-0.2, 0.2)
         alpha = 0.4 + 0.5 * pt.unanimity  # more opaque when more unanimous
 
-        if palette is not None:
-            group_val = getattr(pt, color_by) if color_by else ""
-            color = _get_color_for(group_val, palette)
+        if color_getter is not None:
+            group_val = getattr(pt, color_by)
+            color = color_getter(group_val)
             label = group_val.replace("_", " ").title()
         else:
             color = CATEGORY_COLORS.get(pt.majority_category, "#555555")
@@ -372,7 +347,7 @@ def main():
     )
     parser.add_argument(
         "--color-by",
-        choices=["factor", "nudge_type"],
+        choices=["factor", "nudge_type", "model"],
         default=None,
         help="Colour points by this grouping variable",
     )
