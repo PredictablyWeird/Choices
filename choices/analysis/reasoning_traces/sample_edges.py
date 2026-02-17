@@ -273,6 +273,14 @@ def main():
         help="Filter to specific nudge types",
     )
     parser.add_argument(
+        "--reasoning-conditions",
+        nargs="+",
+        default=None,
+        help="Only include experiments with these reasoning conditions "
+        "(e.g., 'low' 'medium' 'before'). By default, non-reasoning "
+        "conditions ('none' and 'off') are excluded automatically.",
+    )
+    parser.add_argument(
         "--min-n-diff",
         type=int,
         default=0,
@@ -313,6 +321,7 @@ def main():
         models=args.models,
         factors=args.factors,
         nudge_types=args.nudge_types,
+        reasoning_conditions=args.reasoning_conditions,
     )
 
     edges = pipeline.get_filtered_edges()
@@ -334,6 +343,7 @@ def main():
         "models": args.models,
         "factors": args.factors,
         "nudge_types": args.nudge_types,
+        "reasoning_conditions": args.reasoning_conditions,
         "min_n_diff": args.min_n_diff,
         "directions": args.directions,
         "max_samples": args.max_samples,

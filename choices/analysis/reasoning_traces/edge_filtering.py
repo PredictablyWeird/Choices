@@ -37,6 +37,7 @@ from choices.analysis.create_summary import (
     discover_experiments,
     find_condition_directories,
 )
+from choices.analysis.utils import get_reasoning_condition
 from choices.analysis.metrics import (
     get_factor_levels_from_graph,
     get_factor_name_from_graph,
@@ -804,6 +805,9 @@ class EdgeFilteringPipeline:
         traces = pipeline.get_traces(conditions=["young"], choices=["B"])
     """
 
+    # Reasoning conditions that indicate no reasoning is active
+    NON_REASONING_CONDITIONS = {"none", "off"}
+
     def __init__(
         self,
         results_dirs: List[str],
@@ -811,6 +815,8 @@ class EdgeFilteringPipeline:
         models: Optional[List[str]] = None,
         factors: Optional[List[str]] = None,
         nudge_types: Optional[List[str]] = None,
+        reasoning_conditions: Optional[List[str]] = None,
+        require_reasoning: bool = True,
     ):
         """
         Initialize the pipeline.
@@ -821,15 +827,33 @@ class EdgeFilteringPipeline:
             models: Optional list of models to include
             factors: Optional list of factors to include
             nudge_types: Optional list of nudge types to include
+            reasoning_conditions: Optional allow-list of reasoning conditions
+                (e.g. ``["low", "medium", "before"]``). Only experiments whose
+                reasoning condition is in this list are included.
+            require_reasoning: If True (the default), exclude experiments with
+                non-reasoning conditions (``"none"`` and ``"off"``). If
+                *reasoning_conditions* is also provided it takes precedence.
         """
         self.results_dirs = results_dirs
         self.edge_filter = edge_filter
         self.models = models
         self.factors = factors
         self.nudge_types = nudge_types
+        self.reasoning_conditions = (
+            set(reasoning_conditions) if reasoning_conditions else None
+        )
+        self.require_reasoning = require_reasoning
 
         # Cache for extracted edges
         self._edges: Optional[List[EdgeComparison]] = None
+
+    def _should_include_reasoning(self, reasoning_cond: str) -> bool:
+        """Check whether an experiment with this reasoning condition passes the filter."""
+        if self.reasoning_conditions is not None:
+            return reasoning_cond in self.reasoning_conditions
+        if self.require_reasoning:
+            return reasoning_cond not in self.NON_REASONING_CONDITIONS
+        return True
 
     def get_edges(self) -> List[EdgeComparison]:
         """
@@ -858,6 +882,12 @@ class EdgeFilteringPipeline:
             )
 
             for condition_dirs in condition_dirs_list:
+                # Filter by reasoning condition when requested
+                base_dir = condition_dirs.get("base")
+                reasoning_cond = get_reasoning_condition(model, base_dir)
+                if not self._should_include_reasoning(reasoning_cond):
+                    continue
+
                 experiment_edges = extract_edge_comparisons(
                     condition_dirs=condition_dirs,
                     factor_name=factor,
