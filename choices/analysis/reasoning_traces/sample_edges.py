@@ -39,6 +39,20 @@ Usage:
         --models gpt-5-2-reasoning \
         --min-n-diff 2 --condition baseline --model-picks smaller \
         --output sampled_baseline_smaller.json
+
+    # Only edges from experiments with significant baseline bias
+    uv run python -m choices.analysis.reasoning_traces.sample_edges \
+        --results-dirs results_main0 results_main1 \
+        --models gpt-5-2-reasoning \
+        --baseline-bias sig --max-samples 100 \
+        --output sampled_sig_baseline.json
+
+    # Only edges from experiments WITHOUT significant baseline bias
+    uv run python -m choices.analysis.reasoning_traces.sample_edges \
+        --results-dirs results_main0 results_main1 \
+        --models gpt-5-2-reasoning \
+        --baseline-bias not-sig --max-samples 100 \
+        --output sampled_nosig_baseline.json
 """
 
 import argparse
@@ -46,6 +60,7 @@ import json
 import random
 from datetime import datetime
 
+from choices.analysis.create_summary import compute_all_results
 from choices.analysis.reasoning_traces.edge_filtering import (
     EdgeComparison,
     EdgeFilteringPipeline,
@@ -53,6 +68,7 @@ from choices.analysis.reasoning_traces.edge_filtering import (
     extract_traces_for_edge,
     n_difference,
 )
+from choices.analysis.utils import get_reasoning_condition
 
 
 # =============================================================================
@@ -175,6 +191,72 @@ def save_cases_json(
     with open(output_path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"Saved {len(cases)} cases to {output_path}")
+
+
+# =============================================================================
+# Baseline bias filtering
+# =============================================================================
+
+
+def compute_baseline_significance_lookup(
+    results_dirs: list[str],
+    models: list[str] | None = None,
+    factors: list[str] | None = None,
+    nudge_types: list[str] | None = None,
+    reasoning_conditions: list[str] | None = None,
+) -> set[tuple[str, str, str, str]]:
+    """
+    Return the set of experiment keys with significant baseline preference.
+
+    Keys are ``(model, factor, nudge_type, reasoning_condition)`` tuples.
+    Significance is determined by a binomial test of the aggregate baseline
+    frequency against 0.5 (see ``FrequencyResult.sig_baseline_B``).
+    """
+    results = compute_all_results(
+        results_dirs,
+        model_filter=models,
+        factor_filter=factors,
+        nudge_type_filter=nudge_types,
+    )
+
+    if reasoning_conditions:
+        rc_set = set(reasoning_conditions)
+        results = [r for r in results if r.reasoning_condition in rc_set]
+
+    return {
+        (r.model, r.factor, r.nudge_type, r.reasoning_condition)
+        for r in results
+        if r.sig_baseline_B
+    }
+
+
+def filter_edges_by_baseline_bias(
+    edges: list[EdgeComparison],
+    sig_baseline_keys: set[tuple[str, str, str, str]],
+    require_sig: bool,
+) -> list[EdgeComparison]:
+    """
+    Keep only edges whose experiment does/doesn't have significant baseline bias.
+
+    Each edge is matched to its experiment via
+    ``(model, factor, nudge_type, reasoning_condition)``.  The reasoning
+    condition is derived from the edge's base condition directory.
+
+    Args:
+        edges: Edges to filter.
+        sig_baseline_keys: Set returned by
+            :func:`compute_baseline_significance_lookup`.
+        require_sig: If ``True``, keep edges **with** significant baseline
+            bias; if ``False``, keep edges **without**.
+    """
+    filtered: list[EdgeComparison] = []
+    for edge in edges:
+        rc = get_reasoning_condition(edge.model, edge.condition_dirs.get("base"))
+        key = (edge.model, edge.factor, edge.nudge_type, rc)
+        has_sig = key in sig_baseline_keys
+        if has_sig == require_sig:
+            filtered.append(edge)
+    return filtered
 
 
 # =============================================================================
@@ -366,6 +448,14 @@ def main():
         help="Which nudge directions to include (default: both)",
     )
     parser.add_argument(
+        "--baseline-bias",
+        choices=["sig", "not-sig"],
+        default=None,
+        help="Filter to edges from experiments with significant ('sig') or "
+        "non-significant ('not-sig') baseline preference (binomial test "
+        "of aggregate baseline frequency vs 0.5).",
+    )
+    parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
@@ -400,6 +490,20 @@ def main():
     edges = pipeline.get_filtered_edges()
     print(f"Extracted {len(edges)} edges")
 
+    # Filter by baseline bias significance
+    if args.baseline_bias is not None:
+        require_sig = args.baseline_bias == "sig"
+        sig_keys = compute_baseline_significance_lookup(
+            results_dirs=args.results_dirs,
+            models=args.models,
+            factors=args.factors,
+            nudge_types=args.nudge_types,
+            reasoning_conditions=args.reasoning_conditions,
+        )
+        edges = filter_edges_by_baseline_bias(edges, sig_keys, require_sig)
+        label = "with" if require_sig else "without"
+        print(f"After baseline bias filter ({label} sig): {len(edges)} edges")
+
     # Convert to cases – sampling happens *before* trace extraction
     print("Extracting traces...")
     cases = edges_to_cases(
@@ -423,6 +527,7 @@ def main():
         "model_picks": args.model_picks,
         "condition": args.condition,
         "directions": args.directions,
+        "baseline_bias": args.baseline_bias,
         "max_samples": args.max_samples,
         "seed": args.seed,
     }
