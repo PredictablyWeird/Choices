@@ -25,6 +25,13 @@ Usage:
         --models gpt-5-2-reasoning \
         --min-n-diff 0 --max-samples 200 \
         --output sampled_edges.json
+
+    # Only traces where the model chose the larger group
+    uv run python -m choices.analysis.reasoning_traces.sample_edges \
+        --results-dirs results_main0 results_main1 \
+        --models gpt-5-2-reasoning \
+        --min-n-diff 2 --model-picks larger --max-samples 100 \
+        --output sampled_edges.json
 """
 
 import argparse
@@ -183,6 +190,7 @@ def edges_to_cases(
     directions: str = "both",
     max_samples: int | None = None,
     seed: int = 42,
+    model_picks: str | None = None,
 ) -> list[dict]:
     """
     Convert edges to case dicts, extracting traces for each nudge direction.
@@ -199,6 +207,11 @@ def edges_to_cases(
         max_samples: If set, randomly sample at most this many (edge, direction)
             pairs *before* extracting traces.
         seed: Random seed for sampling.
+        model_picks: If ``"larger"`` or ``"smaller"``, only keep traces where
+            the model chose the option with the larger or smaller N.  Cases
+            with no remaining nudged traces are dropped.  Best combined with
+            a ``min_n_diff`` edge filter so that the two groups actually
+            differ in size.
 
     Returns:
         List of case dicts.
@@ -221,6 +234,14 @@ def edges_to_cases(
         baseline_traces, nudged_traces = extract_traces_for_direction(
             edge, nudged_option
         )
+
+        if model_picks == "larger":
+            baseline_traces = [t for t in baseline_traces if t.chose_larger_n]
+            nudged_traces = [t for t in nudged_traces if t.chose_larger_n]
+        elif model_picks == "smaller":
+            baseline_traces = [t for t in baseline_traces if t.chose_smaller_n]
+            nudged_traces = [t for t in nudged_traces if t.chose_smaller_n]
+
         if not nudged_traces:
             continue
         cases.append(
@@ -287,6 +308,13 @@ def main():
         help="Minimum |n_A − n_B| (default: 0, include all edges)",
     )
     parser.add_argument(
+        "--model-picks",
+        choices=["smaller", "larger"],
+        default=None,
+        help="Only include traces where the model chose the option with "
+        "smaller/larger N. Best used with --min-n-diff > 0.",
+    )
+    parser.add_argument(
         "--directions",
         choices=["both", "A", "B"],
         default="both",
@@ -334,6 +362,7 @@ def main():
         directions=args.directions,
         max_samples=args.max_samples,
         seed=args.seed,
+        model_picks=args.model_picks,
     )
     print(f"Built {len(cases)} cases")
 
@@ -345,6 +374,7 @@ def main():
         "nudge_types": args.nudge_types,
         "reasoning_conditions": args.reasoning_conditions,
         "min_n_diff": args.min_n_diff,
+        "model_picks": args.model_picks,
         "directions": args.directions,
         "max_samples": args.max_samples,
         "seed": args.seed,
