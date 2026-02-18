@@ -32,6 +32,13 @@ Usage:
         --models gpt-5-2-reasoning \
         --min-n-diff 2 --model-picks larger --max-samples 100 \
         --output sampled_edges.json
+
+    # Only baseline traces where the model chose the smaller group
+    uv run python -m choices.analysis.reasoning_traces.sample_edges \
+        --results-dirs results_main0 results_main1 \
+        --models gpt-5-2-reasoning \
+        --min-n-diff 2 --condition baseline --model-picks smaller \
+        --output sampled_baseline_smaller.json
 """
 
 import argparse
@@ -185,12 +192,25 @@ def _expand_direction_list(directions: str) -> list[str]:
     return out
 
 
+def _filter_traces_by_n(
+    traces: list[TraceWithContext],
+    model_picks: str | None,
+) -> list[TraceWithContext]:
+    """Keep only traces where the model chose the larger/smaller-N option."""
+    if model_picks == "larger":
+        return [t for t in traces if t.chose_larger_n]
+    elif model_picks == "smaller":
+        return [t for t in traces if t.chose_smaller_n]
+    return traces
+
+
 def edges_to_cases(
     edges: list[EdgeComparison],
     directions: str = "both",
     max_samples: int | None = None,
     seed: int = 42,
     model_picks: str | None = None,
+    condition: str = "both",
 ) -> list[dict]:
     """
     Convert edges to case dicts, extracting traces for each nudge direction.
@@ -204,24 +224,31 @@ def edges_to_cases(
             ``"both"`` – one case per direction (A and B) per edge,
             ``"A"`` – only nudge-towards-A cases,
             ``"B"`` – only nudge-towards-B cases.
+            Ignored when *condition* is ``"baseline"`` (direction is
+            irrelevant for baseline traces).
         max_samples: If set, randomly sample at most this many (edge, direction)
             pairs *before* extracting traces.
         seed: Random seed for sampling.
         model_picks: If ``"larger"`` or ``"smaller"``, only keep traces where
             the model chose the option with the larger or smaller N.  Cases
-            with no remaining nudged traces are dropped.  Best combined with
-            a ``min_n_diff`` edge filter so that the two groups actually
-            differ in size.
+            with no remaining traces are dropped.  Best combined with a
+            ``min_n_diff`` edge filter so that the two groups actually
+            differ in size.  The filter is applied only to the condition(s)
+            selected by *condition*.
+        condition: Which experimental condition to include traces from:
+            ``"both"`` – baseline and nudged (default),
+            ``"baseline"`` – only baseline (no-nudge) traces,
+            ``"nudged"`` – only nudged traces.
 
     Returns:
         List of case dicts.
     """
-    target_directions = _expand_direction_list(directions)
-
-    # Build lightweight (edge, direction) pairs first – no I/O yet
-    pairs: list[tuple[EdgeComparison, str]] = [
-        (edge, d) for edge in edges for d in target_directions
-    ]
+    if condition == "baseline":
+        # Direction is irrelevant for baseline; one case per edge
+        pairs: list[tuple[EdgeComparison, str]] = [(edge, "A") for edge in edges]
+    else:
+        target_directions = _expand_direction_list(directions)
+        pairs = [(edge, d) for edge in edges for d in target_directions]
 
     # Sample early to avoid extracting traces we'll throw away
     if max_samples is not None and max_samples < len(pairs):
@@ -231,19 +258,28 @@ def edges_to_cases(
 
     cases: list[dict] = []
     for edge, nudged_option in pairs:
-        baseline_traces, nudged_traces = extract_traces_for_direction(
-            edge, nudged_option
-        )
+        if condition == "baseline":
+            baseline_traces = extract_traces_for_edge(edge, conditions=["base"])
+            nudged_traces: list[TraceWithContext] = []
+            baseline_traces = _filter_traces_by_n(baseline_traces, model_picks)
+            if not baseline_traces:
+                continue
+        elif condition == "nudged":
+            nudge_cond = edge.level_A if nudged_option == "A" else edge.level_B
+            nudged_traces = extract_traces_for_edge(edge, conditions=[nudge_cond])
+            baseline_traces = []
+            nudged_traces = _filter_traces_by_n(nudged_traces, model_picks)
+            if not nudged_traces:
+                continue
+        else:
+            baseline_traces, nudged_traces = extract_traces_for_direction(
+                edge, nudged_option
+            )
+            baseline_traces = _filter_traces_by_n(baseline_traces, model_picks)
+            nudged_traces = _filter_traces_by_n(nudged_traces, model_picks)
+            if not nudged_traces:
+                continue
 
-        if model_picks == "larger":
-            baseline_traces = [t for t in baseline_traces if t.chose_larger_n]
-            nudged_traces = [t for t in nudged_traces if t.chose_larger_n]
-        elif model_picks == "smaller":
-            baseline_traces = [t for t in baseline_traces if t.chose_smaller_n]
-            nudged_traces = [t for t in nudged_traces if t.chose_smaller_n]
-
-        if not nudged_traces:
-            continue
         cases.append(
             edge_to_case_dict(edge, nudged_option, baseline_traces, nudged_traces)
         )
@@ -315,6 +351,15 @@ def main():
         "smaller/larger N. Best used with --min-n-diff > 0.",
     )
     parser.add_argument(
+        "--condition",
+        choices=["both", "baseline", "nudged"],
+        default="both",
+        help="Which experimental condition to include traces from "
+        "(default: both). --model-picks is applied only to the "
+        "selected condition(s). --directions is ignored when "
+        "'baseline' is chosen.",
+    )
+    parser.add_argument(
         "--directions",
         choices=["both", "A", "B"],
         default="both",
@@ -363,6 +408,7 @@ def main():
         max_samples=args.max_samples,
         seed=args.seed,
         model_picks=args.model_picks,
+        condition=args.condition,
     )
     print(f"Built {len(cases)} cases")
 
@@ -375,6 +421,7 @@ def main():
         "reasoning_conditions": args.reasoning_conditions,
         "min_n_diff": args.min_n_diff,
         "model_picks": args.model_picks,
+        "condition": args.condition,
         "directions": args.directions,
         "max_samples": args.max_samples,
         "seed": args.seed,
