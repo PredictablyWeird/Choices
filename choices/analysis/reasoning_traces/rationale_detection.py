@@ -448,6 +448,11 @@ CONDITION_KEYS = {
 }
 
 
+def is_nudge_type_condition(condition: str) -> bool:
+    """Return True if *condition* names a specific nudge type rather than a built-in key."""
+    return condition not in CONDITION_KEYS
+
+
 def build_trace_list(
     cases: list[dict],
     condition: str = "both",
@@ -461,20 +466,25 @@ def build_trace_list(
             ``"both"`` (default) includes baseline and nudged traces,
             ``"baseline"`` includes only condition_a (no nudge),
             ``"nudged"`` includes only condition_b (with nudge).
+            A specific nudge type name (e.g. ``"survey_preference"``)
+            selects only nudged traces from cases matching that nudge type.
 
     Returns:
         List of (global_idx, case_idx, condition_key, trace_idx, trace_dict).
     """
-    keys = CONDITION_KEYS.get(condition)
-    if keys is None:
-        raise ValueError(
-            f"Unknown condition {condition!r}; " f"choose from {list(CONDITION_KEYS)}"
-        )
+    if is_nudge_type_condition(condition):
+        keys = ("condition_b_traces",)
+        nudge_type_filter = condition
+    else:
+        keys = CONDITION_KEYS[condition]
+        nudge_type_filter = None
 
     all_traces: list[tuple[int, int, str, int, dict]] = []
     global_idx = 0
 
     for case_idx, case in enumerate(cases):
+        if nudge_type_filter and case.get("nudge_type") != nudge_type_filter:
+            continue
         for condition_key in keys:
             for trace_idx, trace_dict in enumerate(case.get(condition_key, [])):
                 all_traces.append(
@@ -626,11 +636,12 @@ def main():
     )
     parser.add_argument(
         "--condition",
-        choices=list(CONDITION_KEYS),
         default="both",
         help=(
             "Which condition to process: 'both' (default), "
-            "'baseline' (condition_a only), or 'nudged' (condition_b only)"
+            "'baseline' (condition_a only), 'nudged' (condition_b only), "
+            "or a specific nudge type name (e.g. 'survey_preference') to "
+            "select only nudged traces from cases with that nudge type"
         ),
     )
     parser.add_argument(

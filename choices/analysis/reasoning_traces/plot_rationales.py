@@ -7,7 +7,9 @@ bars for each input source (file + condition combination).
 
 Each input source is specified as a triple ``file,condition,label`` where:
 - ``file`` is the path to a rationale-detection JSON output,
-- ``condition`` is one of ``both``, ``baseline``, or ``nudged``,
+- ``condition`` is one of ``both``, ``baseline``, ``nudged``, or a specific
+  nudge type name (e.g. ``survey_preference``) to select only nudged traces
+  from cases with that nudge type,
 - ``label`` is the legend label for this source.
 
 Usage:
@@ -34,6 +36,7 @@ import numpy as np
 from choices.analysis.reasoning_traces.rationale_detection import (
     CONDITION_KEYS,
     RATIONALE_CODES,
+    is_nudge_type_condition,
 )
 from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
@@ -105,6 +108,8 @@ def load_rationale_data(filepath: str) -> tuple[dict, list[dict]]:
 
 
 def _trace_condition_keys(condition: str) -> tuple[str, ...]:
+    if is_nudge_type_condition(condition):
+        return ("condition_b_traces",)
     keys = CONDITION_KEYS.get(condition)
     if keys is None:
         raise ValueError(
@@ -114,10 +119,17 @@ def _trace_condition_keys(condition: str) -> tuple[str, ...]:
 
 
 def collect_traces(cases: list[dict], condition: str) -> list[dict]:
-    """Return all trace dicts matching *condition* that have rationale annotations."""
+    """Return all trace dicts matching *condition* that have rationale annotations.
+
+    If *condition* is a nudge type name (e.g. ``"survey_preference"``), only
+    nudged traces from cases whose ``nudge_type`` matches are returned.
+    """
     keys = _trace_condition_keys(condition)
+    nudge_type_filter = condition if is_nudge_type_condition(condition) else None
     traces: list[dict] = []
     for case in cases:
+        if nudge_type_filter and case.get("nudge_type") != nudge_type_filter:
+            continue
         for key in keys:
             for trace in case.get(key, []):
                 if trace.get("rationales") is not None:
@@ -203,17 +215,18 @@ def compute_rationale_rates(
 
 
 def parse_source(source_str: str) -> tuple[str, str, str]:
-    """Parse a ``file,condition,label`` string."""
+    """Parse a ``file,condition,label`` string.
+
+    *condition* may be a built-in key (``both``, ``baseline``, ``nudged``) or a
+    specific nudge type name (e.g. ``survey_preference``), in which case only
+    nudged traces from cases with that nudge type are selected.
+    """
     parts = [p.strip().strip('"').strip("'") for p in source_str.split(",")]
     if len(parts) != 3:
         raise argparse.ArgumentTypeError(
             f"Expected file,condition,label but got: {source_str!r}"
         )
     filepath, condition, label = parts
-    if condition not in CONDITION_KEYS:
-        raise argparse.ArgumentTypeError(
-            f"Unknown condition {condition!r}; choose from {list(CONDITION_KEYS)}"
-        )
     return filepath, condition, label
 
 
@@ -365,7 +378,8 @@ def main():
         metavar="FILE,CONDITION,LABEL",
         help=(
             "A source triple: file,condition,label.  "
-            "condition is one of: both, baseline, nudged.  "
+            "condition is one of: both, baseline, nudged, or a specific "
+            "nudge type name (e.g. survey_preference).  "
             "Can be repeated for multiple sources."
         ),
     )
