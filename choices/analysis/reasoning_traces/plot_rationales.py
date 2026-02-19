@@ -211,6 +211,42 @@ def compute_rationale_rates(
     return rates
 
 
+def _compute_merged_rate(
+    traces: list[dict],
+    codes: set[str],
+    metric: str,
+) -> RationaleRate:
+    """Compute a single rate for traces matching *any* code in *codes*."""
+    n = len(traces)
+    if n == 0:
+        return RationaleRate(rate=0.0, ci_low=0.0, ci_high=0.0, count=0, n=0)
+
+    count = 0
+    for t in traces:
+        rationales = t["rationales"]
+        for code in codes:
+            if metric == "primary":
+                if rationales.get("primary_rationale") == code:
+                    count += 1
+                    break
+            elif metric == "acted_on":
+                if rationales.get(code, {}).get("status") == "mentioned_and_acted_on":
+                    count += 1
+                    break
+            else:
+                if rationales.get(code, {}).get("status") in (
+                    "mentioned_but_not_acted_on",
+                    "mentioned_and_acted_on",
+                ):
+                    count += 1
+                    break
+
+    ci_low, ci_high = _wilson_ci(count, n)
+    return RationaleRate(
+        rate=count / n, ci_low=ci_low, ci_high=ci_high, count=count, n=n
+    )
+
+
 # ── Source parsing ───────────────────────────────────────────────────────────
 
 
@@ -239,6 +275,7 @@ def plot_rationale_comparison(
     metric: str = "mentioned",
     title: str | None = None,
     figsize: tuple[float, float] | None = None,
+    threshold: float | None = None,
 ):
     """
     Create a horizontal grouped bar chart comparing rationale rates.
@@ -250,11 +287,14 @@ def plot_rationale_comparison(
         title: Optional custom title.
         figsize: Figure size as ``(width, height)`` in inches. Defaults to
             ``(12, max(7, n_rationales * 0.55))``.
+        threshold: If set, only keep rationales where at least one source has
+            a rate >= this percentage.  All others are merged into "Other".
     """
     setup_plot_style()
 
-    # Collect rates for each source
+    # Collect rates and traces for each source
     all_rates: list[dict[str, RationaleRate]] = []
+    all_traces: list[list[dict]] = []
     labels: list[str] = []
     trace_counts: list[int] = []
 
@@ -263,22 +303,49 @@ def plot_rationale_comparison(
         traces = collect_traces(cases, condition)
         rates = compute_rationale_rates(traces, metric=metric)
         all_rates.append(rates)
+        all_traces.append(traces)
         labels.append(label)
         trace_counts.append(len(traces))
 
     n_sources = len(sources)
-    n_rationales = len(RATIONALE_CODES)
+
+    # ── Optional threshold filtering ──────────────────────────────────────
+    active_codes: list[str] = list(RATIONALE_CODES)
+
+    if threshold is not None:
+        codes_above = {
+            code
+            for code in RATIONALE_CODES
+            if code != "other"
+            and any(r[code].rate * 100 >= threshold for r in all_rates)
+        }
+        codes_below = set(RATIONALE_CODES) - codes_above - {"other"}
+
+        if codes_below:
+            codes_to_merge = codes_below | {"other"}
+            for i in range(n_sources):
+                all_rates[i]["other"] = _compute_merged_rate(
+                    all_traces[i], codes_to_merge, metric
+                )
+                for code in codes_below:
+                    del all_rates[i][code]
+
+        active_codes = list(codes_above) + ["other"]
 
     # Sort rationales by the average rate across sources (descending),
     # keeping only those with at least one non-zero bar.
     avg_rates = {
-        code: np.mean([r[code].rate for r in all_rates]) for code in RATIONALE_CODES
+        code: np.mean([r[code].rate for r in all_rates]) for code in active_codes
     }
     sorted_codes = [
         c
-        for c in sorted(RATIONALE_CODES, key=lambda c: avg_rates[c], reverse=True)
+        for c in sorted(active_codes, key=lambda c: avg_rates[c], reverse=True)
         if any(r[c].rate > 0 for r in all_rates)
     ]
+    if threshold is not None and "other" not in sorted_codes:
+        sorted_codes.append("other")
+    if threshold is not None and "other" in sorted_codes:
+        sorted_codes = [c for c in sorted_codes if c != "other"] + ["other"]
 
     display_names = [RATIONALE_DISPLAY_NAMES.get(c, c) for c in sorted_codes]
 
@@ -410,6 +477,18 @@ def main():
         help="Figure size in inches, e.g. --figsize 10 6",
     )
     parser.add_argument(
+        "--threshold",
+        "-t",
+        type=float,
+        default=None,
+        metavar="PCT",
+        help=(
+            "Minimum percentage for a rationale to be shown individually. "
+            "Rationales where no source reaches this threshold are merged "
+            "into 'Other'."
+        ),
+    )
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -448,6 +527,7 @@ def main():
         output_path,
         metric=args.metric,
         title=title,
+        threshold=args.threshold,
         **kwargs,
     )
 
