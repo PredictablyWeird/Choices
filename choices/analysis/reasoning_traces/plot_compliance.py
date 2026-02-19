@@ -52,9 +52,9 @@ from choices.analysis.utils import (
 FONT_SIZES = {
     "title": 16,
     "axes_label": 14,
-    "tick_label": 12,
-    "legend": 11,
-    "annotation": 9,
+    "tick_label": 14,
+    "legend": 12,
+    "annotation": 12,
 }
 
 # Ordered from most-compliant to least-engaged
