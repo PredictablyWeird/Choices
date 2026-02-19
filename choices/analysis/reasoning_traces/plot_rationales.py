@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,10 +45,7 @@ from choices.analysis.utils import PLOTS_OUTPUT_DIR
 
 FONT_SIZES = {
     "title": 16,
-    "axes_label": 14,
-    "tick_label": 12,
-    "legend": 11,
-    "annotation": 9,
+    "base": 14,
 }
 
 COLOR_PALETTE = [
@@ -83,14 +81,15 @@ RATIONALE_DISPLAY_NAMES = {
 
 
 def setup_plot_style():
+    base = FONT_SIZES["base"]
     plt.rcParams.update(
         {
-            "font.size": FONT_SIZES["tick_label"],
-            "axes.titlesize": FONT_SIZES["title"],
-            "axes.labelsize": FONT_SIZES["axes_label"],
-            "xtick.labelsize": FONT_SIZES["tick_label"],
-            "ytick.labelsize": FONT_SIZES["tick_label"],
-            "legend.fontsize": FONT_SIZES["legend"],
+            "font.size": base,
+            "axes.titlesize": base,
+            "axes.labelsize": base,
+            "xtick.labelsize": base,
+            "ytick.labelsize": base,
+            "legend.fontsize": base,
             "figure.titlesize": FONT_SIZES["title"],
         }
     )
@@ -276,19 +275,23 @@ def plot_rationale_comparison(
     title: str | None = None,
     figsize: tuple[float, float] | None = None,
     threshold: float | None = None,
+    show_pct: bool = False,
 ):
     """
-    Create a horizontal grouped bar chart comparing rationale rates.
+    Create a faceted grid of horizontal bar charts comparing rationale rates.
+
+    Each source gets its own panel in a grid layout, making the figure compact
+    enough for paper inclusion even with many sources.
 
     Args:
         sources: List of (filepath, condition, label) tuples.
         output_path: Where to save the figure.
         metric: ``"mentioned"``, ``"acted_on"``, or ``"primary"``.
-        title: Optional custom title.
-        figsize: Figure size as ``(width, height)`` in inches. Defaults to
-            ``(12, max(7, n_rationales * 0.55))``.
+        title: Optional custom title (shown as ``suptitle``).
+        figsize: Figure size as ``(width, height)`` in inches.
         threshold: If set, only keep rationales where at least one source has
             a rate >= this percentage.  All others are merged into "Other".
+        show_pct: If True, display the percentage value at the end of each bar.
     """
     setup_plot_style()
 
@@ -349,68 +352,92 @@ def plot_rationale_comparison(
 
     display_names = [RATIONALE_DISPLAY_NAMES.get(c, c) for c in sorted_codes]
 
-    # Bar geometry
+    # ── Faceted grid layout ───────────────────────────────────────────────
     n_rationales = len(sorted_codes)
-    bar_height = 0.8 / n_sources
     y = np.arange(n_rationales)
 
-    effective_figsize = figsize or (12, max(7, n_rationales * 0.55))
-    fig, ax = plt.subplots(figsize=effective_figsize)
+    ncols = min(n_sources, 4)
+    nrows = math.ceil(n_sources / ncols)
 
-    for i, (rates, label, n_traces) in enumerate(zip(all_rates, labels, trace_counts)):
-        offsets = y - 0.4 + bar_height * (i + 0.5)
-        values = [rates[code].rate * 100 for code in sorted_codes]
+    effective_figsize = figsize or (
+        3.5 * ncols,
+        0.35 * n_rationales * nrows + 1,
+    )
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        sharey=True,
+        sharex=True,
+        figsize=effective_figsize,
+    )
+    axes_flat = np.atleast_1d(axes).flatten()
 
-        # Asymmetric error bars from Wilson CI
-        ci_lo = [rates[code].ci_low * 100 for code in sorted_codes]
-        ci_hi = [rates[code].ci_high * 100 for code in sorted_codes]
-        xerr_low = [max(0.0, v - lo) for v, lo in zip(values, ci_lo)]
-        xerr_high = [max(0.0, hi - v) for v, hi in zip(values, ci_hi)]
+    # Global x-limit across all sources
+    x_max = max(
+        r[code].ci_high * 100
+        for rates in all_rates
+        for code in sorted_codes
+        for r in [rates]
+    )
 
-        color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
-        bars = ax.barh(
-            offsets,
-            values,
-            height=bar_height * 0.9,
-            xerr=[xerr_low, xerr_high],
-            error_kw={"linewidth": 1.0, "capsize": 2, "color": "0.3"},
-            label=f"{label} (n={n_traces})",
-            color=color,
-            edgecolor="white",
-            linewidth=0.5,
-        )
-
-        # Value labels for bars whose upper CI extends past 3 %
-        for bar, hi in zip(bars, ci_hi):
-            width = bar.get_width()
-            if width > 3:
-                ax.text(
-                    hi + 0.8,
-                    bar.get_y() + bar.get_height() / 2,
-                    f"{width:.1f}%",
-                    va="center",
-                    ha="left",
-                    fontsize=FONT_SIZES["annotation"],
-                    color=color,
-                )
-
-    # Axes
     metric_label = {
         "mentioned": "Mention rate",
         "acted_on": "Acted-on rate",
         "primary": "Primary rationale rate",
     }.get(metric, metric)
 
-    ax.set_xlabel(f"{metric_label} (%)")
-    ax.set_yticks(y)
-    ax.set_yticklabels(display_names)
-    ax.invert_yaxis()
-    ax.legend(loc="lower right")
+    for i, (rates, label, n_traces) in enumerate(zip(all_rates, labels, trace_counts)):
+        ax = axes_flat[i]
+        values = [rates[code].rate * 100 for code in sorted_codes]
+
+        ci_lo = [rates[code].ci_low * 100 for code in sorted_codes]
+        ci_hi = [rates[code].ci_high * 100 for code in sorted_codes]
+        xerr_low = [max(0.0, v - lo) for v, lo in zip(values, ci_lo)]
+        xerr_high = [max(0.0, hi - v) for v, hi in zip(values, ci_hi)]
+
+        color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+        ax.barh(
+            y,
+            values,
+            height=0.7,
+            xerr=[xerr_low, xerr_high],
+            error_kw={"linewidth": 0.8, "capsize": 2, "color": "0.4"},
+            color=color,
+            edgecolor="white",
+            linewidth=0.4,
+        )
+
+        if show_pct:
+            for yi, (v, hi) in enumerate(zip(values, ci_hi)):
+                ax.text(
+                    hi + x_max * 0.01,
+                    yi,
+                    f"{v:.1f}%",
+                    va="center",
+                    ha="left",
+                    fontsize=FONT_SIZES["base"],
+                    color="0.3",
+                )
+
+        ax.set_title(f"{label} (n={n_traces})", fontsize=FONT_SIZES["base"])
+        ax.grid(axis="x", linestyle="--", alpha=0.3)
+        ax.set_xlim(0, x_max * (1.18 if show_pct else 1.08))
+
+    # Shared axis configuration
+    axes_flat[0].set_yticks(y)
+    axes_flat[0].set_yticklabels(display_names)
+    axes_flat[0].invert_yaxis()
+    for idx in range(n_sources):
+        panel = axes_flat[idx]
+        if idx // ncols == nrows - 1:
+            panel.set_xlabel(f"{metric_label} (%)", fontsize=FONT_SIZES["base"])
+
+    # Hide unused panels
+    for j in range(n_sources, len(axes_flat)):
+        axes_flat[j].set_visible(False)
 
     if title is not None:
-        ax.set_title(title)
-
-    ax.set_xlim(0, ax.get_xlim()[1] * 1.12)  # room for labels
+        fig.suptitle(title, fontsize=FONT_SIZES["title"], y=1.01)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -489,6 +516,11 @@ def main():
         ),
     )
     parser.add_argument(
+        "--show-pct",
+        action="store_true",
+        help="Display percentage values next to each bar",
+    )
+    parser.add_argument(
         "--pdf",
         action="store_true",
         help="Save as PDF instead of PNG",
@@ -528,6 +560,7 @@ def main():
         metric=args.metric,
         title=title,
         threshold=args.threshold,
+        show_pct=args.show_pct,
         **kwargs,
     )
 
