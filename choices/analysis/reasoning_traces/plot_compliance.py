@@ -239,7 +239,7 @@ def plot_compliance_vs_effect(
             continue
 
         jitter = rng.uniform(-0.2, 0.2)
-        alpha = 0.4 + 0.5 * pt.unanimity  # more opaque when more unanimous
+        alpha = 0.2 + 0.3 * pt.unanimity
 
         if color_getter is not None:
             group_val = getattr(pt, color_by)
@@ -283,8 +283,8 @@ def plot_compliance_vs_effect(
     # ── Axes ─────────────────────────────────────────────────────────────
     ax.set_xticks(range(len(categories_present)))
     ax.set_xticklabels([CATEGORY_DISPLAY_NAMES.get(c, c) for c in categories_present])
-    ax.set_ylabel("Effect on P(nudged option)  (pp)")
-    ax.set_xlabel("Majority compliance category")
+    ax.set_ylabel("Effect on P(influenced option)  (pp)")
+    ax.set_xlabel("")
 
     if title is not None:
         ax.set_title(title)
@@ -309,7 +309,7 @@ def plot_compliance_vs_effect(
                 f"n={len(effects)}",
                 ha="center",
                 va="bottom",
-                fontsize=FONT_SIZES["annotation"],
+                fontsize=FONT_SIZES["tick_label"],
                 color="0.4",
             )
 
