@@ -173,7 +173,9 @@ experiment = Experiment(
 
 ## Reproducing Paper Results
 
-This section contains instructions for reproducing the results from the paper "Moral Preferences Under Influence."
+This section contains instructions for reproducing the results from the paper "Moral Preferences of LLMs Under Directed Contextual Influence".
+
+Note that you can find the raw results for the main experiments (i.e., without surface form and reasoning trace analysis) under [https://doi.org/10.5281/zenodo.18716627](https://doi.org/10.5281/zenodo.18716627).
 
 ### Running Experiments
 
