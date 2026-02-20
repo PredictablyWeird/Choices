@@ -188,21 +188,48 @@ This section contains instructions for reproducing the results from the paper "M
 
 Assuming you have raw results (as output from the batch script) in the folder `results/`, plots from the main body of the paper are generated as follows:
 
-- Fig. 2: `uv run python -m choices.analysis.plots.model_effects --factor wealth --results-dirs results --reasoning off none`
-- Fig. 3 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
-- Fig. 3 (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
-- Figs. 4 and 5: `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning [csv summary file]`
-- Fig. 6: `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
-- Fig. 7: `uv run python -m choices.analysis.surface_form.analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
+- Fig. 2 (preference shifts for poor-vs-rich): `uv run python -m choices.analysis.plots.model_effects --factor wealth --results-dirs results --reasoning off none`
+- Fig. 3 (preference shifts for selected models):
+  - GPT-5.2 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
+  - Qwen3 235B (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
+- Figs. 4 (steerability magnitudes) and 5 (backfiring rates): `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning [csv summary file]`
+- Fig. 6 (steerability asymmetry): `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
+- Fig. 7 (frequencies of choosing the larger group): `uv run python -m choices.analysis.plots.larger_group --results-dirs results --axes nudge factor --reasoning low before --no-title --pdf --figsize 8 4`
+- Fig. 8 (primary rationales for saving smaller groups):
+  - Sample baseline edges: `uv run python -m choices.analysis.reasoning_traces.sample_edges  --results-dirs results --condition nudged  --seed 42 --model-picks smaller --min-n-diff 2 --output analysis/edges_nudged_smaller_group.json`
+  - Sampled influenced edges: `uv run python -m choices.analysis.reasoning_traces.rationale_detection --input analysis/edges_nudged_smaller_group.json --output analysis/nudged_smaller_group_1000_rationales.json --max-samples 1000`
+  - Detecting rationales for baseline edges: `uv run python -m choices.analysis.reasoning_traces.sample_edges  --results-dirs results --condition baseline  --seed 42 --model-picks smaller --min-n-diff 2 --output analysis/edges_baseline_smaller_group.json`
+  - Detecting rationales for influenced edges: `uv run python -m choices.analysis.reasoning_traces.rationale_detection --input analysis/edges_baseline_smaller_group.json --output analysis/baseline_smaller_group_200_rationales.json --max-samples 200`
+  - Generate plot: `uv run python -m choices.analysis.reasoning_traces.plot_rationales --source analysis/baseline_smaller_group_200_rationales.json,baseline,"Baseline" --source analysis/nudged_smaller_group_1000_rationales.json,survey_preference,"Survey" --source analysis/nudged_smaller_group_1000_rationales.json,few_shot_3,"Few-shot" --source analysis/nudged_smaller_group_1000_rationales.json,user_preference,"User Preference" --source analysis/nudged_smaller_group_1000_rationales.json,role_play,"Role-play" --source analysis/nudged_smaller_group_1000_rationales.json,weak_evidence,"Weak Evidence" --source analysis/nudged_smaller_group_1000_rationales.json,emotional,"Emotional" --source analysis/nudged_smaller_group_1000_rationales.json,virtue_appeal,"Virtue Appeal" --metric primary --threshold 5.0 --show-pct --pdf --no-title`
+- Fig. 9 (reasoning vs effect size):
+  - Sample edges: `uv run python -m choices.analysis.reasoning_traces.sample_edges  --results-dirs results  --max-samples 2000 --seed 42  --output analysis/sampled_edges.json`
+  - Classify compliance: `uv run python -m choices.analysis.reasoning_traces.compliance_classification --input analysis/sampled_edges.json --output analysis/sampled_compliance.json`
+  - Generate the plot: `uv run python -m choices.analysis.reasoning_traces.plot_compliance --input sampled_compliance.json --figsize 8 5 --pdf --no-title`
+- Fig. 10 (reasoning vs effect size for few-shot):
+  - Sampling for the plot: `uv run python -m choices.analysis.reasoning_traces.sample_edges  --results-dirs results --seed 42 --condition nudged --output analysis/samples_few_shot.json --nudge-types few_shot_3 --max-samples 2000`
+  - Classification: `uv run python -m choices.analysis.reasoning_traces.compliance_classification --input analysis/samples_few_shot.json --output analysis/samples_few_shot_compliance.json --max-samples 1000`
+  - Plotting: `uv run python -m choices.analysis.reasoning_traces.plot_compliance --input analysis/samples_few_shot_compliance.json --pdf --no-title --figsize 8 5`
+- Fig. 11 (reactions to irrelevant influence): `uv run python -m choices.analysis.surface_form.analysis --results-dirs results results_surface --groups model --no-show --bar-chart --no-title --figsize 7 4 --abbr-names`
   - Note: For this plot you need to also run "_baseline" and "_negation" versions of experiments and put these results into `results_surface/`
 
 For appendix plots:
 
-- Fig. 8 (a): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions none off --significance --no-title`
-- Fig. 8 (b): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions before low --significance --no-title`
-- Fig. 9 (steerability in dependence of baseline bias): `uv run python -m choices.analysis.plots.steerability_by_baseline --results-dirs results --reasoning-conditions none off low before --sig-baseline-only`
-- Fig. 10 (negation results): Use `choices/analysis/surface_form/negation.py`
-- Figs. 11-18: Script `choices/analysis/reasoning_traces/plots.py`
+- Fig. 12 (steerability distributions)
+  - Without reasoning (a): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions none off --significance --no-title`
+  - With reasoning (b): `uv run python -m choices.analysis.plots.steerability --results-dirs results --rows nudges --reasoning-conditions before low --significance --no-title`
+- Fig. 13 (steerability in dependence of baseline bias): `uv run python -m choices.analysis.plots.steerability_by_baseline --results-dirs results --reasoning-conditions none off low before --sig-baseline-only`
+- Fig. 14 (frequency of choosing the larger group without reasoning): `uv run python -m choices.analysis.plots.larger_group --results-dirs results --axes nudge factor --reasoning off none --no-title --pdf --figsize 8 4`
+- Fig. 15 (frequency of choosing the larger group for GPT-5.2 with reasoning): `uv run python -m choices.analysis.plots.larger_group --results-dirs results --axes nudge factor --models gpt-5-2-reasoning --no-title --pdf --figsize 8 4`
+- Fig. 16 (frequency of choosing the larger group for GPT-5.2 without reasoning): `uv run python -m choices.analysis.plots.larger_group --results-dirs results_clean_arxiv --axes nudge factor --models gpt-5-2-non-reasoning --no-title --pdf --figsize 8 4`
+- Fig. 17 (frequency of choosing the larger group for Qwen3 235B with reasoning): `uv run python -m choices.analysis.plots.larger_group --results-dirs results_clean_arxiv --axes nudge factor --models qwen3-235b-a22b-2507-reasoning --no-title --pdf --figsize 8 4`
+- Fig. 18 (negation results): Use `choices/analysis/surface_form/negation.py`
+- Fig. 19 (mentioned rationales):
+  - Uses same results as Fig. 8
+  - Generate plot: `uv run python -m choices.analysis.reasoning_traces.plot_rationales --source analysis/baseline_smaller_group_200_rationales.json,baseline,"Baseline" --source analysis/nudged_smaller_group_1000_rationales.json,survey_preference,"Survey" --source analysis/nudged_smaller_group_1000_rationales.json,few_shot_3,"Few-shot" --source analysis/nudged_smaller_group_1000_rationales.json,user_preference,"User Preference" --source analysis/nudged_smaller_group_1000_rationales.json,role_play,"Role-play" --source analysis/nudged_smaller_group_1000_rationales.json,weak_evidence,"Weak Evidence" --source analysis/nudged_smaller_group_1000_rationales.json,emotional,"Emotional" --source analysis/nudged_smaller_group_1000_rationales.json,virtue_appeal,"Virtue Appeal" --metric mentioned --threshold 5.0 --show-pct --pdf --no-title`
+- Fig. 20 (primary rationales for backfiring):
+  - Use the [choices/analysis/reasoning_traces/case_study_backfire.py](case_study_backfire.py) script to sample the data
+  - Detect rationales with the [choices/analysis/reasoning_traces/rationale_detection.py](rationale_detection.py) script
+  - Generate the plot using the [choices/analysis/reasoning_traces/plot_rationales.py](plot_rationales.py) script
 
 ### Table Data
 

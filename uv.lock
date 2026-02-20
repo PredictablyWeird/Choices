@@ -547,6 +547,7 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
     { name = "typer" },
+    { name = "wordcloud" },
 ]
 
 [package.dev-dependencies]
@@ -580,6 +581,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "transformers", specifier = ">=4.46.2" },
     { name = "typer", specifier = ">=0.9.0" },
+    { name = "wordcloud", specifier = ">=1.9.6" },
 ]
 
 [package.metadata.requires-dev]
@@ -3134,6 +3136,43 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/20/28/e6f1a6f655d620846bd9df527390ecc26b3805a0c5989048c210e22c5ca9/virtualenv-20.35.4.tar.gz", hash = "sha256:643d3914d73d3eeb0c552cbb12d7e82adf0e504dbf86a3182f8771a153a1971c", size = 6028799, upload-time = "2025-10-29T06:57:40.511Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/0c/c05523fa3181fdf0c9c52a6ba91a23fbf3246cc095f26f6516f9c60e6771/virtualenv-20.35.4-py3-none-any.whl", hash = "sha256:c21c9cede36c9753eeade68ba7d523529f228a403463376cf821eaae2b650f1b", size = 6005095, upload-time = "2025-10-29T06:57:37.598Z" },
+]
+
+[[package]]
+name = "wordcloud"
+version = "1.9.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6f/04/a3d3c4b94a35586ddb97c6a3c508913159161cd558b34f315b382b924bf7/wordcloud-1.9.6.tar.gz", hash = "sha256:df17c468ff903bd0aba4f87c6540745d13a4931220dd4937cb363ad85a4771b9", size = 27563741, upload-time = "2026-01-22T02:08:52.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/c8/ff2453f332f7e61bfaebefb1b1967c4f05cee15c3b1e5f3edea36fb7c351/wordcloud-1.9.6-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:41dfe1c6b30f731225ce67697b0589df5539032b82a4c334f94ead3151d589aa", size = 169057, upload-time = "2026-01-22T02:07:36.597Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/87/cd17e9ff9014c5328e3191c7832d18bd3b010eb25a493dd2ec7ca2cf6296/wordcloud-1.9.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:6c4677c4b70e800ce3ff84b904db2ab9a30a6ad03898c668a71507da9ce14ad7", size = 168470, upload-time = "2026-01-22T02:07:38.063Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/55/583ad9135080934f391f76f97c80ea68f0e85ef667f7297cc55a5ae05bb1/wordcloud-1.9.6-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1b200b26bc746fa97c52dc8eba2bdca95c95366ddca51df167bd35a16c48a678", size = 522915, upload-time = "2026-01-22T02:07:39.409Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/13/6d3b313d98012b1a6e8f194a0116e6f92f7d30934cf7d7848db59989c969/wordcloud-1.9.6-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:682fd4bfc2f0c262c1ccf2bbc0ed503361f40c3dcd2e3dbe9ec3c233916cada6", size = 526203, upload-time = "2026-01-22T02:07:40.58Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/5b/e5b1b492ae795345c4984b7944cd5c5db00d95b35b0b74d1d39388e311fa/wordcloud-1.9.6-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:3f41dcda0ca3a5b3c220ee9a928db7fe3b6bcfc534e5b9fcdac8afebb59a18f1", size = 518357, upload-time = "2026-01-22T02:07:42.097Z" },
+    { url = "https://files.pythonhosted.org/packages/54/0b/7d0d433dc309ac82f15a911bb3f9f7bea05e9560861586b8cc5e498bc148/wordcloud-1.9.6-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:d63b1dcd3bc3c5f68ef591f454cae13c0d613a91b86db3d62f5f420b333fbedb", size = 529531, upload-time = "2026-01-22T02:07:43.928Z" },
+    { url = "https://files.pythonhosted.org/packages/29/14/e822d6b96b9552b97dd3db8231ef57d33b63325eca4c3eb39499ff56707d/wordcloud-1.9.6-cp310-cp310-win32.whl", hash = "sha256:5746286fb0506fd9731ec35c25046e6437db9f1e85155cdba113ac184625b3f8", size = 295856, upload-time = "2026-01-22T02:07:45.352Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/2a/16bab06c328f1b0fd4c0067ebcb73f31cc1c7dd3a5699f99fb8bf8e4530a/wordcloud-1.9.6-cp310-cp310-win_amd64.whl", hash = "sha256:2c9702fa654c9305d1bff86043147ee19661da145218e7b0114cb4f6d1459462", size = 306215, upload-time = "2026-01-22T02:07:46.635Z" },
+    { url = "https://files.pythonhosted.org/packages/54/6b/369ba57a28b4233ff517eb18633e9f0b35f0b9851afe2a0dcb84b05739d3/wordcloud-1.9.6-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:6eab5eb4caa4bda125dd3acc8f71697617c26c2a2203d8fcdaf2a92a7d12a4a8", size = 168799, upload-time = "2026-01-22T02:07:48.129Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/e9/259b1ea381d866bc56963945d494da1589a64cda5443d3989fe8926548ab/wordcloud-1.9.6-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:bc9ac1ad23ef76c1d1fbbeafbfb6125d2d63a9346bac642ca201cbc457da8f8a", size = 168419, upload-time = "2026-01-22T02:07:49.443Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/84/bb64813cd1ffc255a9d8f4a4faf9daa283e9ad0ac127366df716ee2b1719/wordcloud-1.9.6-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:33e3c214381244043d5921ba653ccf7e7407c3f97915dc99c639ebc4acd47dce", size = 547809, upload-time = "2026-01-22T02:07:51.077Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/7e/773bcc351664eb980ea36e56e8f1ecb62ce657e0936b9971e66f17065819/wordcloud-1.9.6-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e1c31741b7612d9f408551434d4164e75d2e6b8542b59ec53ea77f773286713a", size = 551314, upload-time = "2026-01-22T02:07:52.151Z" },
+    { url = "https://files.pythonhosted.org/packages/93/62/4f4e6ae70bad5ff39fff4cbfd97b7a6e0807db8557ea1faf09643a828cf3/wordcloud-1.9.6-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:ec394e02202e84550f50ab88cba5683f54775f89998dd46b8e41e297a9f1735c", size = 544345, upload-time = "2026-01-22T02:07:53.64Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/44/2ab3357b1f161e317c83f4e179a576f9c247c1cce41a9bef1fe89e01e6b1/wordcloud-1.9.6-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:dc80e742a95af65bae9556b5ec77837a104b12aeadb4772dedbd352f9dfc3e7a", size = 555174, upload-time = "2026-01-22T02:07:55.256Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/c9/663e9468b34a402e0861b5c2a2eeb4d71e5c60a81c35b2f4dcc9a9af8649/wordcloud-1.9.6-cp311-cp311-win32.whl", hash = "sha256:c96ba0b5d7194322e88bc2bfbaf653cd3de9a5dbe3f78e07ea365ac40cd2f987", size = 295601, upload-time = "2026-01-22T02:07:56.271Z" },
+    { url = "https://files.pythonhosted.org/packages/45/70/0041966d469dec79036ad3962b83b007004b842531ee7c41bdba61310eb6/wordcloud-1.9.6-cp311-cp311-win_amd64.whl", hash = "sha256:8a1b3b15509e05c1c3322a205108f7da31ca06bbcf979c104e1a7b9b9b76fff2", size = 306051, upload-time = "2026-01-22T02:07:57.662Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/0c/1df77d67d1cc990f83b70708b002fc8378779c94b5d0a80e570c5ead04b2/wordcloud-1.9.6-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:e51ebaeb6ce337b26ce4ba7e5eb3359981a8a648713301a252f49dbab5fe56cb", size = 170137, upload-time = "2026-01-22T02:07:59.172Z" },
+    { url = "https://files.pythonhosted.org/packages/04/72/1aeb291fd5965826e478b0efd8bcb4351e8a2434f366416537096cd41a0d/wordcloud-1.9.6-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:ba607e25f7ab78085e6c7a9b3d9cb5eb637e73560e5a8b4f6924705d64a76b0e", size = 168932, upload-time = "2026-01-22T02:08:00.623Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/28/a011d949b6cba617a6aaf31994afc81d38a467510bc76be4e96a37808a62/wordcloud-1.9.6-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5fce2f0fb0469623db85e1e974ea64f51e78758c4d8e84ed0b4344530d1ba8ab", size = 547540, upload-time = "2026-01-22T02:08:01.744Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/b9/916484ac803dbdbcd0f8669a6363264a438801feff938d5f3f209521ee2b/wordcloud-1.9.6-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f534204038811676890bc91c10bcca0b04c6933011c250b4b09323d2a0b0a8c1", size = 554869, upload-time = "2026-01-22T02:08:03.054Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/84/a1e23051927588e9567da232adfd54485a7def7957bb23287b89398e5050/wordcloud-1.9.6-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:dfea5803c6e2b540da04f9693da93fd90d9babeed284950ab720487eb7b44942", size = 538205, upload-time = "2026-01-22T02:08:04.293Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/ae/4926fa61265cd492ee504ec1ac9880b8840eda2c104c06e57f516f883f90/wordcloud-1.9.6-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:11b55fbcb2fa5db7e876887858fdf6480f21300b4384ff610c3aa9c0ef420ae9", size = 554626, upload-time = "2026-01-22T02:08:05.363Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/fc/f388ba4a7ec09a2d2c2c0f1cb2cbf158fe5850aa1f03831e854782a31c03/wordcloud-1.9.6-cp312-cp312-win32.whl", hash = "sha256:1200af0c9be744c9e70fd7305c80d4b317fbcb1d41cf9b72a24d648e70ad598c", size = 296150, upload-time = "2026-01-22T02:08:06.423Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/6a/47d0d8c5ca74400750797ae8fd13f200204294e008e1235e51814e732b09/wordcloud-1.9.6-cp312-cp312-win_amd64.whl", hash = "sha256:7977a1727e059d6ba0a679dacbab57a966ab28913fc1764079efdfdc67f8e4d2", size = 307222, upload-time = "2026-01-22T02:08:07.786Z" },
 ]
 
 [[package]]

@@ -169,6 +169,157 @@ gemini-3-pro-preview:
     effort: "low"
     summary: "detailed"
 
+# --- Qwen3 235B (hybrid model - supports on/off from single checkpoint) ---
+# NOTE: Qwen3 via Fireworks/OpenRouter is heavily rate-limited and the Responses API
+# ignores effort levels. Kept for reference but not used in reasoning effort experiment.
+qwen3-235b-non-reasoning:
+  model_name: "openrouter/qwen/qwen3-235b-a22b"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B"
+  concurrency_limit: 50
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+
+qwen3-235b-reasoning-low:
+  model_name: "openrouter/qwen/qwen3-235b-a22b"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B (reasoning low)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+qwen3-235b-reasoning-medium:
+  model_name: "openrouter/qwen/qwen3-235b-a22b"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B (reasoning medium)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "medium"
+
+qwen3-235b-reasoning-high:
+  model_name: "openrouter/qwen/qwen3-235b-a22b"
+  model_type: openrouter
+  display_name: "Qwen 3.2 235B (reasoning high)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "high"
+
+# --- GLM 5 (Z.ai / Zhipu - reasoning effort levels work via OpenRouter) ---
+glm-5-reasoning-none:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5"
+  concurrency_limit: 50
+  # No reasoning_effort → routes through LiteLLMAgent (Chat Completions API)
+  # Responses API with effort="none" returns empty strings at scale
+
+glm-5-reasoning-low:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5 (reasoning low)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+glm-5-reasoning-medium:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5 (reasoning medium)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "medium"
+
+glm-5-reasoning-high:
+  model_name: "openrouter/z-ai/glm-5"
+  model_type: openrouter
+  display_name: "GLM 5 (reasoning high)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "high"
+
+# --- Gemini 3 Flash ---
+gemini-3-flash-reasoning-none:
+  model_name: "openrouter/google/gemini-3-flash-preview"
+  model_type: openrouter
+  display_name: "Gemini 3 Flash"
+  concurrency_limit: 50
+  # No reasoning_effort → routes through LiteLLMAgent (Chat Completions API)
+  # Responses API with effort="none" returns empty strings at scale
+
+gemini-3-flash-reasoning-low:
+  model_name: "openrouter/google/gemini-3-flash-preview"
+  model_type: openrouter
+  display_name: "Gemini 3 Flash (reasoning low)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+gemini-3-flash-reasoning-medium:
+  model_name: "openrouter/google/gemini-3-flash-preview"
+  model_type: openrouter
+  display_name: "Gemini 3 Flash (reasoning medium)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "medium"
+
+gemini-3-flash-reasoning-high:
+  model_name: "openrouter/google/gemini-3-flash-preview"
+  model_type: openrouter
+  display_name: "Gemini 3 Flash (reasoning high)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "high"
+
+# --- Kimi K2.5 ---
+kimi-k25-non-reasoning:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5"
+  concurrency_limit: 50
+  # No reasoning_effort → routes through LiteLLMAgent (Chat Completions API)
+  # OpenRouter's Responses API inconsistently handles effort="none" for Kimi,
+  # so we use Moonshot's native thinking disable parameter
+  extra_body:
+    thinking:
+      type: "disabled"
+
+kimi-k25-reasoning-low:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5 (reasoning low)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "low"
+
+kimi-k25-reasoning-medium:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5 (reasoning medium)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "medium"
+
+kimi-k25-reasoning-high:
+  model_name: "openrouter/moonshotai/kimi-k2.5"
+  model_type: openrouter
+  display_name: "Kimi K2.5 (reasoning high)"
+  concurrency_limit: 50
+  reasoning_effort:
+    enabled: true
+    effort: "high"
+
 
 # ------------------------------
 # OpenRouter base models

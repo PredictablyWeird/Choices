@@ -26,6 +26,7 @@ Usage:
 """
 
 import asyncio
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -159,6 +160,42 @@ def generate_experiment_list(config: BatchConfig) -> list[dict]:
     return experiments
 
 
+def experiment_is_complete(save_dir: str, factor: str, model: str, nudge: str) -> bool:
+    """Check if an experiment already has results for all conditions (base + both groups).
+
+    Looks for directories matching {save_dir}/simple_{factor}/{model}/{nudge}/*_{condition}/
+    containing a preference_graph JSON file.
+    """
+    exp_dir = os.path.join(save_dir, f"simple_{factor}", model, nudge)
+    if not os.path.isdir(exp_dir):
+        return False
+
+    factor_values = BINARY_FACTORS[factor].values  # e.g. ["male", "female"]
+    required_conditions = {"base"} | set(factor_values)
+    found_conditions: set[str] = set()
+
+    for entry in os.listdir(exp_dir):
+        entry_path = os.path.join(exp_dir, entry)
+        if not os.path.isdir(entry_path):
+            continue
+        # Directory format: {timestamp}_{condition}
+        parts = entry.split(
+            "_", 2
+        )  # e.g. "20260212_151544_base" -> ["20260212", "151544", "base"]
+        if len(parts) < 3:
+            continue
+        condition = parts[2]
+        # Check that it has a preference graph (i.e. actually completed)
+        has_results = any(
+            f.startswith("preference_graph_") and f.endswith(".json")
+            for f in os.listdir(entry_path)
+        )
+        if has_results:
+            found_conditions.add(condition)
+
+    return required_conditions.issubset(found_conditions)
+
+
 def print_experiment_plan(config: BatchConfig, experiments: list[dict]) -> None:
     """Print a summary of the planned experiments."""
     print("\n" + "=" * 80)
@@ -209,6 +246,7 @@ async def run_batch_async(
     config: BatchConfig,
     dry_run: bool = False,
     continue_on_error: bool = True,
+    resume: bool = True,
 ) -> dict[str, dict]:
     """Run all experiments in the batch."""
     experiments = generate_experiment_list(config)
@@ -218,15 +256,30 @@ async def run_batch_async(
         print("DRY RUN - No experiments will be executed")
         print("\nWould run the following experiments:")
         for i, exp in enumerate(experiments, 1):
-            print(f"  {i}. {exp['model']} | {exp['factor']} | {exp['nudge']}")
+            already_done = resume and experiment_is_complete(
+                config.save_dir, exp["factor"], exp["model"], exp["nudge"]
+            )
+            status = " [SKIP - already complete]" if already_done else ""
+            print(f"  {i}. {exp['model']} | {exp['factor']} | {exp['nudge']}{status}")
         return {}
 
     results = {}
     failed = []
+    skipped = 0
     start_time = datetime.now()
 
     for i, exp in enumerate(experiments, 1):
         exp_key = f"{exp['model']}_{exp['factor']}_{exp['nudge']}"
+
+        if resume and experiment_is_complete(
+            config.save_dir, exp["factor"], exp["model"], exp["nudge"]
+        ):
+            skipped += 1
+            print(
+                f"\n[SKIP] Experiment {i}/{len(experiments)}: {exp_key} (already complete)"
+            )
+            continue
+
         print(f"\n{'#' * 80}")
         print(f"# Experiment {i}/{len(experiments)}: {exp_key}")
         print(f"{'#' * 80}")
@@ -263,6 +316,7 @@ async def run_batch_async(
     print("BATCH COMPLETE")
     print("=" * 80)
     print(f"Total experiments: {len(experiments)}")
+    print(f"Skipped (already complete): {skipped}")
     print(f"Successful: {len(results)}")
     print(f"Failed: {len(failed)}")
     print(f"Duration: {duration}")
@@ -388,6 +442,10 @@ def run(
     stop_on_error: Annotated[
         bool, typer.Option("--stop-on-error", help="Stop batch on first error")
     ] = False,
+    no_resume: Annotated[
+        bool,
+        typer.Option("--no-resume", help="Don't skip already-completed experiments"),
+    ] = False,
 ):
     """Run batch nudging experiments."""
     # Build configuration
@@ -442,6 +500,7 @@ def run(
             config=batch_config,
             dry_run=dry_run,
             continue_on_error=not stop_on_error,
+            resume=not no_resume,
         )
     )
 
