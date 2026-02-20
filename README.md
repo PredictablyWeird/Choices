@@ -192,7 +192,7 @@ Assuming you have raw results (as output from the batch script) in the folder `r
 - Fig. 3 (preference shifts for selected models):
   - GPT-5.2 (a): `uv run python -m choices.analysis.plots.model_effects --model gpt-5-2-non-reasoning --results-dirs results --reasoning off none`
   - Qwen3 235B (b): `uv run python -m choices.analysis.plots.model_effects --model qwen3-235b-a22b-2507 --results-dirs results --reasoning off none`
-- Figs. 4 (steerability magnitudes) and 5 (backfiring rates): `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning`
+- Figs. 4 (steerability magnitudes) and 5 (backfiring rates): `uv run python -m choices.analysis.plots.backfiring_steering_wrt_reasoning [csv summary file]`
 - Fig. 6 (steerability asymmetry): `uv run python -m choices.analysis.plots.baseline_vs_bias --results-dirs results --figsize 5 3 --no-title`
 - Fig. 7 (frequencies of choosing the larger group): `uv run python -m choices.analysis.plots.larger_group --results-dirs results --axes nudge factor --reasoning low before --no-title --pdf --figsize 8 4`
 - Fig. 8 (primary rationales for saving smaller groups):

@@ -122,7 +122,14 @@ class BatchConfig:
                 f"Unknown reasoning: {self.reasoning}. Available: none, before, after"
             )
 
-        valid_positions = ["system", "start", "after_setup", "after_options", "end"]
+        valid_positions = [
+            "system",
+            "system_replace",
+            "start",
+            "after_setup",
+            "after_options",
+            "end",
+        ]
         if (
             self.nudge_position is not None
             and self.nudge_position not in valid_positions
@@ -369,7 +376,7 @@ settings:
   max_retries: 10
   save_dir: results      # Base directory for saving results
   # Nudge formatting (omit or set to null to use each nudge type's default)
-  # nudge_position: after_setup  # Options: system, start, after_setup, after_options, end
+  # nudge_position: after_setup  # Options: system, system_replace, start, after_setup, after_options, end
   # nudge_brackets: parentheses  # Options: parentheses, quotes, none, italic
 """
     print(sample_config)
