@@ -226,10 +226,6 @@ For appendix plots:
 - Fig. 19 (mentioned rationales):
   - Uses same results as Fig. 8
   - Generate plot: `uv run python -m choices.analysis.reasoning_traces.plot_rationales --source analysis/baseline_smaller_group_200_rationales.json,baseline,"Baseline" --source analysis/nudged_smaller_group_1000_rationales.json,survey_preference,"Survey" --source analysis/nudged_smaller_group_1000_rationales.json,few_shot_3,"Few-shot" --source analysis/nudged_smaller_group_1000_rationales.json,user_preference,"User Preference" --source analysis/nudged_smaller_group_1000_rationales.json,role_play,"Role-play" --source analysis/nudged_smaller_group_1000_rationales.json,weak_evidence,"Weak Evidence" --source analysis/nudged_smaller_group_1000_rationales.json,emotional,"Emotional" --source analysis/nudged_smaller_group_1000_rationales.json,virtue_appeal,"Virtue Appeal" --metric mentioned --threshold 5.0 --show-pct --pdf --no-title`
-- Fig. 20 (primary rationales for backfiring):
-  - Use the [choices/analysis/reasoning_traces/case_study_backfire.py](case_study_backfire.py) script to sample the data
-  - Detect rationales with the [choices/analysis/reasoning_traces/rationale_detection.py](rationale_detection.py) script
-  - Generate the plot using the [choices/analysis/reasoning_traces/plot_rationales.py](plot_rationales.py) script
 
 ### Table Data
 
