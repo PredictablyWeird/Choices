@@ -1,3 +1,4 @@
 # Override repo-level results* ignore — we want to track experiment results
 !results/
 !results/**
+uv.lock
