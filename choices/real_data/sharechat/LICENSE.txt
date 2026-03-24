@@ -1,0 +1,11 @@
+Dataset: ShareChat - A Dataset of Chatbot Conversations in the Wild
+Source: https://huggingface.co/datasets/tucnguyen/ShareChat
+
+From the paper:
+    Yan et al., "ShareChat: A Dataset of Chatbot Conversations in the Wild"
+    arXiv:2512.17843
+
+License: Gated access on HuggingFace. Data collected from publicly shared
+conversation URLs on ChatGPT, Perplexity, Grok, Gemini, and Claude.
+Released for research purposes only — not for training user-facing
+production models without further filtering.

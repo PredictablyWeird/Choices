@@ -1,0 +1,13 @@
+Dataset: AITA (Am I The Asshole) - Reddit posts
+Source: https://github.com/iterative/aita_dataset
+License: Not explicitly specified
+
+The dataset was scraped from the public subreddit r/AmITheAsshole using the
+Reddit API (PRAW). The GitHub repository is archived (read-only since Feb 2023).
+Data is hosted on a public DVC remote and freely downloadable.
+
+Reddit content is user-generated and subject to Reddit's Terms of Service.
+No formal open-source or Creative Commons license was attached to this dataset.
+
+If citing, reference the repository:
+    https://github.com/iterative/aita_dataset

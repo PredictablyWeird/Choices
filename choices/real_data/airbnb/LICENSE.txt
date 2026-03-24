@@ -1,0 +1,8 @@
+Dataset: Inside Airbnb - New York City
+Source: https://www.kaggle.com/datasets/dominoweir/inside-airbnb-nyc
+       http://insideairbnb.com/new-york-city
+License: CC BY 4.0 (Creative Commons Attribution 4.0 International)
+https://creativecommons.org/licenses/by/4.0/
+
+The original data is from Inside Airbnb (http://insideairbnb.com) which
+provides data under the Open Database License (ODbL).

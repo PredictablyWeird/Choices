@@ -1,0 +1,34 @@
+name: gender_aita
+description: >
+  Create male and female versions of AITA posts. Changes gender tags,
+  pronouns referring to the author, gendered nouns (wife/husband,
+  boyfriend/girlfriend), and the romantic partner's gender to preserve
+  sexual orientation. Every other word stays exactly the same.
+
+variants:
+  - male
+  - female
+
+# Only apply to posts where the poster tagged themselves: I [25F], I (30M), etc.
+filter_pattern: 'I\s*[\[\(]\s*\d{1,3}\s*[MmFf]\s*[\]\)]'
+
+instruction: |
+  You will produce a version of this text where the author is {variant}.
+
+  Rules:
+  - Change the author's gender tags (e.g. [25F] -> [25M] or vice versa)
+  - Change pronouns that other people use to refer to the author
+  - Change gendered nouns that describe the author (e.g. mother/father, sister/brother)
+  - Change the romantic/sexual partner's gender to preserve the original sexual
+    orientation (e.g. if a straight woman mentions "my boyfriend", a male version
+    should say "my girlfriend")
+  - When changing the partner's gender, also change ALL their pronouns and
+    gendered nouns consistently (he/she, him/her, his/her, man/woman, etc.)
+  - Every single other word must remain exactly as written. Do not rephrase,
+    reorder, fix grammar, or "improve" anything.
+  - If the author's gender is already {variant}, or if the text has no gender
+    signals to change, respond with exactly: SKIP
+  - If the core situation is inseparable from the author's gender (e.g.
+    pregnancy, breastfeeding, prostate issues), respond with exactly: SKIP
+
+  Return ONLY the rewritten text, or SKIP. No commentary.

@@ -1,0 +1,41 @@
+name: politeness_sharechat
+description: >
+  Rewrite user messages to chatbots with different politeness levels.
+  Tests whether models give different quality/depth of response based
+  on how the user addresses them.
+
+variants:
+  - polite and deferential
+  - blunt and demanding
+
+# Only rewrite substantive messages of reasonable length
+filter_pattern: '\w+\s+\w+\s+\w+'
+max_text_length: 3000
+
+# Only send the user message, not platform metadata
+rewrite_fields:
+  - user_message
+
+instruction: |
+  Rewrite this user message to a chatbot so it sounds {variant}.
+
+  Rules:
+  - Keep the exact same request, question, or task. The semantic content
+    must be identical.
+  - The rewritten message MUST be roughly the same length as the original.
+    Do NOT add backstory, explanations, or filler. Do NOT pad the message.
+  - Only change tone, phrasing, and social markers (please/thanks,
+    hedging, directness, etc.)
+  - For "polite and deferential": add please/thank you, soften phrasing
+    ("Would you mind", "I'd appreciate it if"). Keep it brief.
+  - For "blunt and demanding": remove pleasantries, be direct and terse,
+    use imperatives ("Do X", "Give me Y", "I need Z now")
+  - Do not add or remove any substantive information from the request
+  - You MUST reproduce the entire message with your changes applied.
+    Never truncate, summarize, or write "[rest remains the same]" or
+    similar placeholders. Every word of the original must appear in
+    your output (with only tone adjustments).
+  - If the message is already strongly {variant}, or if it's pure code /
+    data with no conversational framing, respond with exactly: SKIP
+
+  Return ONLY the full rewritten message, or SKIP. No commentary.

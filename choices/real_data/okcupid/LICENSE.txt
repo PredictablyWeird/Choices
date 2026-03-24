@@ -1,0 +1,19 @@
+Dataset: OkCupid Profiles
+Source: https://www.kaggle.com/datasets/andrewmvd/okcupid-profiles
+License: Other (no standard license specified)
+
+Permission to use this dataset was explicitly granted by OkCupid.
+Attribution is required. If you use this dataset, cite:
+
+    @article{article,
+      author = {Kim, Albert and Escobedo-Land, Adriana},
+      year = {2015},
+      month = {07},
+      title = {OkCupid Data for Introductory Statistics and Data Science Courses},
+      volume = {23},
+      journal = {Journal of Statistics Education},
+      doi = {10.1080/10691898.2015.11889737}
+    }
+
+The dataset is freely available on Kaggle with proper attribution to the
+original authors and OkCupid.

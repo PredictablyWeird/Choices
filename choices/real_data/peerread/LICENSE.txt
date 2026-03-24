@@ -1,0 +1,12 @@
+Dataset: PeerRead - A Dataset of Peer Reviews
+Source: https://huggingface.co/datasets/allenai/peer_read
+       https://github.com/allenai/PeerRead
+License: Not explicitly specified
+
+From the NAACL 2018 paper:
+    Kang et al., "A Dataset of Peer Reviews (PeerRead): Collection, Insights
+    and NLP Applications"
+
+The dataset aggregates papers and reviews from ACL, NeurIPS, and ICLR
+(via OpenReview). Individual venues may have their own terms of use.
+The HuggingFace page lists the license as "Unknown".

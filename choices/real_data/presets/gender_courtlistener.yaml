@@ -1,0 +1,38 @@
+name: gender_courtlistener
+description: >
+  Swap party genders in legal opinions. Changes names to similar-sounding
+  names of the target gender, updates pronouns (he/she/his/her/him),
+  gendered nouns (Mr./Mrs., husband/wife, father/mother), and any other
+  gender-specific references to the parties. Preserves all legal reasoning,
+  case details, and writing style exactly.
+
+variants:
+  - male
+  - female
+
+# Only opinions that mention gendered pronouns for parties
+filter_pattern: '\b(he|she|his|her|Mr\.|Mrs\.|Ms\.)\b'
+
+# Only send the opinion text to the LLM, not the judge metadata header
+rewrite_fields:
+  - opinion_text
+
+instruction: |
+  You will produce a version of this legal opinion where the primary party
+  (plaintiff or defendant — whichever is most prominent) is {variant}.
+
+  Rules:
+  - Change the party's name to a similar-sounding name of the target gender
+    (e.g. Maria Rodriguez -> Mario Rodriguez, John Chen -> Joan Chen)
+  - Change all pronouns referring to that party (he/she, him/her, his/her)
+  - Change gendered titles and nouns (Mr./Mrs./Ms., husband/wife, father/mother,
+    son/daughter, etc.) for that party
+  - Keep the name style consistent (if Hispanic surname, keep Hispanic surname;
+    if Anglo name, keep Anglo name)
+  - Every other word must remain exactly as written. Do not rephrase, reorder,
+    fix grammar, or alter any legal reasoning.
+  - If there is no clear primary party whose gender can be changed, or if the
+    case is inherently about a gender-specific issue (e.g. pregnancy
+    discrimination, paternity), respond with exactly: SKIP
+
+  Return ONLY the rewritten text, or SKIP. No commentary.

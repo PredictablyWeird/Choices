@@ -1,0 +1,8 @@
+Dataset: CourtListener / COLD Cases
+Sources:
+  - https://www.courtlistener.com/ (Free Law Project)
+  - https://huggingface.co/datasets/harvard-lil/cold-cases (Harvard LIL)
+
+Opinions: Public domain (U.S. government works, free of known copyright restrictions)
+Judge demographics: Public domain (from CourtListener bulk data)
+COLD Cases dataset: CC0 1.0 (Public Domain Dedication)

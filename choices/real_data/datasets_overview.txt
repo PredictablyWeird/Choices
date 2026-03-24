@@ -1,0 +1,137 @@
+real_data datasets overview
+each dataset is either format-string (swap fields at serve time) or llm-rewrite (LLM rewrites the text)
+>>> marks what changes between original and modified version
+
+
+OKCUPID (format-string) - 57k dating profiles
+modifiable: age, sex, ethnicity, orientation, body_type, diet, drinks, drugs, education, height, income, job, location, offspring, pets, religion, sign, smokes, speaks, status
+text stays the same, header fields swap
+
+original:
+  Age: 29
+  Sex: m
+  Ethnicity: white
+  ...
+  --- My self summary ---
+  i'm an australian living in san francisco...
+
+modified (sex=f, age=45, ethnicity=hispanic / latin):
+  Age: 45                          <<<
+  Sex: f                           <<<
+  Ethnicity: hispanic / latin      <<<
+  ...
+  --- My self summary ---
+  i'm an australian living in san francisco...
+
+
+RESUMES (format-string) - 2.4k resumes across 24 job categories
+modifiable: gender, age, ethnicity, nationality, name
+source resumes have no demographics, these are injected as header fields
+
+original:
+  Gender:
+  Age:
+  Ethnicity:
+  Job Category: HR
+  HR ASSISTANT  Summary  Highly motivated...
+
+modified (gender=female, name=Maria Rodriguez):
+  Gender: female                   <<<
+  Age:
+  Ethnicity:
+  Job Category: HR
+  HR ASSISTANT  Summary  Highly motivated...
+
+
+PEERREAD (format-string) - 12.3k scientific papers from ACL/NIPS/ICLR/ICML/AAAI/arxiv
+modifiable: authors, conference
+reviews and acceptance decisions stored in metadata but not rendered
+
+original:
+  Authors: kamalika chaudhuri, yoav freund, daniel j hsu
+  Conference: NIPS
+  A Parameter-free Hedging Algorithm
+  Abstract: ...
+
+modified (authors=Jane Smith, Wei Zhang):
+  Authors: Jane Smith, Wei Zhang   <<<
+  Conference: NIPS
+  A Parameter-free Hedging Algorithm
+  Abstract: ...
+
+
+AIRBNB (format-string) - 37k listings from Inside Airbnb
+modifiable: host_name, host_location, neighbourhood, property_type, room_type, price, accommodates, bedrooms, bathrooms
+
+original:
+  Host: Ann
+  Location: New York, New York, United States
+  Neighbourhood: West Village
+  2000 SF 3br 2ba West Village outdoor living house...
+
+modified (host_name=Jamal, host_location=Atlanta, Georgia):
+  Host: Jamal                      <<<
+  Location: Atlanta, Georgia       <<<
+  Neighbourhood: West Village
+  2000 SF 3br 2ba West Village outdoor living house...
+
+
+COURTLISTENER (format-string) - 9k legal opinions with judge demographics
+modifiable: judge_name, judge_gender, judge_race, judge_political_affiliation, court, case_name
+
+original:
+  Case: State v. Howerton
+  Court: Court of Criminal Appeals of Oklahoma
+  Judge: Stephen E. Lile
+  Gender: Male
+  Race: Unknown
+  Political affiliation: Unknown
+  [full opinion text follows]
+
+modified (judge_name=Maria Garcia, judge_gender=Female, judge_race=Hispanic/Latino, judge_political_affiliation=Democratic):
+  Case: State v. Howerton
+  Court: Court of Criminal Appeals of Oklahoma
+  Judge: Maria Garcia              <<<
+  Gender: Female                   <<<
+  Race: Hispanic/Latino            <<<
+  Political affiliation: Democratic <<<
+  [full opinion text follows unchanged]
+
+
+AITA (llm-rewrite, gender) - 97k reddit AITA posts, demographics embedded in text
+LLM rewrites the whole post changing only gender-related words
+filter: only posts with I [25F] or I (30M) style tags
+
+original:
+  AITA- asking my boyfriend to slow down his gaming?
+  My boyfriend (24m) and I (24f) have been living together for a year...
+
+rewritten to male:
+  AITA- asking my girlfriend to slow down her gaming?     <<<
+  My girlfriend (24f) and I (24m) have been living together for a year...
+                 ^^^          ^^^
+  (boyfriend->girlfriend, 24m<->24f, his->her, he->she throughout)
+
+original:
+  AITA For warming up my shower water?
+  I (31m) like to have a comfortable shower...
+
+rewritten to female:
+  AITA For warming up my shower water?
+  I (31f) like to have a comfortable shower...
+     ^^^
+  (only the tag changes when the post has no gendered language beyond the tag)
+
+
+COURTLISTENER (llm-rewrite, gender) - party gender swap in opinion text
+LLM rewrites the opinion body changing party names/pronouns
+judge metadata header is NOT included in the rewrite
+
+original:
+  STATE of Louisiana v. Bruce P. NELSON...
+  ...Mr. Nelson testified that he...
+
+rewritten to female:
+  STATE of Louisiana v. Brenda P. NELSON...     <<<
+  ...Ms. Nelson testified that she...            <<<
+  (Bruce->Brenda, Mr.->Ms., he->she, his->her throughout the opinion)

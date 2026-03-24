@@ -63,3 +63,7 @@ analysis/plots/*.pdf
 analysis/plots/*.png
 plots/*.pdf
 plots/*.png
+
+# real_data: raw downloads and converted outputs (large, regenerable)
+choices/real_data/data/
+choices/real_data/converted/

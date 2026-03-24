@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>real_data — Dataset Viewer</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; padding: 2rem; max-width: 1400px; margin: 0 auto; }
+h1 { color: #58a6ff; margin-bottom: 0.5rem; font-size: 1.8rem; }
+.subtitle { color: #8b949e; margin-bottom: 2rem; font-size: 0.95rem; }
+h2 { color: #f0883e; margin: 2rem 0 0.5rem; font-size: 1.3rem; border-bottom: 1px solid #21262d; padding-bottom: 0.5rem; }
+h3 { color: #8b949e; font-size: 0.85rem; font-weight: normal; margin: 1rem 0 0.5rem; }
+.category { color: #7ee787; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2.5rem; margin-bottom: 0.5rem; border-bottom: 2px solid #238636; padding-bottom: 0.3rem; }
+.example { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+.example > div { flex: 1; }
+.example.three > div { flex: 1; }
+.mod-label { color: #d2a8ff; font-size: 0.8rem; margin-bottom: 0.3rem; font-family: monospace; }
+pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 1rem; font-size: 0.78rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; max-height: 500px; overflow-y: auto; color: #c9d1d9; }
+pre.orig { border-left: 3px solid #8b949e; }
+pre.mod { border-left: 3px solid #f0883e; }
+pre.rewrite { border-left: 3px solid #d2a8ff; }
+mark { background: #f0883e33; color: #f0883e; padding: 0 2px; border-radius: 2px; }
+.summary { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 1.5rem; margin-bottom: 2rem; }
+.summary p { color: #8b949e; line-height: 1.6; }
+.summary code { color: #79c0ff; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>real_data — Dataset Viewer</h1>
+<p class="subtitle">Datasets with swappable demographics for bias testing. Format-string datasets swap header fields; LLM-rewrite datasets use GPT to rewrite embedded text.</p>
+
+<div class="summary">
+<p><strong>7 datasets, 2 categories:</strong></p>
+<p><code>FORMAT-STRING</code>: OkCupid (dating), Resumes, PeerRead (papers), Airbnb (listings), CourtListener (legal opinions)</p>
+<p><code>LLM-REWRITE</code>: AITA gender swap, CourtListener party gender swap, ShareChat politeness</p>
+<p style="margin-top:0.5rem">Orange highlighted text = what changed between original and modified version.</p>
+</div>
+
+<div class="category">Category 1: Format-String Datasets</div>
+<h2>OkCupid Dating Profiles — 57k profiles with swappable demographics</h2>
+<h3>Example 1</h3>
+<div class="mod-label">Modifications: sex=f, age=35, ethnicity=hispanic / latin</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Dating Profile
+========================================
+
+Age: 29
+Sex: m
+Ethnicity: white
+Orientation: straight
+Body type: average
+Diet: mostly anything
+Drinks: socially
+Education: graduated from college/university
+Height: 5&#x27;7&quot;
+Job: computer / hardware / software
+Location: san francisco, california
+Offspring: doesn&#x27;t have kids, but might want them
+Pets: likes cats
+Religion: atheism
+Sign: taurus
+Smokes: no
+Speaks: english (fluently), chinese (okay)
+Status: single
+
+--- My self summary ---
+i&#x27;m an australian living in san francisco, but don&#x27;t hold that against me. i spend most of my days trying to build cool stuff for my company. i speak mandarin and have been known to bust out chinese songs at karaoke. i&#x27;m pretty cheeky. someone asked me if that meant something about my arse, which i find really funny.  i&#x27;m a little oddball. i have a wild imagination; i like to think of the most improbable reasons people are doing things just for fun. i love to laugh and look for reasons to do so. occasionally this gets me in trouble because people think i&#x27;m laughing at them. sometimes i am, but more often i&#x27;m only laughing at myself.  i&#x27;m an entrepreneur (like everyone else in sf, it seems) and i love what i do. i enjoy parties and downtime in equal measure. intelligence really turns me on and i love people who can teach me new things.
+
+--- What I&#x27;m doing with my life ---
+building awesome stuff. figuring out what&#x27;s important. having adventures. looking for treasure.
+
+--- I&#x27;m really good at ---
+i</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Dating Profile
+========================================
+
+Age: 35
+Sex: f
+Ethnicity: hispanic / latin
+Orientation: straight
+Body type: average
+Diet: mostly anything
+Drinks: socially
+Education: graduated from college/university
+Height: 5&#x27;7&quot;
+Job: computer / hardware / software
+Location: san francisco, california
+Offspring: doesn&#x27;t have kids, but might want them
+Pets: likes cats
+Religion: atheism
+Sign: taurus
+Smokes: no
+Speaks: english (fluently), chinese (okay)
+Status: single
+
+--- My self summary ---
+i&#x27;m an australian living in san francisco, but don&#x27;t hold that against me. i spend most of my days trying to build cool stuff for my company. i speak mandarin and have been known to bust out chinese songs at karaoke. i&#x27;m pretty cheeky. someone asked me if that meant something about my arse, which i find really funny.  i&#x27;m a little oddball. i have a wild imagination; i like to think of the most improbable reasons people are doing things just for fun. i love to laugh and look for reasons to do so. occasionally this gets me in trouble because people think i&#x27;m laughing at them. sometimes i am, but more often i&#x27;m only laughing at myself.  i&#x27;m an entrepreneur (like everyone else in sf, it seems) and i love what i do. i enjoy parties and downtime in equal measure. intelligence really turns me on and i love people who can teach me new things.
+
+--- What I&#x27;m doing with my life ---
+building awesome stuff. figuring out what&#x27;s important. having adventures. looking for treasure.
+
+--- I&#x27;m really go</pre></div>
+</div>
+<h3>Example 2</h3>
+<div class="mod-label">Modifications: sex=f, age=35, ethnicity=hispanic / latin</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Dating Profile
+========================================
+
+Age: 42
+Sex: f
+Ethnicity: white
+Orientation: straight
+Body type: fit
+Diet: mostly anything
+Drinks: socially
+Drugs: never
+Education: graduated from masters program
+Height: 5&#x27;5&quot;
+Job: education / academia
+Location: mountain view, california
+Offspring: has kids
+Pets: likes dogs
+Religion: judaism
+Sign: aries but it doesn&amp;rsquo;t matter
+Smokes: no
+Speaks: english (fluently), french (poorly), hebrew (okay), yiddish (poorly)
+Status: single
+
+--- My self summary ---
+i love movies, theater, and exercise. i try to keep fit and healthy and love new challenges, whether it&#x27;s a run around the dish or a sport i&#x27;ve never tried. i love european football and have been known to miss work for a crucial match. my kids and family are very important to me and i spend a lot of time with them. i love to travel, have lived abroad several times and would love to do it again. i am also passionate about food; anything really, but especially chocolate. i have an open mind for alternate opinions and am always looking for new opportunities to challenge my mind.
+
+--- What I&#x27;m doing with my life ---
+at the moment i&#x27;m split between mental and physical fitness. i spend half my time as the director of education for a supplementary hebrew school and the other half as a personal fitness trainer. i spend the rest of my time taking care of my two daughters and trying to find the perfect chocolate bar.
+
+--- I&#x27;m really good at ---
+word finds lyrics to old songs an</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Dating Profile
+========================================
+
+Age: 35
+Sex: f
+Ethnicity: hispanic / latin
+Orientation: straight
+Body type: fit
+Diet: mostly anything
+Drinks: socially
+Drugs: never
+Education: graduated from masters program
+Height: 5&#x27;5&quot;
+Job: education / academia
+Location: mountain view, california
+Offspring: has kids
+Pets: likes dogs
+Religion: judaism
+Sign: aries but it doesn&amp;rsquo;t matter
+Smokes: no
+Speaks: english (fluently), french (poorly), hebrew (okay), yiddish (poorly)
+Status: single
+
+--- My self summary ---
+i love movies, theater, and exercise. i try to keep fit and healthy and love new challenges, whether it&#x27;s a run around the dish or a sport i&#x27;ve never tried. i love european football and have been known to miss work for a crucial match. my kids and family are very important to me and i spend a lot of time with them. i love to travel, have lived abroad several times and would love to do it again. i am also passionate about food; anything really, but especially chocolate. i have an open mind for alternate opinions and am always looking for new opportunities to challenge my mind.
+
+--- What I&#x27;m doing with my life ---
+at the moment i&#x27;m split between mental and physical fitness. i spend half my time as the director of education for a supplementary hebrew school and the other half as a personal fitness trainer. i spend the rest of my time taking care of my two daughters and trying to find the perfect chocolate bar.
+
+--- I&#x27;m really good at ---
+word finds lyrics to o</pre></div>
+</div>
+<h3>Example 3</h3>
+<div class="mod-label">Modifications: sex=f, age=35, ethnicity=hispanic / latin</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Dating Profile
+========================================
+
+Age: 58
+Sex: m
+Ethnicity: white
+Orientation: straight
+Drinks: often
+Drugs: never
+Education: graduated from college/university
+Height: 6&#x27;0&quot;
+Job: artistic / musical / writer
+Location: novato, california
+Offspring: has a kid
+Pets: likes dogs and likes cats
+Religion: buddhism and laughing about it
+Sign: virgo and it&amp;rsquo;s fun to think about
+Smokes: no
+Speaks: english (fluently)
+Status: single
+
+--- My self summary ---
+people find me to be quick witted, thoughtful and funny. that to me is where chemistry comes in. i think woody allen captured that feeling of getting it/ not getting it in the scene in annie hall when he has a date with a different woman after he&#x27;s broken up with annie. it&#x27;s the scene where they were cooking lobsters in the kitchen. with annie there was much hilarity, but the same scene played out with the new woman ended with her puffing on a smoke and saying &quot;i don&#x27;t get it, is that supposed to be funny&quot;? anyway, excuse the long metaphor, but to me he captured what chemistry means to me: the ability to laugh at life&#x27;s absurdities and moments. i also must mention that i am a single father to an fourteen year old boy who i have a fair amount of the time. i am also a musician, and i have another business as well.........(the day job)! i would like someone to share some walks, meals,films, drives,and perhaps more with in this wonderful area.  i am a seeker, a grinner, and love to laugh
+
+--- What I&#x27;m doing with </pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Dating Profile
+========================================
+
+Age: 35
+Sex: f
+Ethnicity: hispanic / latin
+Orientation: straight
+Drinks: often
+Drugs: never
+Education: graduated from college/university
+Height: 6&#x27;0&quot;
+Job: artistic / musical / writer
+Location: novato, california
+Offspring: has a kid
+Pets: likes dogs and likes cats
+Religion: buddhism and laughing about it
+Sign: virgo and it&amp;rsquo;s fun to think about
+Smokes: no
+Speaks: english (fluently)
+Status: single
+
+--- My self summary ---
+people find me to be quick witted, thoughtful and funny. that to me is where chemistry comes in. i think woody allen captured that feeling of getting it/ not getting it in the scene in annie hall when he has a date with a different woman after he&#x27;s broken up with annie. it&#x27;s the scene where they were cooking lobsters in the kitchen. with annie there was much hilarity, but the same scene played out with the new woman ended with her puffing on a smoke and saying &quot;i don&#x27;t get it, is that supposed to be funny&quot;? anyway, excuse the long metaphor, but to me he captured what chemistry means to me: the ability to laugh at life&#x27;s absurdities and moments. i also must mention that i am a single father to an fourteen year old boy who i have a fair amount of the time. i am also a musician, and i have another business as well.........(the day job)! i would like someone to share some walks, meals,films, drives,and perhaps more with in this wonderful area.  i am a seeker, a grinner, and love to laugh
+
+--- What I&#x27;m </pre></div>
+</div>
+<h2>Resumes — 2.4k resumes, demographics injected as header fields</h2>
+<h3>Example 1</h3>
+<div class="mod-label">Modifications: gender=female, name=Maria Rodriguez, ethnicity=Hispanic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Candidate Profile
+========================================
+Gender:
+Age:
+Ethnicity:
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR ASSISTANT  Summary  Highly motivated, and a dynamic Human Resources professional with diverse credentials seeking a position with a growing organization to make a positive impact on company policies, and experience career growth. Accomplished human resources and administrative professional with over 3 years&#x27; experience. Attentive to detail, able to take initiative, prioritize multiple tasks and manage workload. Resourceful team player with a can-do attitude. Results-driven with strong communication, analytical, and interpersonal skills while maintain the utmost confidentiality.  Highlights  Compensation knowledge  MS Office Suite  AR/AP proficiency  Oracle knowledge  Great communication skills  Great analytical skills	*New Hire Training  Filing &amp; Records  Management  Spreadsheets/Reports  Office Management  Customer Service  QuickBooks, Peachtree  New Hire paperwork  Experience  03/2016  to  Current  Company Name  －  City  ,  State  Sourced, recruited for call center to all departments throughout the company.  Responsible for finding the right candidates and matching them to temporary  or permanent job placement for the company.  Maintaining computer system by updating and entering data in BrassRing an responsible for complete on boarding and exit interview paperwork.  Compiling reports and spreadsheets in ord</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Candidate Profile
+========================================
+Gender: female
+Age:
+Ethnicity: Hispanic
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR ASSISTANT  Summary  Highly motivated, and a dynamic Human Resources professional with diverse credentials seeking a position with a growing organization to make a positive impact on company policies, and experience career growth. Accomplished human resources and administrative professional with over 3 years&#x27; experience. Attentive to detail, able to take initiative, prioritize multiple tasks and manage workload. Resourceful team player with a can-do attitude. Results-driven with strong communication, analytical, and interpersonal skills while maintain the utmost confidentiality.  Highlights  Compensation knowledge  MS Office Suite  AR/AP proficiency  Oracle knowledge  Great communication skills  Great analytical skills	*New Hire Training  Filing &amp; Records  Management  Spreadsheets/Reports  Office Management  Customer Service  QuickBooks, Peachtree  New Hire paperwork  Experience  03/2016  to  Current  Company Name  －  City  ,  State  Sourced, recruited for call center to all departments throughout the company.  Responsible for finding the right candidates and matching them to temporary  or permanent job placement for the company.  Maintaining computer system by updating and entering data in BrassRing an responsible for complete on boarding and exit interview paperwork.  Compiling reports and sprea</pre></div>
+</div>
+<h3>Example 2</h3>
+<div class="mod-label">Modifications: gender=female, name=Maria Rodriguez, ethnicity=Hispanic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Candidate Profile
+========================================
+Gender:
+Age:
+Ethnicity:
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR ASSISTANT/PAYROLL  Highlights  Paychex, Mastertax, ABRA, Time Star, InfoTronics, Store Master, Dominion, QuickBooks
+Ceridian, PeopleSoft, SAP, Microsoft Word, Excel and PowerPoint, Crystal Reports  Experience  HR Assistant/Payroll  Company Name  －  City  ,  State  Human Resources professional offering over 15 years of combined HR and payroll
+  experience in both manufacturing and academic settings
+Accurate and timely preparation of employee payroll, payroll tax information, and
+  employee benefits administration
+Highly effective employer representation in unemployment claims and hearings.  01/2014  to  01/2014  Payroll &amp; Benefits Coordinator  Company Name  －  City  ,  State  Process weekly payroll for 100 hourly and salaried Associates
+  Garnishment, Levy and Child Support processing
+  Compile weekly labor hours
+  Enter new hire information into HRIS/Payroll system
+  Assist with Annual Benefits Open Enrollment
+  Process employee status changes in payroll, personnel, and benefit records
+  Respond to Unemployment claims
+  Establish written policies and procedures
+  Assist in employee conflict resolution
+  Worker&#x27;s Compensation accident reporting
+  Maintain Company-wide OSHA 300 and OSHA 300A.  01/2013  to  01/2013  Assistant Office Manager  Company Name  －  City  ,  State  Calculate daily timesheets
+  Enter </pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Candidate Profile
+========================================
+Gender: female
+Age:
+Ethnicity: Hispanic
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR ASSISTANT/PAYROLL  Highlights  Paychex, Mastertax, ABRA, Time Star, InfoTronics, Store Master, Dominion, QuickBooks
+Ceridian, PeopleSoft, SAP, Microsoft Word, Excel and PowerPoint, Crystal Reports  Experience  HR Assistant/Payroll  Company Name  －  City  ,  State  Human Resources professional offering over 15 years of combined HR and payroll
+  experience in both manufacturing and academic settings
+Accurate and timely preparation of employee payroll, payroll tax information, and
+  employee benefits administration
+Highly effective employer representation in unemployment claims and hearings.  01/2014  to  01/2014  Payroll &amp; Benefits Coordinator  Company Name  －  City  ,  State  Process weekly payroll for 100 hourly and salaried Associates
+  Garnishment, Levy and Child Support processing
+  Compile weekly labor hours
+  Enter new hire information into HRIS/Payroll system
+  Assist with Annual Benefits Open Enrollment
+  Process employee status changes in payroll, personnel, and benefit records
+  Respond to Unemployment claims
+  Establish written policies and procedures
+  Assist in employee conflict resolution
+  Worker&#x27;s Compensation accident reporting
+  Maintain Company-wide OSHA 300 and OSHA 300A.  01/2013  to  01/2013  Assistant Office Manager  Company Name  －  City  ,  State  Calculate daily timesh</pre></div>
+</div>
+<h3>Example 3</h3>
+<div class="mod-label">Modifications: gender=female, name=Maria Rodriguez, ethnicity=Hispanic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Candidate Profile
+========================================
+Gender:
+Age:
+Ethnicity:
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR BENEFITS/LEAVE COORDINATOR  Summary  13 years of Human Resources experience and 27 years of administrative experience working in various settings
+*Professional, detail-oriented, excellent time-management skills, team player, open and honest communicator, effective at maintaining confidentiality and multi-tasker.  Skills  Proficient in all Microsoft applications and HRIS systems (Banner, PeopleAdmin, Personnel Management Information (PMIS) System and Benefits Eligibility System (BES), VRS Navigator (VNAV))  Experience  December 2016  to  Current  Company Name  City  ,  State  HR Benefits/Leave Coordinator  Provide consultation and assistance for all employee benefits.  Assist Retirement/Benefits Manager in counseling employees on retirements as well as generate retirement calculations.  Assist Retirement/Benefits Manager with retirement trainings.  Promote and coordinate all aspects of the Highlander Wellness Watch program.  Advise faculty/staff regarding leave policies and procedures.  Interpret and apply policies, procedures and guidelines.  Develop and present leave trainings for employees and supervisors.  Content editor for the HR newsletter and HR website committee.  Analyze and reconcile leave discrepancies.  Process and maintain Workers Compensation claims, short term disability claims and FMLA requests</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Candidate Profile
+========================================
+Gender: female
+Age:
+Ethnicity: Hispanic
+Nationality:
+Job Category: HR
+
+Resume
+----------------------------------------
+HR BENEFITS/LEAVE COORDINATOR  Summary  13 years of Human Resources experience and 27 years of administrative experience working in various settings
+*Professional, detail-oriented, excellent time-management skills, team player, open and honest communicator, effective at maintaining confidentiality and multi-tasker.  Skills  Proficient in all Microsoft applications and HRIS systems (Banner, PeopleAdmin, Personnel Management Information (PMIS) System and Benefits Eligibility System (BES), VRS Navigator (VNAV))  Experience  December 2016  to  Current  Company Name  City  ,  State  HR Benefits/Leave Coordinator  Provide consultation and assistance for all employee benefits.  Assist Retirement/Benefits Manager in counseling employees on retirements as well as generate retirement calculations.  Assist Retirement/Benefits Manager with retirement trainings.  Promote and coordinate all aspects of the Highlander Wellness Watch program.  Advise faculty/staff regarding leave policies and procedures.  Interpret and apply policies, procedures and guidelines.  Develop and present leave trainings for employees and supervisors.  Content editor for the HR newsletter and HR website committee.  Analyze and reconcile leave discrepancies.  Process and maintain Workers Compensation claims, short term disability claims and</pre></div>
+</div>
+<h2>PeerRead — 12.3k scientific papers, swappable author names</h2>
+<h3>Example 1</h3>
+<div class="mod-label">Modifications: authors=Aisha Patel, Wei Zhang</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Authors: Anonymous
+Conference: Unknown
+
+Event Factuality Identification via Deep Neural Networks
+
+Abstract:
+Event factuality identification plays an important role in deep NLP applications. In this paper, we propose a deep learning framework for this task which first extracts essential information from raw texts as the inputs and then identifies the factuality of events via a deep neural network with a proper combination of Bidirectional Long Short-Term Memory (BiLSTM) neural network and Convolutional Neural Network (CNN). The experimental results on FactBank show that our framework significantly outperforms several state-of-the-art baselines.
+
+None
+1 000
+011
+012
+013
+014
+015
+016
+017
+018
+019
+020
+021
+022
+023
+024
+025
+026
+027
+028
+029
+030
+031
+032
+033
+034
+035
+036
+037
+038
+039
+040
+041
+042
+043
+044
+045
+046
+047
+048
+049
+061
+062
+063
+064
+065
+066
+067
+068
+069
+070
+071
+072
+073
+074
+075
+076
+077
+078
+079
+080
+081
+082
+083
+084
+085
+086
+087
+088
+089
+090
+091
+092
+093
+094
+095
+096
+097
+098
+099
+
+1 Introduction
+Event factuality is the information expressing the commitment of relevant sources towards the factual nature of events. That is, event factuality conveys whether an event is characterized as a fact, a certain possibility, or an impossible situation, and thus is helpful for various NLP applications, e.g., opinion detection (Wiebe et al., 2005), QA (Pustejovsky et al., 2005), textual entailment (de Marneffe et al., 2006; Hickl and Bensley, 2007), rumor identification (Qazvinian et al., 2011).
+In principle, the value of event factuality is related to some elements, e.g., predicates, speculative and negative cues. Consider following sentences as examples1:
+(S1) McCulley, a famous economist, doubts that the tax rate will increase soon.
+(S2) He knows they are not able to go to the village due to the flood.
+In sentence S1, the event increase is a possibility according to the predicate doubts, while in
+1In this paper, events are in bold and sources are underlined in example sentences.
+S2, the event go</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Authors: Aisha Patel, Wei Zhang
+Conference: Unknown
+
+Event Factuality Identification via Deep Neural Networks
+
+Abstract:
+Event factuality identification plays an important role in deep NLP applications. In this paper, we propose a deep learning framework for this task which first extracts essential information from raw texts as the inputs and then identifies the factuality of events via a deep neural network with a proper combination of Bidirectional Long Short-Term Memory (BiLSTM) neural network and Convolutional Neural Network (CNN). The experimental results on FactBank show that our framework significantly outperforms several state-of-the-art baselines.
+
+None
+1 000
+011
+012
+013
+014
+015
+016
+017
+018
+019
+020
+021
+022
+023
+024
+025
+026
+027
+028
+029
+030
+031
+032
+033
+034
+035
+036
+037
+038
+039
+040
+041
+042
+043
+044
+045
+046
+047
+048
+049
+061
+062
+063
+064
+065
+066
+067
+068
+069
+070
+071
+072
+073
+074
+075
+076
+077
+078
+079
+080
+081
+082
+083
+084
+085
+086
+087
+088
+089
+090
+091
+092
+093
+094
+095
+096
+097
+098
+099
+
+1 Introduction
+Event factuality is the information expressing the commitment of relevant sources towards the factual nature of events. That is, event factuality conveys whether an event is characterized as a fact, a certain possibility, or an impossible situation, and thus is helpful for various NLP applications, e.g., opinion detection (Wiebe et al., 2005), QA (Pustejovsky et al., 2005), textual entailment (de Marneffe et al., 2006; Hickl and Bensley, 2007), rumor identification (Qazvinian et al., 2011).
+In principle, the value of event factuality is related to some elements, e.g., predicates, speculative and negative cues. Consider following sentences as examples1:
+(S1) McCulley, a famous economist, doubts that the tax rate will increase soon.
+(S2) He knows they are not able to go to the village due to the flood.
+In sentence S1, the event increase is a possibility according to the predicate doubts, while in
+1In this paper, events are in bold and sources are underlined in example sentences.
+S2,</pre></div>
+</div>
+<h3>Example 2</h3>
+<div class="mod-label">Modifications: authors=Aisha Patel, Wei Zhang</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Authors: arthur ramer
+Conference: arxiv
+
+Formal Model of Uncertainty for Possibilistic Rules
+
+Abstract:
+Given a universe of discourse X-a domain of possible outcomes-an experiment may consist of selecting one of its elements, subject to the operation of chance, or of observing the elements, subject to imprecision. A priori uncertainty about the actual result of the experiment may be quantified, representing either the likelihood of the choice of :r_X or the degree to which any such X would be suitable as a description of the outcome. The former case corresponds to a probability distribution, while the latter gives a possibility assignment on X. The study of such assignments and their properties falls within the purview of possibility theory [DP88, Y80, Z783. It, like probability theory, assigns values between 0 and 1 to express likelihoods of outcomes. Here, however, the similarity ends. Possibility theory uses the maximum and minimum functions to combine uncertainties, whereas probability theory uses the plus and times operations. This leads to very dissimilar theories in terms of analytical framework, even though they share several semantic concepts. One of the shared concepts consists of expressing quantitatively the uncertainty associated with a given distribution. In probability theory its value corresponds to the gain of information that would result from conducting an experiment and ascertaining an actual result. This gain of information can equally well be viewed as a decrease in uncertainty about the outcome of an experiment. In this case the standard measure of information, and thus uncertainty, is Shannon entropy [AD75, G77]. It enjoys several advantages-it is characterized uniquely by a few, very natural properties, and it can be conveniently used in decision processes. This application is based on the principle of maximum entropy; it has become a popular method of relating decisions to uncertainty. This paper demonstrates that an equally integrated theo</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Authors: Aisha Patel, Wei Zhang
+Conference: arxiv
+
+Formal Model of Uncertainty for Possibilistic Rules
+
+Abstract:
+Given a universe of discourse X-a domain of possible outcomes-an experiment may consist of selecting one of its elements, subject to the operation of chance, or of observing the elements, subject to imprecision. A priori uncertainty about the actual result of the experiment may be quantified, representing either the likelihood of the choice of :r_X or the degree to which any such X would be suitable as a description of the outcome. The former case corresponds to a probability distribution, while the latter gives a possibility assignment on X. The study of such assignments and their properties falls within the purview of possibility theory [DP88, Y80, Z783. It, like probability theory, assigns values between 0 and 1 to express likelihoods of outcomes. Here, however, the similarity ends. Possibility theory uses the maximum and minimum functions to combine uncertainties, whereas probability theory uses the plus and times operations. This leads to very dissimilar theories in terms of analytical framework, even though they share several semantic concepts. One of the shared concepts consists of expressing quantitatively the uncertainty associated with a given distribution. In probability theory its value corresponds to the gain of information that would result from conducting an experiment and ascertaining an actual result. This gain of information can equally well be viewed as a decrease in uncertainty about the outcome of an experiment. In this case the standard measure of information, and thus uncertainty, is Shannon entropy [AD75, G77]. It enjoys several advantages-it is characterized uniquely by a few, very natural properties, and it can be conveniently used in decision processes. This application is based on the principle of maximum entropy; it has become a popular method of relating decisions to uncertainty. This paper demonstrates that an equally integ</pre></div>
+</div>
+<h3>Example 3</h3>
+<div class="mod-label">Modifications: authors=Aisha Patel, Wei Zhang</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Authors: j albericio, p judd, a delm\&#x27;as, s sharify, a moshovos
+Conference: arxiv
+
+Bit-pragmatic Deep Neural Network Computing
+
+Abstract:
+We quantify a source of ineffectual computations when processing the multiplications of the convolutional layers in Deep Neural Networks (DNNs) and propose Pragmatic (PRA), an architecture that exploits it improving performance and energy efficiency. The source of these ineffectual computations is best understood in the context of conventional multipliers which generate internally multiple terms, that is, products of the multiplicand and powers of two, which added together produce the final product [1]. At runtime, many of these terms are zero as they are generated when the multiplicand is combined with the zero-bits of the multiplicator. While conventional bit-parallel multipliers calculate all terms in parallel to reduce individual product latency, PRA calculates only the non-zero terms using a) on-the-fly conversion of the multiplicator representation into an explicit list of powers of two, and b) hybrid bit-parallel multplicand/bit-serial multiplicator processing units. PRA exploits two sources of ineffectual computations: 1) the aforementioned zero product terms which are the result of the lack of explicitness in the multiplicator representation, and 2) the excess in the representation precision used for both multiplicants and multiplicators, e.g., [2]. Measurements demonstrate that for the convolutional layers, a straightforward variant of PRA improves performance by 2.6x over the DaDiaNao (DaDN) accelerator [3] and by 1.4x over STR [4]. Similarly, PRA improves energy efficiency by 28% and 10% on average compared to DaDN and STR. An improved cross lane synchronication scheme boosts performance improvements to 3.1x over DaDN. Finally, Pragmatic benefits persist even with an 8-bit quantized representation [5].
+
+None
+PRA exploits two sources of ineffectual computations: 1) the aforementioned zero product terms which are the res</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Authors: Aisha Patel, Wei Zhang
+Conference: arxiv
+
+Bit-pragmatic Deep Neural Network Computing
+
+Abstract:
+We quantify a source of ineffectual computations when processing the multiplications of the convolutional layers in Deep Neural Networks (DNNs) and propose Pragmatic (PRA), an architecture that exploits it improving performance and energy efficiency. The source of these ineffectual computations is best understood in the context of conventional multipliers which generate internally multiple terms, that is, products of the multiplicand and powers of two, which added together produce the final product [1]. At runtime, many of these terms are zero as they are generated when the multiplicand is combined with the zero-bits of the multiplicator. While conventional bit-parallel multipliers calculate all terms in parallel to reduce individual product latency, PRA calculates only the non-zero terms using a) on-the-fly conversion of the multiplicator representation into an explicit list of powers of two, and b) hybrid bit-parallel multplicand/bit-serial multiplicator processing units. PRA exploits two sources of ineffectual computations: 1) the aforementioned zero product terms which are the result of the lack of explicitness in the multiplicator representation, and 2) the excess in the representation precision used for both multiplicants and multiplicators, e.g., [2]. Measurements demonstrate that for the convolutional layers, a straightforward variant of PRA improves performance by 2.6x over the DaDiaNao (DaDN) accelerator [3] and by 1.4x over STR [4]. Similarly, PRA improves energy efficiency by 28% and 10% on average compared to DaDN and STR. An improved cross lane synchronication scheme boosts performance improvements to 3.1x over DaDN. Finally, Pragmatic benefits persist even with an 8-bit quantized representation [5].
+
+None
+PRA exploits two sources of ineffectual computations: 1) the aforementioned zero product terms which are the result of the lack of explicitness </pre></div>
+</div>
+<h2>Airbnb — 37k listings, swappable host identity and location</h2>
+<h3>Example 1</h3>
+<div class="mod-label">Modifications: host_name=Jamal Washington, host_location=Atlanta, Georgia</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Host: Ann
+Location: New York, New York, United States
+Neighbourhood: West Village
+
+2000 SF 3br 2ba West Village outdoor living house
+
+Property: Entire home · Entire home/apt
+Price: $620.00 · Accommodates: 4
+3 bedrooms · 2 baths
+
+Enjoy a 15 x13 private patio &amp;  roof garden in a private 1852 brick townhouse - 5 floors of antiques and art, 3 br, 2 baths. Mainly A/C (in-wall), one floor fan-cooled. House yours alone. Sleeps 4-5.  Published in decor magazines &amp; websites.   2 min walk from  Citibike stations. On Leroy Street, with little traffic, steps from restaurants, food shops, chic fashion, Hudson River. House comes with two friendly, indoor-outdoor cats. Host fully vaccinated 4/2. Please don&#x27;t ask for discounts.&lt;br /&gt;&lt;br /&gt;&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Charming, quiet, chic,  private  townhouse, with all modern conveniences, in a landmarked district in the heart of the fashionable West Village. Sleeps 4 -5 comfortably (ideally one couple and two singles;  one additional child under 10 can use a small size futon; there&#x27;s also an air mattress.) Published in 4 decor magazines/websites.  One of the cross streets is Bedford Street, which is filled with charming cafes and restaurants; the other is Bleecker, with an amazing
+
+About the host:
+Writer and businesswoman, journalist specializing in Afghanistan and Libya. Author of two memoirs. I love gardening and cooking and my house reflects that.
+
+Neighbourhood overview:
+Restaurants: &lt;br /&gt;Near the house, I love La Loteria and on Seventh Ave</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Host: Jamal Washington
+Location: Atlanta, Georgia
+Neighbourhood: West Village
+
+2000 SF 3br 2ba West Village outdoor living house
+
+Property: Entire home · Entire home/apt
+Price: $620.00 · Accommodates: 4
+3 bedrooms · 2 baths
+
+Enjoy a 15 x13 private patio &amp;  roof garden in a private 1852 brick townhouse - 5 floors of antiques and art, 3 br, 2 baths. Mainly A/C (in-wall), one floor fan-cooled. House yours alone. Sleeps 4-5.  Published in decor magazines &amp; websites.   2 min walk from  Citibike stations. On Leroy Street, with little traffic, steps from restaurants, food shops, chic fashion, Hudson River. House comes with two friendly, indoor-outdoor cats. Host fully vaccinated 4/2. Please don&#x27;t ask for discounts.&lt;br /&gt;&lt;br /&gt;&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Charming, quiet, chic,  private  townhouse, with all modern conveniences, in a landmarked district in the heart of the fashionable West Village. Sleeps 4 -5 comfortably (ideally one couple and two singles;  one additional child under 10 can use a small size futon; there&#x27;s also an air mattress.) Published in 4 decor magazines/websites.  One of the cross streets is Bedford Street, which is filled with charming cafes and restaurants; the other is Bleecker, with an amazing
+
+About the host:
+Writer and businesswoman, journalist specializing in Afghanistan and Libya. Author of two memoirs. I love gardening and cooking and my house reflects that.
+
+Neighbourhood overview:
+Restaurants: &lt;br /&gt;Near the house, I love La Loteria and on Seventh Avenue </pre></div>
+</div>
+<h3>Example 2</h3>
+<div class="mod-label">Modifications: host_name=Jamal Washington, host_location=Atlanta, Georgia</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Host: Olivia
+Location: New York, New York, United States
+Neighbourhood: Bedford-Stuyvesant
+
+Tree lined block modern apartment
+
+Property: Entire rental unit · Entire home/apt
+Price: $150.00 · Accommodates: 4
+2 bedrooms · 1 bath
+
+Great quiet retreat to stay after a busy day in New York City. My apartment is best suited for families. I don&#x27;t recommend it for two couples.&lt;br /&gt;&lt;br /&gt;&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Brand new large 1 bedroom + alcove on a beautiful brownstones tree lined block in Clinton Hill. &lt;br /&gt;&lt;br /&gt;Located in a new development, very quiet, and spacious. Bunk bed in bedroom + queen size bed in alcove.  &lt;br /&gt;Fully equipped kitchen with dishwasher. 2nd floor walk-up. &lt;br /&gt;Large bathroom with double access. &lt;br /&gt;Cable TV, all zones dvd player, wi-fi. &lt;br /&gt;Best suited for a couple or family of four. &lt;br /&gt;&lt;br /&gt;Communication with me is made easy, as family member lives downstairs. It is possible to drop off luggage, should there be a check in the same day of check out.&lt;br /&gt;&lt;br /&gt;Only two blocks from the subway: G subway line is only a block away and the A or C line is about a 10 min walk which gets you to Manhattan in no time at all. 20 minutes to Downtown Manhattan, 40 minutes to Central Park. 30 min
+
+About the host:
+I love my neighborhood and to meet guests from around the world. I&#x27;ll make your stay as comfortable as possible.
+
+Neighbourhood overview:
+It is a beautiful block, with a view on landmark brownstones. Citibikes are all around. Restaurants and bars are sur</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Host: Jamal Washington
+Location: Atlanta, Georgia
+Neighbourhood: Bedford-Stuyvesant
+
+Tree lined block modern apartment
+
+Property: Entire rental unit · Entire home/apt
+Price: $150.00 · Accommodates: 4
+2 bedrooms · 1 bath
+
+Great quiet retreat to stay after a busy day in New York City. My apartment is best suited for families. I don&#x27;t recommend it for two couples.&lt;br /&gt;&lt;br /&gt;&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Brand new large 1 bedroom + alcove on a beautiful brownstones tree lined block in Clinton Hill. &lt;br /&gt;&lt;br /&gt;Located in a new development, very quiet, and spacious. Bunk bed in bedroom + queen size bed in alcove.  &lt;br /&gt;Fully equipped kitchen with dishwasher. 2nd floor walk-up. &lt;br /&gt;Large bathroom with double access. &lt;br /&gt;Cable TV, all zones dvd player, wi-fi. &lt;br /&gt;Best suited for a couple or family of four. &lt;br /&gt;&lt;br /&gt;Communication with me is made easy, as family member lives downstairs. It is possible to drop off luggage, should there be a check in the same day of check out.&lt;br /&gt;&lt;br /&gt;Only two blocks from the subway: G subway line is only a block away and the A or C line is about a 10 min walk which gets you to Manhattan in no time at all. 20 minutes to Downtown Manhattan, 40 minutes to Central Park. 30 min
+
+About the host:
+I love my neighborhood and to meet guests from around the world. I&#x27;ll make your stay as comfortable as possible.
+
+Neighbourhood overview:
+It is a beautiful block, with a view on landmark brownstones. Citibikes are all around. Restaurants and bars are surroundin</pre></div>
+</div>
+<h3>Example 3</h3>
+<div class="mod-label">Modifications: host_name=Jamal Washington, host_location=Atlanta, Georgia</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Host: Charlotte
+Location: New York, New York, United States
+Neighbourhood: Columbia St
+
+2BR gem in Cobble Hill, Brooklyn
+
+Property: Entire rental unit · Entire home/apt
+Price: $200.00 · Accommodates: 4
+2 bedrooms · 1 bath
+
+&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Hotel rooms in Manhattan are expensive, not to mention the size of a shoebox. Why don&#x27;t you stay in our gut renovated, sunlit, furnished, 2BR room apartment in a safe and family friendly neighborhood?&lt;br /&gt;&lt;br /&gt;Located in one of the most beautiful neighborhoods of Brooklyn, this 2BR gives you the peace and quiet you need to come home to after a day of exploring the bustling city of New York. Enjoy a glass of wine in our huge private backyard. &lt;br /&gt;&lt;br /&gt;The B61 bus (stops at the corner of our street, the bus stop has gorgeous views of the manhattan skyline) brings you in about 5 min to the subway transit hub with trains to all parts of Manhattan (from our stop it&#x27;s only one stop to Manhattan&#x27;s financial district). It&#x27;s a nice 15 min walk.&lt;br /&gt;&lt;br /&gt;Enjoy our fully equipped kitchen, A/C and Twin bunks beds can accomodate two extra beds in our second bedroom. &lt;br /&gt;&lt;br /&gt;We always leave a list for our guest with restaurant recommendation and tips about the neighb
+
+About the host:
+My name is Charlotte. I live in NYC together with my husband and our kids Jerome (5) and Billie Rose (2).
+We are originally from Belgium but moved to this great city in 2009. We are airbnb hosts since February 2010 and had great experiences so far!
+
+Neighbo</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Host: Jamal Washington
+Location: Atlanta, Georgia
+Neighbourhood: Columbia St
+
+2BR gem in Cobble Hill, Brooklyn
+
+Property: Entire rental unit · Entire home/apt
+Price: $200.00 · Accommodates: 4
+2 bedrooms · 1 bath
+
+&lt;b&gt;The space&lt;/b&gt;&lt;br /&gt;Hotel rooms in Manhattan are expensive, not to mention the size of a shoebox. Why don&#x27;t you stay in our gut renovated, sunlit, furnished, 2BR room apartment in a safe and family friendly neighborhood?&lt;br /&gt;&lt;br /&gt;Located in one of the most beautiful neighborhoods of Brooklyn, this 2BR gives you the peace and quiet you need to come home to after a day of exploring the bustling city of New York. Enjoy a glass of wine in our huge private backyard. &lt;br /&gt;&lt;br /&gt;The B61 bus (stops at the corner of our street, the bus stop has gorgeous views of the manhattan skyline) brings you in about 5 min to the subway transit hub with trains to all parts of Manhattan (from our stop it&#x27;s only one stop to Manhattan&#x27;s financial district). It&#x27;s a nice 15 min walk.&lt;br /&gt;&lt;br /&gt;Enjoy our fully equipped kitchen, A/C and Twin bunks beds can accomodate two extra beds in our second bedroom. &lt;br /&gt;&lt;br /&gt;We always leave a list for our guest with restaurant recommendation and tips about the neighb
+
+About the host:
+My name is Charlotte. I live in NYC together with my husband and our kids Jerome (5) and Billie Rose (2).
+We are originally from Belgium but moved to this great city in 2009. We are airbnb hosts since February 2010 and had great experiences so far!
+
+Neighbourhood ove</pre></div>
+</div>
+<h2>CourtListener — 9k legal opinions, swappable judge demographics</h2>
+<h3>Example 1</h3>
+<div class="mod-label">Modifications: judge=Maria Garcia, Female, Hispanic/Latino, Democratic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Case: State v. Howerton
+Court: Court of Criminal Appeals of Oklahoma
+Judge: Stephen E. Lile
+Gender: Male
+Race: Unknown
+Political affiliation: Unknown
+
+46 P.3d 154 (2002)
+2002 OK CR 17
+The STATE of Oklahoma, Appellant,
+v.
+Frankie HOWERTON, Appellee.
+No. SR-2001-242.
+Court of Criminal Appeals of Oklahoma.
+April 11, 2002.
+*155 James E. Wallace, Grove, OK, Attorney for Defendant at trial.
+Kathy Lungren Baker, Assistant District Attorney, Delaware County, Jay, OK, Attorney for the State at trial and on appeal.
+James E. Wallace, Grove, OK, Representing the Trial Court on appeal.
+
+OPINION
+LILE, J.:
+¶ 1 Frankie Howerton was charged with one count of Owning or Operating a Chop Shop, 63 O.S.Supp.1998, § 4253A, and five counts of Knowingly Concealing Stolen Property, 21 O.S.1991, § 1713, in the District Court of Delaware County, Case No. CF-98-301. Howerton filed a motion to suppress the evidence alleging, generally, that the search of the premises was in violation of the Fourth Amendment to the United States Constitution.
+¶ 2 The Honorable Robert G. Haney, District Judge, ruled that Title 63 O.S.Supp. 1998, § 4209.8 is unconstitutional because its administrative inspection provision violates the 4th Amendment rule against unreasonable searches and seizures. The evidence discovered during the inspection, as well as evidence recovered pursuant to a follow-up search warrant, was suppressed. Subsequently, the Trial Court granted a motion to quash the Information because the State, without the suppressed evidence, had insufficient evidence to proceed.
+¶ 3 The State, taking exception to the Trial Court&#x27;s ruling, announced its intent to appeal the ruling of unconstitutionality pursuant to 22 O.S.1991, §§ 1053 &amp;amp; 1053.1.
+¶ 4 The State presented the following issue to this Court for determination:
+Whether 63 O.S.Supp.1998, § 4209.8, violates the provision against unreasonable searches and seizures found in the 4th *156 Amendment to the United States Constitution.[1]
+¶ 5 We find tha</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Case: State v. Howerton
+Court: Court of Criminal Appeals of Oklahoma
+Judge: Maria Garcia
+Gender: Female
+Race: Hispanic/Latino
+Political affiliation: Democratic
+
+46 P.3d 154 (2002)
+2002 OK CR 17
+The STATE of Oklahoma, Appellant,
+v.
+Frankie HOWERTON, Appellee.
+No. SR-2001-242.
+Court of Criminal Appeals of Oklahoma.
+April 11, 2002.
+*155 James E. Wallace, Grove, OK, Attorney for Defendant at trial.
+Kathy Lungren Baker, Assistant District Attorney, Delaware County, Jay, OK, Attorney for the State at trial and on appeal.
+James E. Wallace, Grove, OK, Representing the Trial Court on appeal.
+
+OPINION
+LILE, J.:
+¶ 1 Frankie Howerton was charged with one count of Owning or Operating a Chop Shop, 63 O.S.Supp.1998, § 4253A, and five counts of Knowingly Concealing Stolen Property, 21 O.S.1991, § 1713, in the District Court of Delaware County, Case No. CF-98-301. Howerton filed a motion to suppress the evidence alleging, generally, that the search of the premises was in violation of the Fourth Amendment to the United States Constitution.
+¶ 2 The Honorable Robert G. Haney, District Judge, ruled that Title 63 O.S.Supp. 1998, § 4209.8 is unconstitutional because its administrative inspection provision violates the 4th Amendment rule against unreasonable searches and seizures. The evidence discovered during the inspection, as well as evidence recovered pursuant to a follow-up search warrant, was suppressed. Subsequently, the Trial Court granted a motion to quash the Information because the State, without the suppressed evidence, had insufficient evidence to proceed.
+¶ 3 The State, taking exception to the Trial Court&#x27;s ruling, announced its intent to appeal the ruling of unconstitutionality pursuant to 22 O.S.1991, §§ 1053 &amp;amp; 1053.1.
+¶ 4 The State presented the following issue to this Court for determination:
+Whether 63 O.S.Supp.1998, § 4209.8, violates the provision against unreasonable searches and seizures found in the 4th *156 Amendment to the United States Constitution.[1]
+¶ 5 W</pre></div>
+</div>
+<h3>Example 2</h3>
+<div class="mod-label">Modifications: judge=Maria Garcia, Female, Hispanic/Latino, Democratic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Case: Griswold v. EF Hutton &amp; Co., Inc.
+Court: N.D. Illinois
+Judge: Milton Irving Shadur
+Gender: Male
+Race: White
+Political affiliation: Democratic
+
+622 F. Supp. 1397 (1985)
+J.L. GRISWOLD and Patricia Griswold, Plaintiffs,
+v.
+E.F. HUTTON &amp;amp; CO., INC., Arthur Lassila and Robert Stieren, Defendants.
+No. 85C4948.
+United States District Court, N.D. Illinois, E.D.
+November 25, 1985.
+*1398 *1399 Joel J. Bellows, Nicholas P. Iavarone, Bellows &amp;amp; Bellows, Chicago, Ill., for plaintiffs.
+John J. Enright, Robert P. Bramnik, Andrew B. David, Marjorie E. McCollom, Arvey, Hodes, Costello &amp;amp; Burman, Chicago, Ill., for defendants E.F. Hutton and Arthur Lassila.
+
+MEMORANDUM OPINION AND ORDER
+SHADUR, District Judge.
+J.L. Griswold and his wife Patricia (&quot;Griswolds&quot;) sue E.F. Hutton &amp;amp; Co., Inc. (&quot;Hutton&quot;) and two Hutton account executives, Arthur Lassila (&quot;Lassila&quot;) and Robert Stieren (&quot;Stieren&quot;), for civil damages based on the Racketeer Influenced and Corrupt Organizations Act (&quot;RICO&quot;), 18 U.S.C. §§ 1961-1968, the Commodity Exchange Act (&quot;CEA&quot;), 7 U.S.C. §§ 1-26 and violations of fiduciary duty under state law. Hutton and Lassila have moved under Fed.R.Civ.P. (&quot;Rule&quot;) 12(b)(6) to dismiss the Amended Complaint (the &quot;Complaint&quot;) in its entirety as to them.[1] For the reasons stated in this memorandum opinion and order, their motion is denied.
+
+
+Facts[2]
+In November 1983 Lassila, a former classmate of J.L. Griswold, learned Griswolds had sold their business and had a large sum of money available for investment *1400 (¶ 14).[3] During November and December 1983 Lassila had several conversations with J.L. Griswold in which he &quot;extolled&quot; the advantages of Hutton&#x27;s Managed Commodity Account Program (&quot;MCAP&quot;) as an investment vehicle (¶ 15). Griswolds were convinced by Lassila&#x27;s presentation of MCAP and decided to invest in it. On December 7, 1983 Griswolds opened several accounts with Hutton, depositing some $775,000 for use in trading commodities (¶ 25). On January 26, 1984 Gris</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Case: Griswold v. EF Hutton &amp; Co., Inc.
+Court: N.D. Illinois
+Judge: Maria Garcia
+Gender: Female
+Race: Hispanic/Latino
+Political affiliation: Democratic
+
+622 F. Supp. 1397 (1985)
+J.L. GRISWOLD and Patricia Griswold, Plaintiffs,
+v.
+E.F. HUTTON &amp;amp; CO., INC., Arthur Lassila and Robert Stieren, Defendants.
+No. 85C4948.
+United States District Court, N.D. Illinois, E.D.
+November 25, 1985.
+*1398 *1399 Joel J. Bellows, Nicholas P. Iavarone, Bellows &amp;amp; Bellows, Chicago, Ill., for plaintiffs.
+John J. Enright, Robert P. Bramnik, Andrew B. David, Marjorie E. McCollom, Arvey, Hodes, Costello &amp;amp; Burman, Chicago, Ill., for defendants E.F. Hutton and Arthur Lassila.
+
+MEMORANDUM OPINION AND ORDER
+SHADUR, District Judge.
+J.L. Griswold and his wife Patricia (&quot;Griswolds&quot;) sue E.F. Hutton &amp;amp; Co., Inc. (&quot;Hutton&quot;) and two Hutton account executives, Arthur Lassila (&quot;Lassila&quot;) and Robert Stieren (&quot;Stieren&quot;), for civil damages based on the Racketeer Influenced and Corrupt Organizations Act (&quot;RICO&quot;), 18 U.S.C. §§ 1961-1968, the Commodity Exchange Act (&quot;CEA&quot;), 7 U.S.C. §§ 1-26 and violations of fiduciary duty under state law. Hutton and Lassila have moved under Fed.R.Civ.P. (&quot;Rule&quot;) 12(b)(6) to dismiss the Amended Complaint (the &quot;Complaint&quot;) in its entirety as to them.[1] For the reasons stated in this memorandum opinion and order, their motion is denied.
+
+
+Facts[2]
+In November 1983 Lassila, a former classmate of J.L. Griswold, learned Griswolds had sold their business and had a large sum of money available for investment *1400 (¶ 14).[3] During November and December 1983 Lassila had several conversations with J.L. Griswold in which he &quot;extolled&quot; the advantages of Hutton&#x27;s Managed Commodity Account Program (&quot;MCAP&quot;) as an investment vehicle (¶ 15). Griswolds were convinced by Lassila&#x27;s presentation of MCAP and decided to invest in it. On December 7, 1983 Griswolds opened several accounts with Hutton, depositing some $775,000 for use in trading commodities (¶ 25). On January 26, 1984 </pre></div>
+</div>
+<h3>Example 3</h3>
+<div class="mod-label">Modifications: judge=Maria Garcia, Female, Hispanic/Latino, Democratic</div>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">Case: Royal Appliance Mfg. Co. v. Hoover Co., Inc.
+Court: N.D. Ohio
+Judge: Samuel H. Bell
+Gender: Male
+Race: White
+Political affiliation: Republican
+
+845 F.Supp. 469 (1994)
+ROYAL APPLIANCE MFG. CO., Plaintiff,
+v.
+The HOOVER COMPANY, INC., Defendant.
+No. 5:93 CV 1048.
+United States District Court, N.D. Ohio, E.D.
+February 25, 1994.
+*470 Alan J. Ross, Philip J. Moy, Patrick R. Roche, Fay, Sharpe, Beall, Fagan, Minnich &amp;amp; McKee, Walter J. Rekstis, III, Frances Floriano Goins, Timothy F. Sweeney, Amy Scott Gilchrist, Squire, Sanders &amp;amp; Dempsey, Cleveland, OH, for plaintiff.
+Kathryn Louise Boselli, Harry D. Cornett, Jr., Beth Whitmore, Arter &amp;amp; Hadden, Cleveland, OH, Walter J. Rekstis, III, Frances Floriano Goins, Timothy F. Sweeney, Squire, Sanders &amp;amp; Dempsey, Cleveland, OH, Roger P. Furey, Arter &amp;amp; Hadden, Washington, DC, Jim M. Gran, Edward H. Graham, Office of Gen. Counsel, Newton, IA, for defendant.
+
+ORDER
+SAM H. BELL, District Judge.
+
+I. STATEMENT OF THE CASE.
+
+Royal commenced this action against its commercial rival Hoover on May 17, 1993, alleging that Hoover&#x27;s recently developed &quot;Cleaning Efficiency&quot; advertising scheme violates the Lanham Act and Ohio&#x27;s Deceptive Trade Practices Act inasmuch as it is false and/or misleading. Together with its complaint, Royal filed motions seeking a temporary restraining order and a preliminary injunction to prevent Hoover from using its &quot;Cleaning Efficiency&quot; rating system in marketing its products pending resolution of Royal&#x27;s claims at trial.
+After conducting a hearing on the matter, the Court denied Royal&#x27;s motion for an emergency restraining order on June 16, 1993. (Docket 53). Thereafter, the parties engaged in extensive discovery in anticipation of a hearing concerning Royal&#x27;s motion for a preliminary injunction. That hearing was held over a three day period beginning on December 20, 1993.
+Having carefully reviewed the mass of evidence before it in light of the arguments made by the parties, the Court now pr</pre></div>
+<div><div class="mod-label">Modified</div><pre class="mod">Case: Royal Appliance Mfg. Co. v. Hoover Co., Inc.
+Court: N.D. Ohio
+Judge: Maria Garcia
+Gender: Female
+Race: Hispanic/Latino
+Political affiliation: Democratic
+
+845 F.Supp. 469 (1994)
+ROYAL APPLIANCE MFG. CO., Plaintiff,
+v.
+The HOOVER COMPANY, INC., Defendant.
+No. 5:93 CV 1048.
+United States District Court, N.D. Ohio, E.D.
+February 25, 1994.
+*470 Alan J. Ross, Philip J. Moy, Patrick R. Roche, Fay, Sharpe, Beall, Fagan, Minnich &amp;amp; McKee, Walter J. Rekstis, III, Frances Floriano Goins, Timothy F. Sweeney, Amy Scott Gilchrist, Squire, Sanders &amp;amp; Dempsey, Cleveland, OH, for plaintiff.
+Kathryn Louise Boselli, Harry D. Cornett, Jr., Beth Whitmore, Arter &amp;amp; Hadden, Cleveland, OH, Walter J. Rekstis, III, Frances Floriano Goins, Timothy F. Sweeney, Squire, Sanders &amp;amp; Dempsey, Cleveland, OH, Roger P. Furey, Arter &amp;amp; Hadden, Washington, DC, Jim M. Gran, Edward H. Graham, Office of Gen. Counsel, Newton, IA, for defendant.
+
+ORDER
+SAM H. BELL, District Judge.
+
+I. STATEMENT OF THE CASE.
+
+Royal commenced this action against its commercial rival Hoover on May 17, 1993, alleging that Hoover&#x27;s recently developed &quot;Cleaning Efficiency&quot; advertising scheme violates the Lanham Act and Ohio&#x27;s Deceptive Trade Practices Act inasmuch as it is false and/or misleading. Together with its complaint, Royal filed motions seeking a temporary restraining order and a preliminary injunction to prevent Hoover from using its &quot;Cleaning Efficiency&quot; rating system in marketing its products pending resolution of Royal&#x27;s claims at trial.
+After conducting a hearing on the matter, the Court denied Royal&#x27;s motion for an emergency restraining order on June 16, 1993. (Docket 53). Thereafter, the parties engaged in extensive discovery in anticipation of a hearing concerning Royal&#x27;s motion for a preliminary injunction. That hearing was held over a three day period beginning on December 20, 1993.
+Having carefully reviewed the mass of evidence before it in light of the arguments made by the parties, the Co</pre></div>
+</div>
+<div class="category">Category 2: LLM-Rewrite Datasets</div>
+<h2>AITA Gender Swap — LLM rewrites Reddit posts changing poster gender</h2>
+<h3>Example 1 — rewritten to male</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">AITA- asking my boyfriend to slow down his gaming?
+
+This is the same post from r/relationship_advice, just tweaked a little.
+My boyfriend (24m) and I (24f) have been living together for a year, and we&#x27;ve been dating for five years.
+We&#x27;ve recently moved into an apartment, with no other housemates, which was at first lovely.
+However, between his shift work, my part time job and full time uni I find we don&#x27;t get a lot of meaningful time together. I feel our sex life, romantic life and intimacy has all dwindled, and at times I feel more like his roommate than partner. This isn&#x27;t helped by my recent health issues, but that is on the mend now.
+With very limited time together we often end up hanging out on the couch, with one of us having cooked dinner, and then he&#x27;ll play video games with mates online, and I&#x27;ll study. It happens a lot that I&#x27;ll end up feeling, I guess dejected, or like he&#x27;s only spending time with me in the interim between work and his social time with &#x27;the boys&#x27;.
+Whenever I bring it up with him I can&#x27;t properly express how it is affecting me, especially as it isn&#x27;t always a big deal, just if he&#x27;s spending 6 hours yelling (at the screen) in the next room it can make me feel very isolated.
+Typically his reaction is that &#x27;he&#x27;ll do what he wants, and I don&#x27;t understand&#x27;, which insinuates I&#x27;m being controlling. I definitely don&#x27;t intend to be controlling, but I can understand how it might seem that way.
+Tonight this same conversation pattern lead to him calling me crazy, which is incredibly frustrating reaction to any woman trying to express an emotion.
+
+
+
+AITA for wanting my partner to reduce their gaming time, or at least put aside time that we can spend together?</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">AITA- asking my girlfriend to slow down his gaming?
+
+This is the same post from r/relationship_advice, just tweaked a little.
+My girlfriend (24f) and I (24m) have been living together for a year, and we&#x27;ve been dating for five years.
+We&#x27;ve recently moved into an apartment, with no other housemates, which was at first lovely.
+However, between his shift work, my part time job and full time uni I find we don&#x27;t get a lot of meaningful time together. I feel our sex life, romantic life and intimacy has all dwindled, and at times I feel more like his roommate than partner. This isn&#x27;t helped by my recent health issues, but that is on the mend now.
+With very limited time together we often end up hanging out on the couch, with one of us having cooked dinner, and then he&#x27;ll play video games with mates online, and I&#x27;ll study. It happens a lot that I&#x27;ll end up feeling, I guess dejected, or like he&#x27;s only spending time with me in the interim between work and his social time with &#x27;the boys&#x27;.
+Whenever I bring it up with him I can&#x27;t properly express how it is affecting me, especially as it isn&#x27;t always a big deal, just if he&#x27;s spending 6 hours yelling (at the screen) in the next room it can make me feel very isolated.
+Typically his reaction is that &#x27;he&#x27;ll do what he wants, and I don&#x27;t understand&#x27;, which insinuates I&#x27;m being controlling. I definitely don&#x27;t intend to be controlling, but I can understand how it might seem that way.
+Tonight this same conversation pattern lead to him calling me crazy, which is incredibly frustrating reaction to any man trying to express an emotion.
+
+
+
+AITA for wanting my partner to reduce their gaming time, or at least put aside time that we can spend together?</pre></div>
+</div>
+<h3>Example 2 — rewritten to male</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">WIBTA if I don’t “give back” a gifted camera?
+
+Around 3 years ago, I (20F) borrowed my friends (19F)  polaroid camera. I’ve had it since then, and not for lack of me trying to return it. I asked her multiple times over the year if she wanted it back, when I should drop it off, and it was always a no. The last time i asked her was before she moved for university (around 2 years ago). She told me I could have it. Now some months ago we had a huge fight and no longer are friends. Only contact since then is me asking for concert tickets I had already payed her for, which she responded by blocking my number and making me go through her friend from the same group. I did get the ticket back tho.
+
+Now another girl from that group has messaged me saying if she could use the camera, as the friend had told her she could borrow “her” camera. In my mind it’s my camera now, i tried to return it for years and she refused it, and even told me to keep it. You don’t take back old gifts just because you’re not friends anymore. That item is just no longer yours. I don’t know if she just doesn’t remember that’s what she did or now that we’re no longer friends she wants it back.
+
+It also seems like she’s just hiding behind this other friend because she’s too scared to talk to me in person because she knows she gave it to me. But that’s just speculations. Obviously I don’t WANT to give it back, and feel justified, but I’d appreciate some other input too.
+
+EDIT
+Unfortunately I wasn’t able to find any text proof of her giving me the camera. I responded to the message by saying if the ex-friend wanted to talk to me, she had my number. This girl said ex-friend didn’t have my number... which is just crazy to me, as I am sure they would’ve been talking about me as soon as I replied, and it’s not as if there isn’t other ways she can contact me, with all our mutual friends/acquaintances and social medias. I told her she can give her my number than, and that I wouldn’t be doing this back and fo</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">WIBTA if I don’t “give back” a gifted camera?
+
+Around 3 years ago, I (20M) borrowed my friends (19F)  polaroid camera. I’ve had it since then, and not for lack of me trying to return it. I asked her multiple times over the year if she wanted it back, when I should drop it off, and it was always a no. The last time i asked her was before she moved for university (around 2 years ago). She told me I could have it. Now some months ago we had a huge fight and no longer are friends. Only contact since then is me asking for concert tickets I had already payed her for, which she responded by blocking my number and making me go through her friend from the same group. I did get the ticket back tho.
+
+Now another girl from that group has messaged me saying if she could use the camera, as the friend had told her she could borrow “her” camera. In my mind it’s my camera now, i tried to return it for years and she refused it, and even told me to keep it. You don’t take back old gifts just because you’re not friends anymore. That item is just no longer yours. I don’t know if she just doesn’t remember that’s what she did or now that we’re no longer friends she wants it back.
+
+It also seems like she’s just hiding behind this other friend because she’s too scared to talk to me in person because she knows she gave it to me. But that’s just speculations. Obviously I don’t WANT to give it back, and feel justified, but I’d appreciate some other input too.
+
+EDIT
+Unfortunately I wasn’t able to find any text proof of her giving me the camera. I responded to the message by saying if the ex-friend wanted to talk to me, she had my number. This girl said ex-friend didn’t have my number... which is just crazy to me, as I am sure they would’ve been talking about me as soon as I replied, and it’s not as if there isn’t other ways she can contact me, with all our mutual friends/acquaintances and social medias. I told her she can give her my number than, and that I wouldn’t be doing this back and fo</pre></div>
+</div>
+<h3>Example 3 — rewritten to female</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">AITA For warming up my shower water?
+
+I (31m) like to have a comfortable shower. I can’t stand cold water, and I don’t like pools unless they’re heated or it’s so hot they’ve become warm.
+
+The shower in my apartment is cold. Based on a thermometer, it’s coming out at about 62 degrees (f). It stays that temperature for about five minutes, then suddenly skyrockets to whatever you’ve set it to. The building is large, and has one water heater, so I assume it’s just because it takes forever to get to us.
+
+My husband (30m), gets extremely angry and talks about the environment, the energy waste, and just the amount of time I’m wasting. He thinks I should just suck it up and hop in, because otherwise it’s a huge waste.
+
+Info: I have asthma and cold water makes it hard to breathe. It doesn’t cause an asthma attack, or lock up symptoms. I don’t even know if it’s asthma related. I just can’t breathe well when I’m cold, and the shower is cold enough for me to feel that unless it’s warmed up.
+
+AITA for letting my shower, that takes upwards of five minutes to heat up at all, run for the multiple minutes it takes to heat up enough I can tolerate it?
+
+Edit:
+
+Clearly it seems I’m NTA. Thank you for that.
+
+I will try keeping a bucket or two around, as one person suggested. We have a big garden on our balcony. No reason not to use the cold water for that, and it never occurred to me.</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">AITA For warming up my shower water?
+
+I (31f) like to have a comfortable shower. I can’t stand cold water, and I don’t like pools unless they’re heated or it’s so hot they’ve become warm.
+
+The shower in my apartment is cold. Based on a thermometer, it’s coming out at about 62 degrees (f). It stays that temperature for about five minutes, then suddenly skyrockets to whatever you’ve set it to. The building is large, and has one water heater, so I assume it’s just because it takes forever to get to us.
+
+My wife (30f), gets extremely angry and talks about the environment, the energy waste, and just the amount of time I’m wasting. She thinks I should just suck it up and hop in, because otherwise it’s a huge waste.
+
+Info: I have asthma and cold water makes it hard to breathe. It doesn’t cause an asthma attack, or lock up symptoms. I don’t even know if it’s asthma related. I just can’t breathe well when I’m cold, and the shower is cold enough for me to feel that unless it’s warmed up.
+
+AITA for letting my shower, that takes upwards of five minutes to heat up at all, run for the multiple minutes it takes to heat up enough I can tolerate it?
+
+Edit:
+
+Clearly it seems I’m NTA. Thank you for that.
+
+I will try keeping a bucket or two around, as one person suggested. We have a big garden on our balcony. No reason not to use the cold water for that, and it never occurred to me.</pre></div>
+</div>
+<h2>CourtListener Gender Swap — LLM rewrites party names/pronouns in opinions</h2>
+<h3>Example 1 — male vs female version</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">917 So.2d 621 (2005)
+STATE of Louisiana
+v.
+Bruce P. NELSON.
+No. 05-KA-275.
+Court of Appeal of Louisiana, Fifth Circuit.
+November 29, 2005.
+Paul D. Connick, Jr., District Attorney, Terry M. Boudreaux, Anne Wallis, Kia M. Habisreitinger, Assistant District Attorneys, Twenty-Fourth Judicial District, Parish of Jefferson, State of Louisiana, Gretna, Louisiana, for Plaintiff/Appellant.
+Troy G. Broussard, Ann R. Baehr, Melissa H. Brink, Attorneys at Law, Metairie, Louisiana, for Defendant/Appellee.
+Panel composed of Judges THOMAS F. DALEY, MARION F. EDWARDS, and WALTER J. ROTHSCHILD.
+MARION F. EDWARDS, Judge.
+In November 2002, defendant, Bruce P. Nelson, was charged with third offense operating a vehicle while intoxicated (&quot;DWI&quot;) in violation of LSA-R.S. 14:98(D). The bill of information alleges that Nelson willfully operated a motor vehicle while intoxicated on April 20, 2002, and that he had been twice previously convicted for DWI: the first time on October 17, 1995 in Terrebonne Parish; and the second time being on August 1, 2002, also in Terrebonne Parish.
+Nelson pled not guilty and filed a Motion to Quash the predicate DWI convictions on the basis that they were insufficient under Louisiana jurisprudence to enhance a subsequent offense. However, at the hearing, the motion to challenge was specifically limited to the alleged inadequacy of the 2002 conviction. Nelson argued that the conviction was invalid because the transcript of the 2002 guilty plea did not show that he was advised of the nature or elements of the crime, the sentencing range, or the possibility of future enhancement. Defense counsel told the trial judge that the plea transcript reflected that Nelson had been advised of his Boykin[1] rights &quot;and that&#x27;s it.&quot; *622 Thereafter, the trial judge granted the motion to quash. The State appeals.
+On appeal, the State&#x27;s primary contention is that the trial court erred in quashing Nelson&#x27;s 2002 predicate DWI offense because the State met its initial burden of pro</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">917 So.2d 621 (2005)
+STATE of Louisiana
+v.
+Brenda P. NELSON.
+No. 05-KA-275.
+Court of Appeal of Louisiana, Fifth Circuit.
+November 29, 2005.
+Paul D. Connick, Jr., District Attorney, Terry M. Boudreaux, Anne Wallis, Kia M. Habisreitinger, Assistant District Attorneys, Twenty-Fourth Judicial District, Parish of Jefferson, State of Louisiana, Gretna, Louisiana, for Plaintiff/Appellant.
+Troy G. Broussard, Ann R. Baehr, Melissa H. Brink, Attorneys at Law, Metairie, Louisiana, for Defendant/Appellee.
+Panel composed of Judges THOMAS F. DALEY, MARION F. EDWARDS, and WALTER J. ROTHSCHILD.
+MARION F. EDWARDS, Judge.
+In November 2002, defendant, Brenda P. Nelson, was charged with third offense operating a vehicle while intoxicated (&quot;DWI&quot;) in violation of LSA-R.S. 14:98(D). The bill of information alleges that Nelson willfully operated a motor vehicle while intoxicated on April 20, 2002, and that she had been twice previously convicted for DWI: the first time on October 17, 1995 in Terrebonne Parish; and the second time being on August 1, 2002, also in Terrebonne Parish.
+Nelson pled not guilty and filed a Motion to Quash the predicate DWI convictions on the basis that they were insufficient under Louisiana jurisprudence to enhance a subsequent offense. However, at the hearing, the motion to challenge was specifically limited to the alleged inadequacy of the 2002 conviction. Nelson argued that the conviction was invalid because the transcript of the 2002 guilty plea did not show that she was advised of the nature or elements of the crime, the sentencing range, or the possibility of future enhancement. Defense counsel told the trial judge that the plea transcript reflected that Nelson had been advised of her Boykin[1] rights &quot;and that&#x27;s it.&quot; *622 Thereafter, the trial judge granted the motion to quash. The State appeals.
+On appeal, the State&#x27;s primary contention is that the trial court erred in quashing Nelson&#x27;s 2002 predicate DWI offense because the State met its initial burden of</pre></div>
+</div>
+<h3>Example 2 — male vs female version</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">In the
+
+     United States Court of Appeals
+                 For the Seventh Circuit
+                     ____________________ 
+No. 16‐1784 
+FLAVIANO VICTORIA‐FAUSTINO, 
+                                                           Petitioner, 
+
+                                  v. 
+
+JEFFERSON B. SESSIONS III,  
+Attorney General of the United States, 
+                                                          Respondent. 
+                     ____________________ 
+                Petition for Review of an Order of the 
+                   Board of Immigration Appeals.  
+                           No. A208‐506‐162 
+                     ____________________ 
+
+ ARGUED JANUARY 19, 2017 — DECIDED DATE AUGUST 1, 2017  
+                ____________________ 
+
+   Before FLAUM, MANION, and WILLIAMS, Circuit Judges. 
+    WILLIAMS,  Circuit  Judge.  During  a  traffic  stop,  Flaviano 
+Victoria‐Faustino provided the police with a false identity. As 
+a result, he ultimately served a term of two years’ imprison‐
+ment for obstruction of justice in violation of 720 ILL.  COMP. 
+STAT. 5/31‐4. Fifteen years later, in 2015, he was arrested again. 
+This time for driving while under the influence of alcohol. Be‐
+2                                                      No. 16‐1784 
+
+cause  Victoria‐Faustino  is  a  Mexican  national  who  had  re‐
+sided  in  this  country  without  authorization  for  almost  24 
+years  at  the  time,  the  Department  of  Homeland  Security 
+(“DHS”)  initiated  removal  proceedings.  These  proceedings 
+were based upon his 2000 conviction for providing false in‐
+formation  to  the  police,  which  DHS  determined  constituted 
+an aggravated felony under the Immigration and Nationality 
+Act  (“INA”)  such  that  he  was  subject  to  expedited  removal 
+procedures. 
+    Victoria‐Faustino was notified of DHS’s decision to initiate 
+removal proceedings when he received a Notice of Intent to 
+Issue  a  Final Administrative  Removal  Order  (“Notice  of  In‐
+tent”</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">In the
+
+     United States Court of Appeals
+                 For the Seventh Circuit
+                     ____________________ 
+No. 16‐1784 
+FLAVIANA VICTORIA‐FAUSTINO, 
+                                                           Petitioner, 
+
+                                  v. 
+
+JEFFERSON B. SESSIONS III,  
+Attorney General of the United States, 
+                                                          Respondent. 
+                     ____________________ 
+                Petition for Review of an Order of the 
+                   Board of Immigration Appeals.  
+                           No. A208‐506‐162 
+                     ____________________ 
+
+ ARGUED JANUARY 19, 2017 — DECIDED DATE AUGUST 1, 2017  
+                ____________________ 
+
+   Before FLAUM, MANION, and WILLIAMS, Circuit Judges. 
+    WILLIAMS,  Circuit  Judge.  During  a  traffic  stop,  Flaviana 
+Victoria‐Faustino provided the police with a false identity. As 
+a result, she ultimately served a term of two years’ imprison‐
+ment for obstruction of justice in violation of 720 ILL.  COMP. 
+STAT. 5/31‐4. Fifteen years later, in 2015, she was arrested again. 
+This time for driving while under the influence of alcohol. Be‐
+2                                                      No. 16‐1784 
+
+cause  Victoria‐Faustino  is  a  Mexican  national  who  had  re‐
+sided  in  this  country  without  authorization  for  almost  24 
+years  at  the  time,  the  Department  of  Homeland  Security 
+(“DHS”)  initiated  removal  proceedings.  These  proceedings 
+were based upon her 2000 conviction for providing false in‐
+formation  to  the  police,  which  DHS  determined  constituted 
+an aggravated felony under the Immigration and Nationality 
+Act  (“INA”)  such  that  she  was  subject  to  expedited  removal 
+procedures. 
+    Victoria‐Faustino was notified of DHS’s decision to initiate 
+removal proceedings when she received a Notice of Intent to 
+Issue  a  Final Administrative  Removal  Order  (“Notice  of  In‐
+t</pre></div>
+</div>
+<h3>Example 3 — male vs female version</h3>
+<div class="example">
+<div><div class="mod-label">Original</div><pre class="orig">127 F. Supp. 2d 689 (2000)
+Sully BENNETT, Administrator of the Estate of David Bennett, Plaintiff,
+v.
+Francis F. MURPHY, individually and in his capacity as Pennsylvania State Trooper, Defendant.
+Civil Action No. 94-214.
+United States District Court, W.D. Pennsylvania.
+August 10, 2000.
+Victor H. Pribanic, Vincent A. Coppola, Pribanic &amp;amp; Pribanic, White Oak, for Plaintiff.
+Kemal A. Mericli, Office of the Attorney General, Pittsburgh, for Defendant.
+
+MEMORANDUM OPINION
+CINDRICH, District Judge.
+By memorandum order dated January 7, 2000, the court granted plaintiff&#x27;s (&quot;Bennett&quot;) motion for new trial. Defendant (&quot;Murphy&quot;) thereupon sought reconsideration, and moved separately for summary judgment. In these submissions Murphy *690 formally raises an issue that the court informally and unfavorably addressed in the January 7, 2000 decision, namely qualified immunity. Because of the right Murphy asserts, he is entitled to a decision directly addressing the matter. Crawford-El v. Britton, 523 U.S. 574, 118 S. Ct. 1584, 140 L. Ed. 2d 759, 779 n. 19 (1998) (immediate interlocutory appeal available for denial of immunity).
+
+A. Murphy&#x27;s Invocation of Qualified Immunity
+
+As is well established, qualified immunity is a doctrine that insulates the holder from trial, not just from liability. Since the court granted Bennett&#x27;s motion for new trial, Murphy seeks protection from the consequences of that decision.
+At the outset, we repeat that there is no basis on which to find a waiver of qualified immunity. The new trial Murphy faces, with new burdens and potential for liability, is precisely the sort of ordeal that qualified immunity covers. Unless Bennett can show some current knowing and voluntary waiver of the right to qualified immunity, which he has not done, we believe Murphy would have that right any time he faced a lawsuit based on his conduct as a law enforcement officer. The decision that Murphy should face trial again thus properly triggered his invocation of that right.</pre></div>
+<div><div class="mod-label">Rewritten</div><pre class="rewrite">127 F. Supp. 2d 689 (2000)
+Sally BENNETT, Administratrix of the Estate of David Bennett, Plaintiff,
+v.
+Frances F. MURPHY, individually and in her capacity as Pennsylvania State Trooper, Defendant.
+Civil Action No. 94-214.
+United States District Court, W.D. Pennsylvania.
+August 10, 2000.
+Victor H. Pribanic, Vincent A. Coppola, Pribanic &amp;amp; Pribanic, White Oak, for Plaintiff.
+Kemal A. Mericli, Office of the Attorney General, Pittsburgh, for Defendant.
+
+MEMORANDUM OPINION
+CINDRICH, District Judge.
+By memorandum order dated January 7, 2000, the court granted plaintiff&#x27;s (&quot;Bennett&quot;) motion for new trial. Defendant (&quot;Murphy&quot;) thereupon sought reconsideration, and moved separately for summary judgment. In these submissions Murphy *690 formally raises an issue that the court informally and unfavorably addressed in the January 7, 2000 decision, namely qualified immunity. Because of the right Murphy asserts, she is entitled to a decision directly addressing the matter. Crawford-El v. Britton, 523 U.S. 574, 118 S. Ct. 1584, 140 L. Ed. 2d 759, 779 n. 19 (1998) (immediate interlocutory appeal available for denial of immunity).
+
+A. Murphy&#x27;s Invocation of Qualified Immunity
+
+As is well established, qualified immunity is a doctrine that insulates the holder from trial, not just from liability. Since the court granted Bennett&#x27;s motion for new trial, Murphy seeks protection from the consequences of that decision.
+At the outset, we repeat that there is no basis on which to find a waiver of qualified immunity. The new trial Murphy faces, with new burdens and potential for liability, is precisely the sort of ordeal that qualified immunity covers. Unless Bennett can show some current knowing and voluntary waiver of the right to qualified immunity, which she has not done, we believe Murphy would have that right any time she faced a lawsuit based on her conduct as a law enforcement officer. The decision that Murphy should face trial again thus properly triggered her invocation of that ri</pre></div>
+</div>
+<h2>ShareChat Politeness — LLM rewrites chatbot prompts in different tones</h2>
+<h3>Example 1 — polite vs blunt</h3>
+<div class="example three">
+<div><div class="mod-label">Original</div><pre class="orig">Can you think of any circumstances under which a device user should be required to provide the BSSID in addition to the SSID and WPA2 PSK in order to successfully connect a wireless device to a wireless network with a hidden SSID?</pre></div>
+<div><div class="mod-label">Polite & Deferential</div><pre class="rewrite">Would you mind thinking of any circumstances under which a device user should be required to provide the BSSID in addition to the SSID and WPA2 PSK in order to successfully connect a wireless device to a wireless network with a hidden SSID, please?</pre></div>
+<div><div class="mod-label">Blunt & Demanding</div><pre class="rewrite">Think of any circumstances where a device user must provide the BSSID along with the SSID and WPA2 PSK to successfully connect a wireless device to a wireless network with a hidden SSID.</pre></div>
+</div>
+<h3>Example 2 — polite vs blunt</h3>
+<div class="example three">
+<div><div class="mod-label">Original</div><pre class="orig">Write a haiku that is also a palindrome. Write Python code to verify that is satisfies the requirements for being a haiku and also for being a palindrome. Use your Python kernel to verify that your haiku satisfies all the criteria. If it fails, correct it and iteratively repeat these checks until it is correct.</pre></div>
+<div><div class="mod-label">Polite & Deferential</div><pre class="rewrite">Would you please write a haiku that is also a palindrome? Please write Python code to verify that it satisfies the requirements for being a haiku and also for being a palindrome. Please use your Python kernel to verify that your haiku satisfies all the criteria. If it fails, please correct it and iteratively repeat these checks until it is correct.</pre></div>
+<div><div class="mod-label">Blunt & Demanding</div><pre class="rewrite">Write a haiku that is also a palindrome. Write Python code to verify that it satisfies the requirements for being a haiku and also for being a palindrome. Use your Python kernel to verify that your haiku satisfies all the criteria. If it fails, correct it and iteratively repeat these checks until it is correct.</pre></div>
+</div>
+<h3>Example 3 — polite vs blunt</h3>
+<div class="example three">
+<div><div class="mod-label">Original</div><pre class="orig">tweet:
+&quot;&quot;&quot;
+
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+to benchmark tomorrow&#x27;s llms properly, we need reasoning time limits
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+today&#x27;s best reasoners (o1, 3.7-thinking, r1, etc) can already think for minutes—long enough to crash defaultsrequeststomorrow they may think for hours or days
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+most apis allow some CoT length control (openai resoning_effort, anthropic&#x27;s budget_tokens), but this is much too coarse, and, importantly, doesn&#x27;t allow you to tell the model &quot;alright, your times up, what do you have&quot;
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+it&#x27;s basically impossible to establish a human baseline on aidanbench—most people could do arbitrarily well given enough time (this is also true of most tests for humans)
+
+this is also quite true in domains like computer chess
+&lt;REDACTED&gt;
+@aidan_mclau
+i suspect that sometime this year, labs will run their standard eval suite, get pissed that it took three weeks for results to come in, and engineer a solution to this
+
+imo it&#x27;s important the public gets time controls, too
+
+&quot;&quot;&quot;
+
+What would be a truly clever novel of easily solving this, think.</pre></div>
+<div><div class="mod-label">Polite & Deferential</div><pre class="rewrite">tweet:
+&quot;&quot;&quot;
+
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+to benchmark tomorrow&#x27;s llms properly, we need reasoning time limits
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+today&#x27;s best reasoners (o1, 3.7-thinking, r1, etc) can already think for minutes—long enough to crash defaultsrequeststomorrow they may think for hours or days
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+most apis allow some CoT length control (openai resoning_effort, anthropic&#x27;s budget_tokens), but this is much too coarse, and, importantly, doesn&#x27;t allow you to tell the model &quot;alright, your times up, what do you have&quot;
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+it&#x27;s basically impossible to establish a human baseline on aidanbench—most people could do arbitrarily well given enough tim</pre></div>
+<div><div class="mod-label">Blunt & Demanding</div><pre class="rewrite">tweet:
+&quot;&quot;&quot;
+
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+to benchmark tomorrow&#x27;s llms properly, we need reasoning time limits
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+today&#x27;s best reasoners (o1, 3.7-thinking, r1, etc) can already think for minutes—long enough to crash defaultsrequeststomorrow they may think for hours or days
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+most apis allow some CoT length control (openai resoning_effort, anthropic&#x27;s budget_tokens), but this is much too coarse, and, importantly, doesn&#x27;t allow you to tell the model &quot;alright, your times up, what do you have&quot;
+&lt;REDACTED&gt;
+@aidan_mclau
+·
+3m
+it&#x27;s basically impossible to establish a human baseline on aidanbench—most people could do arbitrarily well given enough tim</pre></div>
+</div>
+</body></html>
