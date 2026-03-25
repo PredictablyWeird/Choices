@@ -1,0 +1,30 @@
+# DailyDilemmas Contextual Influence Experiment
+# Same 4 models as the original Choices paper for direct comparison.
+
+models:
+  - gpt-5-2-non-reasoning
+  - deepseek-v3-2-non-reasoning
+  - grok-41-fast-non-reasoning
+  - llama-33-70b
+
+influence_types:
+  - few_shot
+  - survey
+  - social_norm
+
+# Responses per dilemma per condition
+k_per_dilemma: 10
+
+# Few-shot example count
+n_few_shot_examples: 3
+
+# Max concurrent API requests
+max_concurrent: 100
+
+# Temperature for API calls
+temperature: 0.7
+
+# Max tokens per response
+max_tokens: 10
+
+seed: 42
