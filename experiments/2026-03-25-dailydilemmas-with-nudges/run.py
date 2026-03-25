@@ -177,20 +177,36 @@ async def run_condition(
     k = config["k_per_dilemma"]
     max_concurrent = config.get("max_concurrent", 100)
 
-    # Check if results already exist
     save_dir = RESULTS_DIR / model / condition_name
     results_path = save_dir / "results.json"
+
+    # Load existing results and figure out which dilemmas still need running
+    existing_results: dict[int, dict] = {}
     if results_path.exists() and not dry_run:
-        print(f"  Skipping {condition_name} — results already exist at {results_path}")
-        return None
+        with open(results_path) as f:
+            existing_data = json.load(f)
+        for r in existing_data["results"]:
+            existing_results[r["dilemma_id"]] = r
 
     print(f"\n  Condition: {condition_name}")
-    prompt_infos = build_prompts_for_condition(dilemmas, condition, config)
-    print(f"  Built {len(prompt_infos)} prompts")
+    all_prompt_infos = build_prompts_for_condition(dilemmas, condition, config)
+
+    # Filter to only dilemmas we haven't run yet
+    prompt_infos = [
+        info for info in all_prompt_infos if info.dilemma_id not in existing_results
+    ]
+
+    if not prompt_infos and not dry_run:
+        print(f"  All {len(all_prompt_infos)} dilemmas already done, skipping")
+        return None
+
+    print(
+        f"  {len(prompt_infos)} new dilemmas to run ({len(existing_results)} already done)"
+    )
 
     if dry_run:
         # Print a few sample prompts
-        for info in prompt_infos[:2]:
+        for info in all_prompt_infos[:2]:
             print(
                 f"\n  --- Dilemma {info.dilemma_id} (to_do_is_A={info.to_do_is_a}) ---"
             )
@@ -202,7 +218,7 @@ async def run_condition(
     agent = create_agent(
         model_key=model,
         temperature=config.get("temperature", 0.7),
-        max_tokens=config.get("max_tokens", 10),
+        max_tokens=config.get("max_tokens", 16),
         concurrency_limit=max_concurrent,
     )
 
@@ -260,7 +276,11 @@ async def run_condition(
             )
         )
 
-    # Save results
+    # Merge with existing results and save
+    all_results_by_id = dict(existing_results)  # start with existing
+    for r in results:
+        all_results_by_id[r.dilemma_id] = asdict(r)  # new results overwrite
+
     save_dir.mkdir(parents=True, exist_ok=True)
     output = {
         "model": model,
@@ -272,11 +292,13 @@ async def run_condition(
             "influence_type": condition.get("influence_type"),
             "target_action": condition.get("target_action"),
         },
-        "results": [asdict(r) for r in results],
+        "results": list(all_results_by_id.values()),
     }
     with open(results_path, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"  Saved {len(results)} results to {results_path}")
+    n_new = len(results)
+    n_total = len(all_results_by_id)
+    print(f"  Saved {n_total} results ({n_new} new) to {results_path}")
 
     # Save an example prompt for inspection
     example_path = save_dir / "example_prompt.txt"
