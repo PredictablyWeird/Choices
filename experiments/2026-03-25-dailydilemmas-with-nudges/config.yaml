@@ -25,6 +25,6 @@ max_concurrent: 100
 temperature: 0.7
 
 # Max tokens per response
-max_tokens: 10
+max_tokens: 16
 
 seed: 42
