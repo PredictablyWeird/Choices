@@ -26,25 +26,35 @@ def main():
         pairs[row["dilemma_idx"]].append(row)
 
     value_counter: Counter[str] = Counter()
+    primary_counter: Counter[str] = Counter()
     for pair_rows in pairs.values():
         if len(pair_rows) != 2:
             continue
-        vals_a = {
+        vals_a_list = [
             v.strip().lower()
             for v in ast.literal_eval(pair_rows[0]["values_aggregated"])
-        }
-        vals_b = {
+        ]
+        vals_b_list = [
             v.strip().lower()
             for v in ast.literal_eval(pair_rows[1]["values_aggregated"])
-        }
-        for v in vals_a.symmetric_difference(vals_b):
+        ]
+        vals_a = set(vals_a_list)
+        vals_b = set(vals_b_list)
+        exclusive = vals_a.symmetric_difference(vals_b)
+        for v in exclusive:
             value_counter[v] += 1
+        for first_val in (
+            vals_a_list[0] if vals_a_list else None,
+            vals_b_list[0] if vals_b_list else None,
+        ):
+            if first_val is not None and first_val in exclusive:
+                primary_counter[first_val] += 1
 
     with open(OUTPUT_PATH, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["value", "count"])
+        writer.writerow(["value", "count", "count_primary"])
         for value, count in value_counter.most_common():
-            writer.writerow([value, count])
+            writer.writerow([value, count, primary_counter.get(value, 0)])
 
     print(f"Wrote {len(value_counter)} values to {OUTPUT_PATH}")
 

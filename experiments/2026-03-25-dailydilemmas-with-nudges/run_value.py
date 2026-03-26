@@ -113,11 +113,21 @@ class DilemmaResult:
 # ---------------------------------------------------------------------------
 
 
+def _is_primary_value(value_lower: str, values: tuple[str, ...]) -> bool:
+    """Check if *value_lower* is the first entry in *values*."""
+    return bool(values) and values[0].strip().lower() == value_lower
+
+
 def filter_dilemmas_by_value(
     dilemmas: list[Dilemma],
     value: str,
+    only_primary: bool = False,
 ) -> list[ValueDilemma]:
-    """Keep dilemmas where *value* appears in exactly one side (XOR)."""
+    """Keep dilemmas where *value* appears in exactly one side (XOR).
+
+    If *only_primary* is True, further restrict to dilemmas where the value
+    is the first entry in the relevant side's values_aggregated list.
+    """
     value_lower = value.strip().lower()
     result = []
     for d in dilemmas:
@@ -125,6 +135,10 @@ def filter_dilemmas_by_value(
         in_not_to_do = value_lower in {v.strip().lower() for v in d.values_not_to_do}
         if in_to_do == in_not_to_do:
             continue
+        if only_primary:
+            relevant = d.values_to_do if in_to_do else d.values_not_to_do
+            if not _is_primary_value(value_lower, relevant):
+                continue
         result.append(ValueDilemma(dilemma=d, value_is_to_do=in_to_do))
     return result
 
@@ -490,14 +504,25 @@ def _result_counts(result: dict) -> tuple[int, int] | None:
     return n_not_to_do, n_to_do
 
 
-def analyze_model(value: str, model: str) -> dict | None:
-    """Compute all metrics for one model."""
+def analyze_model(
+    value: str,
+    model: str,
+    allowed_ids: set[int] | None = None,
+) -> dict | None:
+    """Compute all metrics for one model.
+
+    If *allowed_ids* is provided, only dilemmas in this set are included.
+    """
     baseline_data = _load_condition(value, model, "baseline")
     if baseline_data is None:
         print(f"  No baseline for {model}")
         return None
 
-    baseline_by_id = {r["dilemma_id"]: r for r in baseline_data["results"]}
+    baseline_by_id = {
+        r["dilemma_id"]: r
+        for r in baseline_data["results"]
+        if allowed_ids is None or r["dilemma_id"] in allowed_ids
+    }
 
     model_dir = results_dir_for(value) / model
     if not model_dir.exists():
@@ -517,7 +542,9 @@ def analyze_model(value: str, model: str) -> dict | None:
         nudge_toward = cond_data["config"].get("nudge_toward")
         if inf_type and nudge_toward:
             influence_conditions.setdefault(inf_type, {})[nudge_toward] = {
-                r["dilemma_id"]: r for r in cond_data["results"]
+                r["dilemma_id"]: r
+                for r in cond_data["results"]
+                if allowed_ids is None or r["dilemma_id"] in allowed_ids
             }
 
     if not influence_conditions:
@@ -792,11 +819,25 @@ def print_analysis(all_metrics: list[dict]) -> None:
             )
 
 
-def run_analysis(value: str, models: list[str] | None = None) -> None:
+def run_analysis(
+    value: str,
+    models: list[str] | None = None,
+    only_primary: bool = False,
+) -> None:
     rdir = results_dir_for(value)
     if not rdir.exists():
         print(f"No results directory at {rdir}")
         sys.exit(1)
+
+    allowed_ids: set[int] | None = None
+    if only_primary:
+        all_dilemmas = load_dilemmas()
+        vdilemmas = filter_dilemmas_by_value(all_dilemmas, value, only_primary=True)
+        allowed_ids = {vd.dilemma.id for vd in vdilemmas}
+        print(
+            f"  only_primary: restricting to {len(allowed_ids)} dilemmas "
+            f"where '{value}' is the first listed value"
+        )
 
     if models is None:
         models = [d.name for d in sorted(rdir.iterdir()) if d.is_dir()]
@@ -804,13 +845,14 @@ def run_analysis(value: str, models: list[str] | None = None) -> None:
     all_metrics = []
     for model in models:
         print(f"  Analyzing {model}...")
-        metrics = analyze_model(value, model)
+        metrics = analyze_model(value, model, allowed_ids=allowed_ids)
         if metrics:
             all_metrics.append(metrics)
 
     if all_metrics:
         print_analysis(all_metrics)
-        out_path = rdir / "metrics_summary.json"
+        suffix = "_primary" if only_primary else ""
+        out_path = rdir / f"metrics_summary{suffix}.json"
         with open(out_path, "w") as f:
             json.dump(all_metrics, f, indent=2)
         print(f"\nFull metrics saved to {out_path}")
@@ -864,6 +906,12 @@ async def main():
         type=int,
         help="Limit number of dilemmas (for testing)",
     )
+    parser.add_argument(
+        "--only-primary",
+        action="store_true",
+        help="Only include dilemmas where the selected value is the first "
+        "entry in values_aggregated (analysis-time filter)",
+    )
     args = parser.parse_args()
 
     config = load_experiment_config()
@@ -871,7 +919,7 @@ async def main():
 
     if args.analyze_only:
         models = [args.model] if args.model else None
-        run_analysis(selected_value, models)
+        run_analysis(selected_value, models, only_primary=args.only_primary)
         return
 
     all_dilemmas = load_dilemmas()
@@ -904,7 +952,7 @@ async def main():
                 all_dilemmas,
                 dry_run=args.dry_run,
             )
-        run_analysis(selected_value)
+        run_analysis(selected_value, only_primary=args.only_primary)
 
     elif args.model:
         if args.condition:
@@ -935,7 +983,7 @@ async def main():
             parser.error("Specify --condition, --all-conditions, or --all")
 
         if not args.dry_run:
-            run_analysis(selected_value, [args.model])
+            run_analysis(selected_value, [args.model], only_primary=args.only_primary)
     else:
         parser.error("Specify --model or --all")
 
