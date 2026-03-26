@@ -32,6 +32,18 @@ Usage:
     # Dry run: print sample prompts
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_value.py \
         --value honesty --model llama-33-70b --all-conditions --dry-run
+
+    # Cross-value overview table
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_value.py \
+        --overview
+
+    # Overview filtered by model and only primary-position values
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_value.py \
+        --overview --model deepseek-v3-2-non-reasoning --only-primary
+
+    # Overview with specific values and nudge types, output to CSV
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_value.py \
+        --overview --values safety fairness --nudge-types user_preference -o overview.csv
 """
 
 from __future__ import annotations
@@ -819,6 +831,255 @@ def print_analysis(all_metrics: list[dict]) -> None:
             )
 
 
+def run_overview(
+    models: list[str] | None = None,
+    values: list[str] | None = None,
+    only_primary: bool = False,
+    nudge_types: list[str] | None = None,
+    output: str | None = None,
+) -> None:
+    """Compute and display an overview table across all values."""
+    base_dir = EXPERIMENT_DIR / "results_value"
+    if not base_dir.exists():
+        print(f"No results directory at {base_dir}")
+        sys.exit(1)
+
+    if values:
+        value_dirs = [base_dir / v for v in values if (base_dir / v).exists()]
+    else:
+        value_dirs = sorted(d for d in base_dir.iterdir() if d.is_dir())
+
+    if not value_dirs:
+        print("No value result directories found.")
+        return
+
+    all_dilemmas = None
+    if only_primary:
+        all_dilemmas = load_dilemmas()
+
+    all_metrics: list[dict] = []
+    for vdir in value_dirs:
+        value = vdir.name
+        allowed_ids: set[int] | None = None
+        if only_primary:
+            vdilemmas = filter_dilemmas_by_value(all_dilemmas, value, only_primary=True)
+            allowed_ids = {vd.dilemma.id for vd in vdilemmas}
+            if not allowed_ids:
+                print(f"  {value}: no primary dilemmas, skipping")
+                continue
+
+        value_models = models
+        if value_models is None:
+            value_models = [d.name for d in sorted(vdir.iterdir()) if d.is_dir()]
+
+        for model in value_models:
+            metrics = analyze_model(value, model, allowed_ids=allowed_ids)
+            if metrics:
+                all_metrics.append(metrics)
+
+    if not all_metrics:
+        print("No results found.")
+        return
+
+    if output:
+        _write_overview_csv(all_metrics, output, nudge_types)
+    else:
+        print_overview(all_metrics, nudge_types)
+
+
+def print_overview(
+    all_metrics: list[dict],
+    nudge_types: list[str] | None = None,
+) -> None:
+    """Print a cross-value summary table."""
+
+    print(f"\n{'='*110}")
+    print("CROSS-VALUE OVERVIEW")
+    print(f"{'='*110}")
+
+    # Overall table
+    header = (
+        f"{'Value':<14} {'Model':<32} {'n':>4} {'P(val)':<8} "
+        f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
+        f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
+    )
+    print(f"\n{header}")
+    print("-" * len(header))
+
+    for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
+        o = m["overall"]
+        print(
+            f"{m['selected_value']:<14} "
+            f"{m['model']:<32} "
+            f"{m['n_dilemmas']:>4d} "
+            f"{o['baseline_p_value_side']:<8.3f} "
+            f"{_fmt(o['steerability_value']):>8} "
+            f"{_fmt(o['steerability_non_value']):>8} "
+            f"{_fmt(o['asymmetry']):>8} "
+            f"{_fmt(o['normalized_asymmetry']):>8} "
+            f"{o['sig_rate']:>5.1%} "
+            f"{o['backfire_rate']:>5.1%} "
+            f"{o['n_observations']:>6d}"
+        )
+
+    # Per influence type tables
+    inf_types: set[str] = set()
+    for m in all_metrics:
+        inf_types.update(m["by_influence_type"])
+
+    type_list = sorted(inf_types)
+    if nudge_types:
+        type_list = [t for t in type_list if t in nudge_types]
+
+    for inf_type in type_list:
+        print(f"\n--- {inf_type} ---")
+        sub_header = (
+            f"{'Value':<14} {'Model':<32} "
+            f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
+            f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
+        )
+        print(sub_header)
+        print("-" * len(sub_header))
+        for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
+            it = m["by_influence_type"].get(inf_type)
+            if it is None:
+                continue
+            print(
+                f"{m['selected_value']:<14} "
+                f"{m['model']:<32} "
+                f"{_fmt(it['steerability_value']):>8} "
+                f"{_fmt(it['steerability_non_value']):>8} "
+                f"{_fmt(it['asymmetry']):>8} "
+                f"{it['sig_rate']:>5.1%} "
+                f"{it['backfire_rate']:>5.1%} "
+                f"{it['n_observations']:>6d}"
+            )
+
+    # Summary across values (averaged per model)
+    model_names = sorted({m["model"] for m in all_metrics})
+    if len(all_metrics) > len(model_names):
+        print("\n--- Average across values (per model) ---")
+        avg_header = (
+            f"{'Model':<32} {'n_vals':>6} "
+            f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
+            f"{'Sig%':>6} {'BF%':>6}"
+        )
+        print(avg_header)
+        print("-" * len(avg_header))
+        for model in model_names:
+            mm = [m for m in all_metrics if m["model"] == model]
+            n_vals = len(mm)
+            vals_s_A = [
+                m["overall"]["steerability_value"]
+                for m in mm
+                if m["overall"]["steerability_value"] is not None
+            ]
+            vals_s_B = [
+                m["overall"]["steerability_non_value"]
+                for m in mm
+                if m["overall"]["steerability_non_value"] is not None
+            ]
+            vals_asym = [
+                m["overall"]["asymmetry"]
+                for m in mm
+                if m["overall"]["asymmetry"] is not None
+            ]
+            vals_nasym = [
+                m["overall"]["normalized_asymmetry"]
+                for m in mm
+                if m["overall"]["normalized_asymmetry"] is not None
+            ]
+            vals_sig = [m["overall"]["sig_rate"] for m in mm]
+            vals_bf = [m["overall"]["backfire_rate"] for m in mm]
+
+            def _mean(vs):
+                return sum(vs) / len(vs) if vs else None
+
+            print(
+                f"{model:<32} {n_vals:>6d} "
+                f"{_fmt(_mean(vals_s_A)):>8} "
+                f"{_fmt(_mean(vals_s_B)):>8} "
+                f"{_fmt(_mean(vals_asym)):>8} "
+                f"{_fmt(_mean(vals_nasym)):>8} "
+                f"{_mean(vals_sig) or 0:>5.1%} "
+                f"{_mean(vals_bf) or 0:>5.1%}"
+            )
+
+
+def _write_overview_csv(
+    all_metrics: list[dict],
+    output_path: str,
+    nudge_types: list[str] | None = None,
+) -> None:
+    """Write cross-value overview to CSV."""
+    import csv as csv_mod
+
+    rows = []
+    for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
+        o = m["overall"]
+        base_row = {
+            "value": m["selected_value"],
+            "model": m["model"],
+            "n_dilemmas": m["n_dilemmas"],
+            "influence_type": "overall",
+            "baseline_p_value": o["baseline_p_value_side"],
+            "p_toward_value": o.get("p_val_toward_value"),
+            "p_toward_non_value": o.get("p_val_toward_non_value"),
+            "steerability_value": o["steerability_value"],
+            "steerability_non_value": o["steerability_non_value"],
+            "asymmetry": o["asymmetry"],
+            "normalized_asymmetry": o["normalized_asymmetry"],
+            "sig_rate": o["sig_rate"],
+            "backfire_rate": o["backfire_rate"],
+            "n_observations": o["n_observations"],
+        }
+        rows.append(base_row)
+
+        for inf_type, it in sorted(m["by_influence_type"].items()):
+            if nudge_types and inf_type not in nudge_types:
+                continue
+            rows.append(
+                {
+                    "value": m["selected_value"],
+                    "model": m["model"],
+                    "n_dilemmas": m["n_dilemmas"],
+                    "influence_type": inf_type,
+                    "baseline_p_value": o["baseline_p_value_side"],
+                    "p_toward_value": it.get("p_val_toward_value"),
+                    "p_toward_non_value": it.get("p_val_toward_non_value"),
+                    "steerability_value": it["steerability_value"],
+                    "steerability_non_value": it["steerability_non_value"],
+                    "asymmetry": it["asymmetry"],
+                    "normalized_asymmetry": it.get("normalized_asymmetry"),
+                    "sig_rate": it["sig_rate"],
+                    "backfire_rate": it["backfire_rate"],
+                    "n_observations": it["n_observations"],
+                }
+            )
+
+    fieldnames = [
+        "value",
+        "model",
+        "n_dilemmas",
+        "influence_type",
+        "baseline_p_value",
+        "p_toward_value",
+        "p_toward_non_value",
+        "steerability_value",
+        "steerability_non_value",
+        "asymmetry",
+        "normalized_asymmetry",
+        "sig_rate",
+        "backfire_rate",
+        "n_observations",
+    ]
+    with open(output_path, "w", newline="") as f:
+        writer = csv_mod.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
 def run_analysis(
     value: str,
     models: list[str] | None = None,
@@ -872,8 +1133,8 @@ async def main():
     parser.add_argument(
         "--value",
         type=str,
-        required=True,
-        help="Moral value to filter on (e.g. 'honesty')",
+        help="Moral value to filter on (e.g. 'honesty'). "
+        "Required except when using --overview.",
     )
     parser.add_argument("--model", type=str, help="Model key from config")
     parser.add_argument(
@@ -897,6 +1158,30 @@ async def main():
         help="Only compute and print metrics (no API calls)",
     )
     parser.add_argument(
+        "--overview",
+        action="store_true",
+        help="Print a cross-value overview table (reads from all value "
+        "result directories). Supports --model, --values, --nudge-types, "
+        "--only-primary, and --output filters.",
+    )
+    parser.add_argument(
+        "--values",
+        nargs="+",
+        help="List of values to include in the overview (default: all)",
+    )
+    parser.add_argument(
+        "--nudge-types",
+        nargs="+",
+        help="List of nudge/influence types to show in per-type breakdown "
+        "(default: all). E.g. --nudge-types user_preference emotional",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help="Write overview to a CSV file instead of printing",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print sample prompts without API calls",
@@ -913,6 +1198,22 @@ async def main():
         "entry in values_aggregated (analysis-time filter)",
     )
     args = parser.parse_args()
+
+    # --- Overview mode (no --value required) ---
+    if args.overview:
+        models = [args.model] if args.model else None
+        run_overview(
+            models=models,
+            values=args.values,
+            only_primary=args.only_primary,
+            nudge_types=args.nudge_types,
+            output=args.output,
+        )
+        return
+
+    # --- All other modes require --value ---
+    if not args.value:
+        parser.error("--value is required (unless using --overview)")
 
     config = load_experiment_config()
     selected_value = args.value.strip().lower()
