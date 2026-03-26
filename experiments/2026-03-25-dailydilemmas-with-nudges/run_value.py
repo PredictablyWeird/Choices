@@ -230,10 +230,25 @@ def build_prompts_for_condition(
 
                 if nudge_toward == "value":
                     value1, value2 = selected_value, other_value
+                    option_text = (
+                        dilemma.action_to_do
+                        if vd.value_is_to_do
+                        else dilemma.action_not_to_do
+                    )
                 else:
                     value1, value2 = other_value, selected_value
+                    option_text = (
+                        dilemma.action_not_to_do
+                        if vd.value_is_to_do
+                        else dilemma.action_to_do
+                    )
 
-                nudge_text = render_influence_text(influence_type, value1, value2)
+                nudge_text = render_influence_text(
+                    influence_type,
+                    value1,
+                    value2,
+                    option_text=option_text,
+                )
 
         info = build_prompt(
             dilemma=dilemma,
@@ -668,7 +683,7 @@ def analyze_model(value: str, model: str) -> dict | None:
         "n_dilemmas": len(baseline_by_id),
         "overall": {
             "baseline_p_value_side": baseline_p_value,
-            "baseline_sig": baseline_test["is_significant"],
+            "baseline_sig": bool(baseline_test["is_significant"]),
             "steerability_value": s_A,
             "steerability_non_value": s_B,
             "asymmetry": asym,

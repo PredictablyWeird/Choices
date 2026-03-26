@@ -155,6 +155,7 @@ def build_prompts_for_condition(
                         if dilemma.values_not_to_do
                         else "the second option"
                     )
+                    option_text = dilemma.action_to_do
                 else:
                     value1 = (
                         dilemma.values_not_to_do[0]
@@ -166,8 +167,14 @@ def build_prompts_for_condition(
                         if dilemma.values_to_do
                         else "the first option"
                     )
+                    option_text = dilemma.action_not_to_do
 
-                nudge_text = render_influence_text(influence_type, value1, value2)
+                nudge_text = render_influence_text(
+                    influence_type,
+                    value1,
+                    value2,
+                    option_text=option_text,
+                )
 
         info = build_prompt(
             dilemma=dilemma,
