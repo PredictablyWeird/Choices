@@ -634,11 +634,18 @@ def analyze_model(value: str, model: str) -> dict | None:
             c_B_B,
         )
 
+        p_val_toward_val = c_A_A / (c_A_A + c_A_B) if (c_A_A + c_A_B) > 0 else None
+        p_val_toward_non = c_B_A / (c_B_A + c_B_B) if (c_B_A + c_B_B) > 0 else None
+        sig_rate = backfire_sig_total / backfire_total if backfire_total else 0.0
+
         metrics_by_type[inf_type] = {
+            "p_val_toward_value": p_val_toward_val,
+            "p_val_toward_non_value": p_val_toward_non,
             "steerability_value": s_A,
             "steerability_non_value": s_B,
             "asymmetry": asym,
             "normalized_asymmetry": norm_asym,
+            "sig_rate": sig_rate,
             "backfire_rate": backfire_count / backfire_total if backfire_total else 0.0,
             "backfire_sig_rate": (
                 backfire_sig_count / backfire_sig_total if backfire_sig_total else 0.0
@@ -677,6 +684,16 @@ def analyze_model(value: str, model: str) -> dict | None:
         agg_c_B_B,
     )
 
+    agg_p_val_toward_val = (
+        agg_c_A_A / (agg_c_A_A + agg_c_A_B) if (agg_c_A_A + agg_c_A_B) > 0 else None
+    )
+    agg_p_val_toward_non = (
+        agg_c_B_A / (agg_c_B_A + agg_c_B_B) if (agg_c_B_A + agg_c_B_B) > 0 else None
+    )
+    agg_sig_rate = (
+        all_backfire_sig_total / all_backfire_total if all_backfire_total else 0.0
+    )
+
     return {
         "model": model,
         "selected_value": value,
@@ -684,10 +701,13 @@ def analyze_model(value: str, model: str) -> dict | None:
         "overall": {
             "baseline_p_value_side": baseline_p_value,
             "baseline_sig": bool(baseline_test["is_significant"]),
+            "p_val_toward_value": agg_p_val_toward_val,
+            "p_val_toward_non_value": agg_p_val_toward_non,
             "steerability_value": s_A,
             "steerability_non_value": s_B,
             "asymmetry": asym,
             "normalized_asymmetry": norm_asym,
+            "sig_rate": agg_sig_rate,
             "backfire_rate": (
                 all_backfire_count / all_backfire_total if all_backfire_total else 0.0
             ),
@@ -703,36 +723,40 @@ def analyze_model(value: str, model: str) -> dict | None:
     }
 
 
+def _fmt(v, fmt=".3f"):
+    return f"{v:{fmt}}" if v is not None else "  n/a"
+
+
 def print_analysis(all_metrics: list[dict]) -> None:
     value = all_metrics[0]["selected_value"] if all_metrics else "?"
 
-    print(f"\n{'='*80}")
+    print(f"\n{'='*96}")
     print(f'VALUE-BASED DAILYDILEMMAS RESULTS  —  value = "{value}"')
-    print(f"{'='*80}")
+    print(f"{'='*96}")
 
     # Overall table
     header = (
-        f"{'Model':<32} {'P(val)':<8} {'s(val)':>8} {'s(~val)':>8} "
-        f"{'Asym':>8} {'N-Asym':>8} {'BF%':>7} {'BF-sig%':>8} {'N':>6}"
+        f"{'Model':<32} {'P(val)':<8} {'P→val':<8} {'P→~val':<8} "
+        f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
+        f"{'Sig%':>6} {'BF%':>6} {'BF-s%':>6} {'N':>6}"
     )
     print(f"\n{header}")
     print("-" * len(header))
 
     for m in all_metrics:
         o = m["overall"]
-
-        def _f(v, fmt=".3f"):
-            return f"{v:{fmt}}" if v is not None else "  n/a"
-
         print(
             f"{m['model']:<32} "
             f"{o['baseline_p_value_side']:<8.3f} "
-            f"{_f(o['steerability_value']):>8} "
-            f"{_f(o['steerability_non_value']):>8} "
-            f"{_f(o['asymmetry']):>8} "
-            f"{_f(o['normalized_asymmetry']):>8} "
-            f"{o['backfire_rate']:>6.1%} "
-            f"{o['backfire_sig_rate']:>7.1%} "
+            f"{_fmt(o['p_val_toward_value']):<8} "
+            f"{_fmt(o['p_val_toward_non_value']):<8} "
+            f"{_fmt(o['steerability_value']):>8} "
+            f"{_fmt(o['steerability_non_value']):>8} "
+            f"{_fmt(o['asymmetry']):>8} "
+            f"{_fmt(o['normalized_asymmetry']):>8} "
+            f"{o['sig_rate']:>5.1%} "
+            f"{o['backfire_rate']:>5.1%} "
+            f"{o['backfire_sig_rate']:>5.1%} "
             f"{o['n_observations']:>6d}"
         )
 
@@ -744,8 +768,9 @@ def print_analysis(all_metrics: list[dict]) -> None:
     for inf_type in sorted(inf_types):
         print(f"\n--- {inf_type} ---")
         sub_header = (
-            f"{'Model':<32} {'s(val)':>8} {'s(~val)':>8} "
-            f"{'Asym':>8} {'BF%':>7} {'BF-sig%':>8} {'N':>6}"
+            f"{'Model':<32} {'P→val':<8} {'P→~val':<8} "
+            f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
+            f"{'Sig%':>6} {'BF%':>6} {'BF-s%':>6} {'N':>6}"
         )
         print(sub_header)
         print("-" * len(sub_header))
@@ -753,17 +778,16 @@ def print_analysis(all_metrics: list[dict]) -> None:
             it = m["by_influence_type"].get(inf_type)
             if it is None:
                 continue
-
-            def _f(v, fmt=".3f"):
-                return f"{v:{fmt}}" if v is not None else "  n/a"
-
             print(
                 f"{m['model']:<32} "
-                f"{_f(it['steerability_value']):>8} "
-                f"{_f(it['steerability_non_value']):>8} "
-                f"{_f(it['asymmetry']):>8} "
-                f"{it['backfire_rate']:>6.1%} "
-                f"{it['backfire_sig_rate']:>7.1%} "
+                f"{_fmt(it['p_val_toward_value']):<8} "
+                f"{_fmt(it['p_val_toward_non_value']):<8} "
+                f"{_fmt(it['steerability_value']):>8} "
+                f"{_fmt(it['steerability_non_value']):>8} "
+                f"{_fmt(it['asymmetry']):>8} "
+                f"{it['sig_rate']:>5.1%} "
+                f"{it['backfire_rate']:>5.1%} "
+                f"{it['backfire_sig_rate']:>5.1%} "
                 f"{it['n_observations']:>6d}"
             )
 
