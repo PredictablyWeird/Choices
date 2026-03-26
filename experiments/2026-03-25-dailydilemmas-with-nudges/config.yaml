@@ -8,9 +8,12 @@ models:
   - llama-33-70b
 
 influence_types:
-  - few_shot
+  - few_shot_action
+  - few_shot_value
   - survey
   - social_norm
+  - emotional
+  - user_preference
 
 # Responses per dilemma per condition
 k_per_dilemma: 10

@@ -65,7 +65,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dataset import load_dilemmas, Dilemma
 from influence_templates import (
     INFLUENCE_TYPES,
-    generate_few_shot_examples,
+    generate_few_shot_action_examples,
+    generate_few_shot_value_examples,
     render_influence_text,
 )
 from prompts import build_prompt, DilemmaPromptInfo
@@ -199,9 +200,18 @@ def build_prompts_for_condition(
 
             target_action = _resolve_target_action(nudge_toward, vd.value_is_to_do)
 
-            if influence_type == "few_shot":
-                nudge_text = generate_few_shot_examples(
+            if influence_type == "few_shot_action":
+                nudge_text = generate_few_shot_action_examples(
                     target_action=target_action,
+                    current_dilemma_id=dilemma.id,
+                    dilemmas=all_dilemmas,
+                    n_examples=config.get("n_few_shot_examples", 3),
+                    seed=seed,
+                )
+            elif influence_type == "few_shot_value":
+                nudge_text = generate_few_shot_value_examples(
+                    target_value=selected_value,
+                    favor_value_side=(nudge_toward == "value"),
                     current_dilemma_id=dilemma.id,
                     dilemmas=all_dilemmas,
                     n_examples=config.get("n_few_shot_examples", 3),
