@@ -796,6 +796,16 @@ def _abs(v):
     return abs(v) if v is not None else None
 
 
+def _safe_mean_of(dicts: list[dict], key: str):
+    vals = [d[key] for d in dicts if d.get(key) is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
+def _safe_mean_abs_of(dicts: list[dict], key: str):
+    vals = [abs(d[key]) for d in dicts if d.get(key) is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
 def print_analysis(all_metrics: list[dict]) -> None:
     value = all_metrics[0]["selected_value"] if all_metrics else "?"
 
@@ -829,6 +839,25 @@ def print_analysis(all_metrics: list[dict]) -> None:
             f"{o['n_observations']:>6d}"
         )
 
+    if len(all_metrics) > 1:
+        overalls = [m["overall"] for m in all_metrics]
+        n_total = sum(o.get("n_observations", 0) for o in overalls)
+        print("-" * len(header))
+        print(
+            f"{'  across models':<32} "
+            f"{_safe_mean_of(overalls, 'baseline_p_value_side') or 0:<8.3f} "
+            f"{_fmt(_safe_mean_of(overalls, 'p_val_toward_value')):<8} "
+            f"{_fmt(_safe_mean_of(overalls, 'p_val_toward_non_value')):<8} "
+            f"{_fmt(_safe_mean_of(overalls, 'steerability_value')):>8} "
+            f"{_fmt(_safe_mean_of(overalls, 'steerability_non_value')):>8} "
+            f"{_fmt(_safe_mean_of(overalls, 'asymmetry')):>8} "
+            f"{_fmt(_safe_mean_of(overalls, 'normalized_asymmetry')):>8} "
+            f"{_safe_mean_of(overalls, 'sig_rate') or 0:>5.1%} "
+            f"{_safe_mean_of(overalls, 'backfire_rate') or 0:>5.1%} "
+            f"{_safe_mean_of(overalls, 'backfire_sig_rate') or 0:>5.1%} "
+            f"{n_total:>6d}"
+        )
+
     # Per influence type
     inf_types: set[str] = set()
     for m in all_metrics:
@@ -843,6 +872,7 @@ def print_analysis(all_metrics: list[dict]) -> None:
         )
         print(sub_header)
         print("-" * len(sub_header))
+        type_rows: list[dict] = []
         for m in all_metrics:
             it = m["by_influence_type"].get(inf_type)
             if it is None:
@@ -858,6 +888,22 @@ def print_analysis(all_metrics: list[dict]) -> None:
                 f"{it['backfire_rate']:>5.1%} "
                 f"{it['backfire_sig_rate']:>5.1%} "
                 f"{it['n_observations']:>6d}"
+            )
+            type_rows.append(it)
+        if len(type_rows) > 1:
+            n_total = sum(r.get("n_observations", 0) for r in type_rows)
+            print("-" * len(sub_header))
+            print(
+                f"{'  across models':<32} "
+                f"{_fmt(_safe_mean_of(type_rows, 'p_val_toward_value')):<8} "
+                f"{_fmt(_safe_mean_of(type_rows, 'p_val_toward_non_value')):<8} "
+                f"{_fmt(_safe_mean_of(type_rows, 'steerability_value')):>8} "
+                f"{_fmt(_safe_mean_of(type_rows, 'steerability_non_value')):>8} "
+                f"{_fmt(_safe_mean_of(type_rows, 'asymmetry')):>8} "
+                f"{_safe_mean_of(type_rows, 'sig_rate') or 0:>5.1%} "
+                f"{_safe_mean_of(type_rows, 'backfire_rate') or 0:>5.1%} "
+                f"{_safe_mean_of(type_rows, 'backfire_sig_rate') or 0:>5.1%} "
+                f"{n_total:>6d}"
             )
 
 
@@ -917,6 +963,31 @@ def run_overview(
         print_overview(all_metrics, nudge_types)
 
 
+def _print_overview_across_models_row(
+    value: str,
+    overalls: list[dict],
+    header_len: int,
+) -> None:
+    """Print an 'across models' row in the overview overall table."""
+    n_total = sum(o.get("n_observations", 0) for o in overalls)
+    print(
+        f"{value:<14} "
+        f"{'  across models':<32} "
+        f"{'':>4} "
+        f"{_safe_mean_of(overalls, 'baseline_p_value_side') or 0:<8.3f} "
+        f"{_fmt(_safe_mean_of(overalls, 'steerability_value')):>8} "
+        f"{_fmt(_safe_mean_of(overalls, 'steerability_non_value')):>8} "
+        f"{_fmt(_safe_mean_abs_of(overalls, 'steerability_value')):>8} "
+        f"{_fmt(_safe_mean_abs_of(overalls, 'steerability_non_value')):>8} "
+        f"{_fmt(_safe_mean_of(overalls, 'asymmetry')):>8} "
+        f"{_fmt(_safe_mean_of(overalls, 'normalized_asymmetry')):>8} "
+        f"{_safe_mean_of(overalls, 'sig_rate') or 0:>5.1%} "
+        f"{_safe_mean_of(overalls, 'backfire_rate') or 0:>5.1%} "
+        f"{n_total:>6d}"
+    )
+    print("-" * header_len)
+
+
 def _print_nudge_overall_row(
     model: str,
     rows: list[dict],
@@ -968,7 +1039,21 @@ def print_overview(
     print(f"\n{header}")
     print("-" * len(header))
 
-    for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
+    sorted_m = sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"]))
+    current_value = None
+    value_overalls: list[dict] = []
+    for m in sorted_m:
+        if (
+            current_value is not None
+            and m["selected_value"] != current_value
+            and len(value_overalls) > 1
+        ):
+            _print_overview_across_models_row(
+                current_value, value_overalls, len(header)
+            )
+        if m["selected_value"] != current_value:
+            value_overalls = []
+            current_value = m["selected_value"]
         o = m["overall"]
         print(
             f"{m['selected_value']:<14} "
@@ -985,6 +1070,9 @@ def print_overview(
             f"{o['backfire_rate']:>5.1%} "
             f"{o['n_observations']:>6d}"
         )
+        value_overalls.append(o)
+    if current_value is not None and len(value_overalls) > 1:
+        _print_overview_across_models_row(current_value, value_overalls, len(header))
 
     # Per influence type tables
     inf_types: set[str] = set()
@@ -1011,12 +1099,14 @@ def print_overview(
         )
         current_model = None
         model_rows: list[dict] = []
+        all_model_overall_rows: list[dict] = []
         for m in sorted_metrics:
             it = m["by_influence_type"].get(inf_type)
             if it is None:
                 continue
             if current_model is not None and m["model"] != current_model and model_rows:
                 _print_nudge_overall_row(current_model, model_rows, len(sub_header))
+                all_model_overall_rows.extend(model_rows)
                 model_rows = []
             current_model = m["model"]
             print(
@@ -1034,6 +1124,31 @@ def print_overview(
             model_rows.append(it)
         if current_model is not None and model_rows:
             _print_nudge_overall_row(current_model, model_rows, len(sub_header))
+            all_model_overall_rows.extend(model_rows)
+        if (
+            len(
+                {
+                    m["model"]
+                    for m in sorted_metrics
+                    if m["by_influence_type"].get(inf_type)
+                }
+            )
+            > 1
+        ):
+            n_total = sum(r.get("n_observations", 0) for r in all_model_overall_rows)
+            print(
+                f"{'  across models':<14} "
+                f"{'':<32} "
+                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'steerability_value')):>8} "
+                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'steerability_non_value')):>8} "
+                f"{_fmt(_safe_mean_abs_of(all_model_overall_rows, 'steerability_value')):>8} "
+                f"{_fmt(_safe_mean_abs_of(all_model_overall_rows, 'steerability_non_value')):>8} "
+                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'asymmetry')):>8} "
+                f"{_safe_mean_of(all_model_overall_rows, 'sig_rate') or 0:>5.1%} "
+                f"{_safe_mean_of(all_model_overall_rows, 'backfire_rate') or 0:>5.1%} "
+                f"{n_total:>6d}"
+            )
+            print("=" * len(sub_header))
 
     # Summary across values (averaged per model)
     model_names = sorted({m["model"] for m in all_metrics})
@@ -1089,6 +1204,22 @@ def print_overview(
                 f"{_fmt(_mean(vals_nasym)):>8} "
                 f"{_mean(vals_sig) or 0:>5.1%} "
                 f"{_mean(vals_bf) or 0:>5.1%}"
+            )
+
+        if len(model_names) > 1:
+            all_overalls = [m["overall"] for m in all_metrics]
+            n_vals_total = len(all_metrics)
+            print("-" * len(avg_header))
+            print(
+                f"{'  across models':<32} {n_vals_total:>6d} "
+                f"{_fmt(_safe_mean_of(all_overalls, 'steerability_value')):>8} "
+                f"{_fmt(_safe_mean_of(all_overalls, 'steerability_non_value')):>8} "
+                f"{_fmt(_safe_mean_abs_of(all_overalls, 'steerability_value')):>8} "
+                f"{_fmt(_safe_mean_abs_of(all_overalls, 'steerability_non_value')):>8} "
+                f"{_fmt(_safe_mean_of(all_overalls, 'asymmetry')):>8} "
+                f"{_fmt(_safe_mean_of(all_overalls, 'normalized_asymmetry')):>8} "
+                f"{_safe_mean_of(all_overalls, 'sig_rate') or 0:>5.1%} "
+                f"{_safe_mean_of(all_overalls, 'backfire_rate') or 0:>5.1%}"
             )
 
 
