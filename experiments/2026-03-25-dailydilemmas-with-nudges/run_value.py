@@ -913,6 +913,31 @@ def run_overview(
         print_overview(all_metrics, nudge_types)
 
 
+def _print_nudge_overall_row(
+    model: str,
+    rows: list[dict],
+    header_len: int,
+) -> None:
+    """Print an 'overall' summary row averaging across values for one model."""
+
+    def _safe_mean(key):
+        vals = [r[key] for r in rows if r.get(key) is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    n_total = sum(r.get("n_observations", 0) for r in rows)
+    print(
+        f"{'  overall':<14} "
+        f"{model:<32} "
+        f"{_fmt(_safe_mean('steerability_value')):>8} "
+        f"{_fmt(_safe_mean('steerability_non_value')):>8} "
+        f"{_fmt(_safe_mean('asymmetry')):>8} "
+        f"{_safe_mean('sig_rate') or 0:>5.1%} "
+        f"{_safe_mean('backfire_rate') or 0:>5.1%} "
+        f"{n_total:>6d}"
+    )
+    print("-" * header_len)
+
+
 def print_overview(
     all_metrics: list[dict],
     nudge_types: list[str] | None = None,
@@ -966,10 +991,20 @@ def print_overview(
         )
         print(sub_header)
         print("-" * len(sub_header))
-        for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
+
+        sorted_metrics = sorted(
+            all_metrics, key=lambda x: (x["model"], x["selected_value"])
+        )
+        current_model = None
+        model_rows: list[dict] = []
+        for m in sorted_metrics:
             it = m["by_influence_type"].get(inf_type)
             if it is None:
                 continue
+            if current_model is not None and m["model"] != current_model and model_rows:
+                _print_nudge_overall_row(current_model, model_rows, len(sub_header))
+                model_rows = []
+            current_model = m["model"]
             print(
                 f"{m['selected_value']:<14} "
                 f"{m['model']:<32} "
@@ -980,6 +1015,9 @@ def print_overview(
                 f"{it['backfire_rate']:>5.1%} "
                 f"{it['n_observations']:>6d}"
             )
+            model_rows.append(it)
+        if current_model is not None and model_rows:
+            _print_nudge_overall_row(current_model, model_rows, len(sub_header))
 
     # Summary across values (averaged per model)
     model_names = sorted({m["model"] for m in all_metrics})
