@@ -61,6 +61,8 @@ import yaml
 from choices.utils import (
     create_agent,
     generate_responses,
+    load_config,
+    model_has_active_reasoning,
     parse_responses_forced_choice,
 )
 from choices import ReasoningMode
@@ -361,12 +363,17 @@ async def run_condition(
             print(f"  Prompt:\n{info.prompt_text}")
         return None
 
-    agent = create_agent(
-        model_key=model,
-        temperature=config.get("temperature", 0.7),
-        max_tokens=config.get("max_tokens", 16),
-        concurrency_limit=max_concurrent,
+    uses_reasoning = model_has_active_reasoning(model)
+    agent_config_key = "default_with_reasoning" if uses_reasoning else "default"
+    agent_config_path = str(
+        Path(__file__).resolve().parent.parent.parent
+        / "choices"
+        / "config"
+        / "create_agent.yaml"
     )
+    agent_config = load_config(agent_config_path, agent_config_key)
+    agent_config["concurrency_limit"] = max_concurrent
+    agent = create_agent(model_key=model, **agent_config)
 
     system_message = prompt_infos[0].system_prompt
     prompts = [info.prompt_text for info in prompt_infos]
@@ -384,10 +391,12 @@ async def run_condition(
         max_retries=2,
     )
 
-    parsed_responses, _, _ = parse_responses_forced_choice(
-        responses_by_prompt,
-        choices=["A", "B"],
-        verbose=True,
+    parsed_responses, reasoning_results, reasoning_summaries = (
+        parse_responses_forced_choice(
+            responses_by_prompt,
+            choices=["A", "B"],
+            verbose=True,
+        )
     )
 
     results: list[DilemmaResult] = []
@@ -421,6 +430,17 @@ async def run_condition(
     for r in results:
         all_results_by_id[r.dilemma_id] = asdict(r)
 
+    # Collect reasoning traces keyed by dilemma_id
+    all_reasoning: dict[int, list] = {}
+    all_reasoning_summaries: dict[int, list] = {}
+    for prompt_idx, info in enumerate(prompt_infos):
+        traces = reasoning_results.get(prompt_idx, [])
+        summaries = reasoning_summaries.get(prompt_idx, [])
+        if traces:
+            all_reasoning[info.dilemma_id] = traces
+        if summaries:
+            all_reasoning_summaries[info.dilemma_id] = summaries
+
     save_dir.mkdir(parents=True, exist_ok=True)
     output = {
         "model": model,
@@ -435,6 +455,12 @@ async def run_condition(
         },
         "results": list(all_results_by_id.values()),
     }
+    if all_reasoning:
+        output["reasoning"] = {str(k): v for k, v in all_reasoning.items()}
+    if all_reasoning_summaries:
+        output["reasoning_summaries"] = {
+            str(k): v for k, v in all_reasoning_summaries.items()
+        }
     with open(results_path, "w") as f:
         json.dump(output, f, indent=2)
     n_new = len(results)
