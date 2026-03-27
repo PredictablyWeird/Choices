@@ -792,6 +792,10 @@ def _fmt(v, fmt=".3f"):
     return f"{v:{fmt}}" if v is not None else "  n/a"
 
 
+def _abs(v):
+    return abs(v) if v is not None else None
+
+
 def print_analysis(all_metrics: list[dict]) -> None:
     value = all_metrics[0]["selected_value"] if all_metrics else "?"
 
@@ -924,12 +928,18 @@ def _print_nudge_overall_row(
         vals = [r[key] for r in rows if r.get(key) is not None]
         return sum(vals) / len(vals) if vals else None
 
+    def _safe_mean_abs(key):
+        vals = [abs(r[key]) for r in rows if r.get(key) is not None]
+        return sum(vals) / len(vals) if vals else None
+
     n_total = sum(r.get("n_observations", 0) for r in rows)
     print(
         f"{'  overall':<14} "
         f"{model:<32} "
         f"{_fmt(_safe_mean('steerability_value')):>8} "
         f"{_fmt(_safe_mean('steerability_non_value')):>8} "
+        f"{_fmt(_safe_mean_abs('steerability_value')):>8} "
+        f"{_fmt(_safe_mean_abs('steerability_non_value')):>8} "
         f"{_fmt(_safe_mean('asymmetry')):>8} "
         f"{_safe_mean('sig_rate') or 0:>5.1%} "
         f"{_safe_mean('backfire_rate') or 0:>5.1%} "
@@ -951,7 +961,8 @@ def print_overview(
     # Overall table
     header = (
         f"{'Value':<14} {'Model':<32} {'n':>4} {'P(val)':<8} "
-        f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
+        f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
+        f"{'Asym':>8} {'N-Asym':>8} "
         f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
     )
     print(f"\n{header}")
@@ -966,6 +977,8 @@ def print_overview(
             f"{o['baseline_p_value_side']:<8.3f} "
             f"{_fmt(o['steerability_value']):>8} "
             f"{_fmt(o['steerability_non_value']):>8} "
+            f"{_fmt(_abs(o['steerability_value'])):>8} "
+            f"{_fmt(_abs(o['steerability_non_value'])):>8} "
             f"{_fmt(o['asymmetry']):>8} "
             f"{_fmt(o['normalized_asymmetry']):>8} "
             f"{o['sig_rate']:>5.1%} "
@@ -986,7 +999,8 @@ def print_overview(
         print(f"\n--- {inf_type} ---")
         sub_header = (
             f"{'Value':<14} {'Model':<32} "
-            f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
+            f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
+            f"{'Asym':>8} "
             f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
         )
         print(sub_header)
@@ -1010,6 +1024,8 @@ def print_overview(
                 f"{m['model']:<32} "
                 f"{_fmt(it['steerability_value']):>8} "
                 f"{_fmt(it['steerability_non_value']):>8} "
+                f"{_fmt(_abs(it['steerability_value'])):>8} "
+                f"{_fmt(_abs(it['steerability_non_value'])):>8} "
                 f"{_fmt(it['asymmetry']):>8} "
                 f"{it['sig_rate']:>5.1%} "
                 f"{it['backfire_rate']:>5.1%} "
@@ -1025,7 +1041,8 @@ def print_overview(
         print("\n--- Average across values (per model) ---")
         avg_header = (
             f"{'Model':<32} {'n_vals':>6} "
-            f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
+            f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
+            f"{'Asym':>8} {'N-Asym':>8} "
             f"{'Sig%':>6} {'BF%':>6}"
         )
         print(avg_header)
@@ -1059,10 +1076,15 @@ def print_overview(
             def _mean(vs):
                 return sum(vs) / len(vs) if vs else None
 
+            def _mean_abs(vs):
+                return sum(abs(v) for v in vs) / len(vs) if vs else None
+
             print(
                 f"{model:<32} {n_vals:>6d} "
                 f"{_fmt(_mean(vals_s_A)):>8} "
                 f"{_fmt(_mean(vals_s_B)):>8} "
+                f"{_fmt(_mean_abs(vals_s_A)):>8} "
+                f"{_fmt(_mean_abs(vals_s_B)):>8} "
                 f"{_fmt(_mean(vals_asym)):>8} "
                 f"{_fmt(_mean(vals_nasym)):>8} "
                 f"{_mean(vals_sig) or 0:>5.1%} "
