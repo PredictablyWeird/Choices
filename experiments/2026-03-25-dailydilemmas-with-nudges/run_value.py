@@ -1221,7 +1221,7 @@ async def main():
         "--only-primary",
         action="store_true",
         help="Only include dilemmas where the selected value is the first "
-        "entry in values_aggregated (analysis-time filter)",
+        "entry in values_aggregated (applies to both running and analysis)",
     )
     args = parser.parse_args()
 
@@ -1250,7 +1250,11 @@ async def main():
         return
 
     all_dilemmas = load_dilemmas()
-    vdilemmas = filter_dilemmas_by_value(all_dilemmas, selected_value)
+    vdilemmas = filter_dilemmas_by_value(
+        all_dilemmas,
+        selected_value,
+        only_primary=args.only_primary,
+    )
 
     if not vdilemmas:
         print(f"No dilemmas found with value '{selected_value}' on exactly one side.")
