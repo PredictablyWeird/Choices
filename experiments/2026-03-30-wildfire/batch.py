@@ -36,7 +36,7 @@ from choices.experiments.simple_rates import MAX_REQUESTS
 from choices.experiments.nudging.templates import NUDGE_TEMPLATES
 
 # Import from the sibling run module
-from run import WILDFIRE_FACTORS, run_wildfire_experiments
+from run import WILDFIRE_FACTORS, WILDFIRE_N_VALUES, run_wildfire_experiments
 
 app = typer.Typer(help="Batch runner for wildfire evacuation nudging experiments")
 
@@ -52,7 +52,7 @@ class WildfireBatchConfig:
     )
     max_requests: int = MAX_REQUESTS
     requests_per_edge: int = 4
-    n_values: str = "paper"
+    n_values: Optional[list[int]] = None
     reasoning: str = "none"
     seed: int = 42
     max_retries: int = 10
@@ -75,7 +75,7 @@ class WildfireBatchConfig:
             ),
             max_requests=settings.get("max_requests", MAX_REQUESTS),
             requests_per_edge=settings.get("requests_per_edge", 4),
-            n_values=settings.get("n_values", "paper"),
+            n_values=settings.get("n_values"),
             reasoning=settings.get("reasoning", "none"),
             seed=settings.get("seed", 42),
             max_retries=settings.get("max_retries", 10),
@@ -106,11 +106,6 @@ class WildfireBatchConfig:
                 errors.append(
                     f"Unknown nudge: {nudge}. Available: {list(NUDGE_TEMPLATES.keys())} + few_shot_N"
                 )
-
-        if self.n_values not in ["binary", "small", "paper", "original"]:
-            errors.append(
-                f"Unknown n_values: {self.n_values}. Available: binary, small, paper, original"
-            )
 
         if self.reasoning not in ["none", "before", "after"]:
             errors.append(
@@ -208,7 +203,8 @@ def print_experiment_plan(config: WildfireBatchConfig, experiments: list[dict]) 
     print("\nSettings:")
     print(f"  max_requests: {config.max_requests}")
     print(f"  requests_per_edge: {config.requests_per_edge}")
-    print(f"  n_values: {config.n_values}")
+    effective_n = config.n_values if config.n_values is not None else WILDFIRE_N_VALUES
+    print(f"  n_values: {effective_n}")
     print(f"  reasoning: {config.reasoning}")
     print(f"  seed: {config.seed}")
     print(f"  save_dir: {config.save_dir}")
@@ -349,7 +345,7 @@ nudges:
 settings:
   max_requests: 20       # API requests per experiment condition (use {MAX_REQUESTS} for real runs)
   requests_per_edge: 4   # Repeats per comparison
-  n_values: paper        # Options: binary, small, paper, original (paper = 1-10)
+  # n_values: [10, 20, 30, 40, 50]  # Custom N values (default: 10,20,...,100)
   reasoning: none        # Options: none, before, after
   seed: 42
   max_retries: 10
@@ -385,7 +381,8 @@ def run(
         Optional[int], typer.Option(help="Requests per edge")
     ] = None,
     n_values: Annotated[
-        Optional[str], typer.Option(help="N values: binary, small, paper, original")
+        Optional[str],
+        typer.Option(help="Comma-separated N values (default: 10,20,...,100)"),
     ] = None,
     reasoning: Annotated[
         Optional[str], typer.Option(help="Reasoning mode: none, before, after")
@@ -433,7 +430,7 @@ def run(
     if requests_per_edge is not None:
         batch_config.requests_per_edge = requests_per_edge
     if n_values:
-        batch_config.n_values = n_values
+        batch_config.n_values = [int(x.strip()) for x in n_values.split(",")]
     if reasoning:
         batch_config.reasoning = reasoning
     if seed is not None:
