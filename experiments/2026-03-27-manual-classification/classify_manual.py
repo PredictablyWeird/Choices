@@ -479,6 +479,52 @@ def show_stats(data: list[dict], judgements: dict[int, dict]) -> None:
         for (h, llm_cat), count in disagree_patterns.most_common(20):
             print(f"{h:<35s} {llm_cat:<35s} {count:>4d}")
 
+    # Label density
+    human_mean = sum(len(hj["human_categories"]) for hj in judgements.values()) / total
+    llm_mean = (
+        sum(
+            len(map_llm_to_categories(trace_lookup[tid]))
+            for tid in judgements
+            if tid in trace_lookup
+        )
+        / total
+    )
+    print(f"\nMean labels/trace — Human: {human_mean:.1f}, LLM: {llm_mean:.1f}")
+
+    # Confidence breakdown
+    confident = sum(1 for hj in judgements.values() if hj.get("confident", True))
+    print(f"Confident: {confident}/{total} ({100*confident/total:.0f}%)")
+
+    # Category distributions side-by-side
+    human_cats: Counter = Counter()
+    llm_cats: Counter = Counter()
+    for tid, hj in judgements.items():
+        entry = trace_lookup.get(tid)
+        if entry is None:
+            continue
+        for c in hj["human_categories"]:
+            human_cats[c] += 1
+        for c in map_llm_to_categories(entry):
+            llm_cats[c] += 1
+    all_dist_cats = sorted(set(human_cats) | set(llm_cats))
+    print(f"\n{'Category':<22s} {'Human':>6s} {'LLM':>6s} {'Diff':>6s}")
+    print("-" * 44)
+    for cat in all_dist_cats:
+        h_n, l_n = human_cats[cat], llm_cats[cat]
+        print(f"{cat:<22s} {h_n:>6d} {l_n:>6d} {l_n - h_n:>+6d}")
+
+    # Coverage by model and factor
+    models: Counter = Counter()
+    factors: Counter = Counter()
+    for tid in judgements:
+        entry = trace_lookup.get(tid)
+        if entry is None:
+            continue
+        models[entry["model"]] += 1
+        factors[entry["factor"]] += 1
+    print(f"\nModels:  {dict(models.most_common())}")
+    print(f"Factors: {dict(factors.most_common())}")
+
 
 def main() -> None:
     data = load_data()
