@@ -459,26 +459,6 @@ def show_stats(data: list[dict], judgements: dict[int, dict]) -> None:
             f"{cat:<22s} {t:>4d} {f_p:>4d} {f_n:>4d} {prec:>6.1%} {rec:>6.1%} {f1:>6.1%}"
         )
 
-    # Show disagreements summary
-    disagree_patterns: Counter = Counter()
-    for tid, hj in judgements.items():
-        entry = trace_lookup.get(tid)
-        if entry is None:
-            continue
-        human_set = set(hj["human_categories"])
-        llm_set = map_llm_to_categories(entry)
-        if human_set != llm_set:
-            h_str = "+".join(sorted(human_set))
-            l_str = "+".join(sorted(llm_set))
-            disagree_patterns[(h_str, l_str)] += 1
-
-    if disagree_patterns:
-        print("\nTop disagreement patterns (human -> LLM):")
-        print(f"{'Human':<35s} {'LLM':<35s} {'N':>4s}")
-        print("-" * 78)
-        for (h, llm_cat), count in disagree_patterns.most_common(20):
-            print(f"{h:<35s} {llm_cat:<35s} {count:>4d}")
-
     # Label density
     human_mean = sum(len(hj["human_categories"]) for hj in judgements.values()) / total
     llm_mean = (
