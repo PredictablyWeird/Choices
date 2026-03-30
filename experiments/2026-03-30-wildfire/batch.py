@@ -36,7 +36,12 @@ from choices.experiments.simple_rates import MAX_REQUESTS
 from choices.experiments.nudging.templates import NUDGE_TEMPLATES
 
 # Import from the sibling run module
-from run import WILDFIRE_FACTORS, WILDFIRE_N_VALUES, run_wildfire_experiments
+from run import (
+    WILDFIRE_FACTORS,
+    WILDFIRE_N_VALUES,
+    WILDFIRE_NUDGE_TEMPLATES,
+    run_wildfire_experiments,
+)
 
 app = typer.Typer(help="Batch runner for wildfire evacuation nudging experiments")
 
@@ -94,17 +99,20 @@ class WildfireBatchConfig:
                     f"Unknown factor: {factor}. Available: {list(WILDFIRE_FACTORS.keys())}"
                 )
 
-        valid_nudges = set(NUDGE_TEMPLATES.keys()) | {
-            "few_shot",
-            "few_shot_3",
-            "few_shot_5",
-        }
+        valid_nudges = (
+            set(NUDGE_TEMPLATES.keys())
+            | set(WILDFIRE_NUDGE_TEMPLATES.keys())
+            | {"few_shot", "few_shot_3", "few_shot_5"}
+        )
         for nudge in self.nudges:
             if nudge.startswith("few_shot_"):
                 continue
             if nudge not in valid_nudges:
+                all_names = list(NUDGE_TEMPLATES.keys()) + list(
+                    WILDFIRE_NUDGE_TEMPLATES.keys()
+                )
                 errors.append(
-                    f"Unknown nudge: {nudge}. Available: {list(NUDGE_TEMPLATES.keys())} + few_shot_N"
+                    f"Unknown nudge: {nudge}. Available: {all_names} + few_shot_N"
                 )
 
         if self.reasoning not in ["none", "before", "after"]:
@@ -154,7 +162,7 @@ def experiment_is_complete(
     save_dir: str, factor_key: str, model: str, nudge: str
 ) -> bool:
     """Check if an experiment already has results for all conditions."""
-    exp_dir = os.path.join(save_dir, f"wildfire_{factor_key}", model, nudge)
+    exp_dir = os.path.join(save_dir, f"simple_wildfire_{factor_key}", model, nudge)
     if not os.path.isdir(exp_dir):
         return False
 
