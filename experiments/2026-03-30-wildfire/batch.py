@@ -17,6 +17,9 @@ Usage:
 
     # Generate sample config
     uv run python experiments/2026-03-30-wildfire/batch.py generate-config > my_config.yaml
+
+You can analyze results using the summary script from the main experiments:
+`uv run python choices/analysis/create_summary.py --results-dirs results`
 """
 
 import asyncio
