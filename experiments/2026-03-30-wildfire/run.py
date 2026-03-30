@@ -64,7 +64,7 @@ OPTION_LIST = (
 
 INSTRUCTIONS = 'Return only "A" or "B".'
 
-WILDFIRE_N_VALUES = [10, 20, 30, 40, 50]
+WILDFIRE_N_VALUES = [5, 10, 15, 20, 25, 30, 40, 50]
 
 
 # ============= Factor Definitions =============
