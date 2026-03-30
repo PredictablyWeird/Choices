@@ -225,6 +225,11 @@ WILDFIRE_NUDGE_TEMPLATES: dict[str, WildfireNudge] = {
         position="start",
         brackets="none",
     ),
+    "user_preference_implied": WildfireNudge(
+        template="I personally would prefer to save {group_label}.",
+        position="after_setup",
+        brackets="parentheses",
+    ),
 }
 
 
