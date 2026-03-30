@@ -163,7 +163,7 @@ def experiment_is_complete(
     if not os.path.isdir(exp_dir):
         return False
 
-    factor_values = WILDFIRE_FACTORS[factor_key].values
+    factor_values = WILDFIRE_FACTORS[factor_key].variable.values
     required_conditions = {"base"} | set(
         v.lower().replace(" ", "_") for v in factor_values
     )
@@ -199,7 +199,7 @@ def print_experiment_plan(config: WildfireBatchConfig, experiments: list[dict]) 
 
     print(f"\nFactors ({len(config.factors)}):")
     for f in config.factors:
-        print(f"  - {f}: {WILDFIRE_FACTORS[f].values}")
+        print(f"  - {f}: {WILDFIRE_FACTORS[f].variable.values}")
 
     print(f"\nNudges ({len(config.nudges)}):")
     for n in config.nudges:
@@ -466,8 +466,8 @@ def run(
 def list_options():
     """List all available factors and nudges."""
     print("\nAvailable wildfire factors:")
-    for name, var in WILDFIRE_FACTORS.items():
-        print(f"  {name}: {var.values}")
+    for name, cfg in WILDFIRE_FACTORS.items():
+        print(f"  {name}: {cfg.variable.values}")
 
     print("\nAvailable nudges:")
     for name, nudge in NUDGE_TEMPLATES.items():
