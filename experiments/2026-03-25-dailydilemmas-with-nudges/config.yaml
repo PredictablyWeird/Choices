@@ -16,7 +16,7 @@ influence_types:
   - user_preference
 
 # Responses per dilemma per condition
-k_per_dilemma: 8
+k_per_dilemma: 3
 
 # Few-shot example count
 n_few_shot_examples: 3

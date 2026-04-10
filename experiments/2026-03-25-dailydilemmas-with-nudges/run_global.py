@@ -1571,10 +1571,10 @@ async def main():
     parser.add_argument(
         "--occurrence-threshold",
         type=int,
-        default=10,
+        default=20,
         help="Minimum number of occurrences for a primary value to be kept. "
         "Dilemmas with a primary value that appears fewer than this many "
-        "times are iteratively removed until convergence (default: 10).",
+        "times are iteratively removed until convergence (default: 20).",
     )
     parser.add_argument(
         "--max-dilemmas",
