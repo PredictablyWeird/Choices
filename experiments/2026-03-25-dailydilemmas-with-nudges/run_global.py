@@ -1629,19 +1629,29 @@ async def main():
         print("No dilemmas remaining after occurrence filtering.")
         sys.exit(1)
 
-    primary_values = set()
+    from collections import Counter
+
+    pv_counts: Counter[str] = Counter()
     for gd in gdilemmas:
-        primary_values.add(gd.primary_value_to_do)
-        primary_values.add(gd.primary_value_not_to_do)
-    print(f"Dilemmas: {len(gdilemmas)}  (unique primary values: {len(primary_values)})")
+        pv_counts[gd.primary_value_to_do] += 1
+        pv_counts[gd.primary_value_not_to_do] += 1
+    print(f"Dilemmas: {len(gdilemmas)}  (unique primary values: {len(pv_counts)})")
     if run_values:
         print(f"Filtered to values: {run_values}")
+
+    if args.dry_run:
+        print(f"\nSurviving primary values ({len(pv_counts)}):")
+        for v, c in pv_counts.most_common():
+            print(f"  {v}: {c}")
 
     if args.max_dilemmas:
         gdilemmas = gdilemmas[: args.max_dilemmas]
         print(f"Limited to {len(gdilemmas)} dilemmas")
 
     all_conditions = get_conditions(config)
+
+    if args.dry_run and not args.all and not args.model:
+        return
 
     if args.all:
         for model in config["models"]:
