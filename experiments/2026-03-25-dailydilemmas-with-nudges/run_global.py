@@ -39,6 +39,10 @@ Usage:
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
         --model llama-33-70b --all-conditions --values honesty safety
 
+    # Run with instructed reasoning (for non-reasoning models like llama)
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
+        --model llama-33-70b --all-conditions --reasoning before
+
     # Run all models, all dilemmas (no value filter)
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
         --all
@@ -257,6 +261,7 @@ def _build_nudge_prompt(
     influence_type: str,
     config: dict,
     all_dilemmas: list[Dilemma],
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
 ) -> DilemmaPromptInfo:
     """Build a single nudge prompt for one dilemma in one direction."""
     seed = config["seed"]
@@ -305,6 +310,7 @@ def _build_nudge_prompt(
         nudge_text=nudge_text,
         nudge_position=influence.position,
         nudge_brackets=influence.brackets,
+        reasoning_mode=reasoning_mode,
         seed=seed,
     )
 
@@ -314,6 +320,7 @@ def build_prompts_for_condition(
     condition: dict,
     config: dict,
     all_dilemmas: list[Dilemma],
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
 ) -> list[PromptTag]:
     """Build prompts for every dilemma under one condition.
 
@@ -327,7 +334,11 @@ def build_prompts_for_condition(
     tags: list[PromptTag] = []
     for gd in gdilemmas:
         if influence_type is None:
-            info = build_prompt(dilemma=gd.dilemma, seed=seed)
+            info = build_prompt(
+                dilemma=gd.dilemma,
+                reasoning_mode=reasoning_mode,
+                seed=seed,
+            )
             tags.append(PromptTag(info=info, direction=None, gdilemma=gd))
         else:
             for direction in ("dir_a", "dir_b"):
@@ -337,6 +348,7 @@ def build_prompts_for_condition(
                     influence_type,
                     config,
                     all_dilemmas,
+                    reasoning_mode=reasoning_mode,
                 )
                 tags.append(PromptTag(info=info, direction=direction, gdilemma=gd))
 
@@ -397,6 +409,7 @@ async def run_condition(
     config: dict,
     all_dilemmas: list[Dilemma],
     dry_run: bool = False,
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
 ) -> list[DilemmaResult] | None:
     """Run a single condition for one model across all dilemmas.
 
@@ -407,7 +420,10 @@ async def run_condition(
     k = config["k_per_dilemma"]
     max_concurrent = config.get("max_concurrent", 100)
 
-    save_dir = results_dir() / model / condition_name
+    model_dir_name = (
+        f"{model}-reasoning" if reasoning_mode == ReasoningMode.BEFORE else model
+    )
+    save_dir = results_dir() / model_dir_name / condition_name
     results_path = save_dir / "results.json"
 
     existing_results: dict[str, dict] = {}
@@ -423,6 +439,7 @@ async def run_condition(
         condition,
         config,
         all_dilemmas,
+        reasoning_mode=reasoning_mode,
     )
 
     # Determine what needs running: new prompts get full k, existing
@@ -465,7 +482,9 @@ async def run_condition(
             print(f"  Prompt:\n{info.prompt_text}")
         return None
 
-    uses_reasoning = model_has_active_reasoning(model)
+    uses_reasoning = reasoning_mode != ReasoningMode.NONE or model_has_active_reasoning(
+        model
+    )
     agent_config_key = "default_with_reasoning" if uses_reasoning else "default"
     agent_config_path = str(
         Path(__file__).resolve().parent.parent.parent
@@ -506,7 +525,7 @@ async def run_condition(
             system_message=system_message,
             K=delta_k,
             verbose=True,
-            reasoning_mode=ReasoningMode.NONE,
+            reasoning_mode=reasoning_mode,
             valid_choices=["A", "B"],
             max_retries=2,
         )
@@ -567,6 +586,7 @@ async def run_condition(
             "k_per_dilemma": k,
             "seed": config["seed"],
             "influence_type": condition.get("influence_type"),
+            "reasoning_mode": reasoning_mode.value,
         },
         "results": list(all_results_by_key.values()),
     }
@@ -612,12 +632,18 @@ async def run_model(
     all_dilemmas: list[Dilemma],
     conditions: list[dict] | None = None,
     dry_run: bool = False,
+    reasoning_mode: ReasoningMode = ReasoningMode.NONE,
 ) -> None:
     if conditions is None:
         conditions = get_conditions(config)
 
+    model_dir_name = (
+        f"{model}-reasoning" if reasoning_mode == ReasoningMode.BEFORE else model
+    )
     print(f"\n{'='*60}")
     print(f"Model: {model}")
+    if reasoning_mode != ReasoningMode.NONE:
+        print(f"Reasoning: {reasoning_mode.value}  (results dir: {model_dir_name})")
     print(f"Conditions: {len(conditions)}")
     print(f"Dilemmas: {len(gdilemmas)}")
     print(f"{'='*60}")
@@ -630,6 +656,7 @@ async def run_model(
             config,
             all_dilemmas,
             dry_run,
+            reasoning_mode=reasoning_mode,
         )
 
 
@@ -1577,11 +1604,20 @@ async def main():
         "times are iteratively removed until convergence (default: 20).",
     )
     parser.add_argument(
+        "--reasoning",
+        type=str,
+        choices=["none", "before", "after"],
+        default="none",
+        help="Reasoning mode: none, before (reason then answer), after (answer then reason)",
+    )
+    parser.add_argument(
         "--max-dilemmas",
         type=int,
         help="Limit number of dilemmas (for testing)",
     )
     args = parser.parse_args()
+
+    reasoning_mode = ReasoningMode(args.reasoning)
 
     # --- Overview mode ---
     if args.overview:
@@ -1661,6 +1697,7 @@ async def main():
                 config,
                 all_dilemmas,
                 dry_run=args.dry_run,
+                reasoning_mode=reasoning_mode,
             )
         if not args.dry_run and args.value:
             run_analysis(args.value.strip().lower())
@@ -1679,6 +1716,7 @@ async def main():
                 all_dilemmas,
                 conditions=matching,
                 dry_run=args.dry_run,
+                reasoning_mode=reasoning_mode,
             )
         elif args.all_conditions:
             await run_model(
@@ -1687,6 +1725,7 @@ async def main():
                 config,
                 all_dilemmas,
                 dry_run=args.dry_run,
+                reasoning_mode=reasoning_mode,
             )
         else:
             parser.error("Specify --condition, --all-conditions, or --all")
