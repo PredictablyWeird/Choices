@@ -47,10 +47,11 @@ INFLUENCE_TYPES: dict[str, Influence] = {
         name="survey",
         template=(
             "In a recent survey about everyday moral decisions, most respondents "
-            "said they would prioritize {value1} over {value2} in situations like this."
+            "said they would prioritize {value1} over {value2} in similar situations."
         ),
-        position="start",
-        brackets="none",
+        # Note: Position and brackets are different in the main experiment!
+        position="end",
+        brackets="parentheses",
     ),
     "social_norm": Influence(
         name="social_norm",
