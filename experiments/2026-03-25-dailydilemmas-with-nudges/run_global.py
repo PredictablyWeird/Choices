@@ -664,7 +664,7 @@ async def run_model(
 # Analysis
 # ---------------------------------------------------------------------------
 
-MIN_RESPONSES = 5
+MIN_RESPONSES = 1
 ALPHA = 0.05
 
 
