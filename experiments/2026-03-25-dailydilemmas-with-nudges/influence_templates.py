@@ -33,13 +33,13 @@ INFLUENCE_TYPES: dict[str, Influence] = {
     "few_shot_action": Influence(
         name="few_shot_action",
         template=None,
-        position="start",
+        position="end",
         brackets="none",
     ),
     "few_shot_value": Influence(
         name="few_shot_value",
         template=None,
-        position="start",
+        position="end",
         brackets="none",
     ),
     # --- Epistemic ---
@@ -127,11 +127,7 @@ def render_influence_text(
 
 def _format_few_shot_block(examples: list[str]) -> str:
     """Wrap example strings in the standard ## Examples section."""
-    return (
-        "## Examples\n\n"
-        + "\n\n".join(examples)
-        + "\n\nNow consider the following dilemma:"
-    )
+    return "## Examples\n\n" + "\n\n".join(examples)
 
 
 def _format_dilemma_example(
