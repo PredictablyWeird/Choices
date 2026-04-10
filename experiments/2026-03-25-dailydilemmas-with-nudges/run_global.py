@@ -904,13 +904,38 @@ def analyze_model(
         p_val_toward_non = c_B_A / (c_B_A + c_B_B) if (c_B_A + c_B_B) > 0 else None
         sig_rate = backfire_sig_total / backfire_total if backfire_total else 0.0
 
+        n_0 = c_0_A + c_0_B
+        f_0_val = c_0_A / n_0 if n_0 > 0 else None
+        f_0_nval = c_0_B / n_0 if n_0 > 0 else None
+        n_B_total = c_B_A + c_B_B
+        f_nval_nval = c_B_B / n_B_total if n_B_total > 0 else None
+
+        abs_effect = None
+        if all(
+            v is not None for v in [f_0_val, p_val_toward_val, f_0_nval, f_nval_nval]
+        ):
+            abs_effect = (
+                abs(p_val_toward_val - f_0_val) + abs(f_nval_nval - f_0_nval)
+            ) / 2
+
+        avg_steer = (s_A + s_B) / 2 if s_A is not None and s_B is not None else None
+        abs_steer = (
+            (abs(s_A) + abs(s_B)) / 2 if s_A is not None and s_B is not None else None
+        )
+        base_bias = max(f_0_val, 1 - f_0_val) if f_0_val is not None else None
+
         metrics_by_type[inf_type] = {
+            "f_0_val": f_0_val,
             "p_val_toward_value": p_val_toward_val,
             "p_val_toward_non_value": p_val_toward_non,
+            "abs_effect": abs_effect,
             "steerability_value": s_A,
             "steerability_non_value": s_B,
+            "avg_steerability": avg_steer,
+            "abs_steerability": abs_steer,
             "asymmetry": asym,
             "normalized_asymmetry": norm_asym,
+            "base_bias": base_bias,
             "sig_rate": sig_rate,
             "backfire_rate": backfire_count / backfire_total if backfire_total else 0.0,
             "backfire_sig_rate": (
@@ -959,6 +984,30 @@ def analyze_model(
     agg_sig_rate = (
         all_backfire_sig_total / all_backfire_total if all_backfire_total else 0.0
     )
+    agg_n_0 = agg_c_0_A + agg_c_0_B
+    agg_f_0_nval = agg_c_0_B / agg_n_0 if agg_n_0 > 0 else None
+    agg_n_B = agg_c_B_A + agg_c_B_B
+    agg_f_nval_nval = agg_c_B_B / agg_n_B if agg_n_B > 0 else None
+
+    agg_abs_effect = None
+    if all(
+        v is not None
+        for v in [baseline_p_value, agg_p_val_toward_val, agg_f_0_nval, agg_f_nval_nval]
+    ):
+        agg_abs_effect = (
+            abs(agg_p_val_toward_val - baseline_p_value)
+            + abs(agg_f_nval_nval - agg_f_0_nval)
+        ) / 2
+
+    agg_avg_steer = (s_A + s_B) / 2 if s_A is not None and s_B is not None else None
+    agg_abs_steer = (
+        (abs(s_A) + abs(s_B)) / 2 if s_A is not None and s_B is not None else None
+    )
+    agg_base_bias = (
+        max(baseline_p_value, 1 - baseline_p_value)
+        if baseline_p_value is not None
+        else None
+    )
 
     return {
         "model": model,
@@ -967,12 +1016,17 @@ def analyze_model(
         "overall": {
             "baseline_p_value_side": baseline_p_value,
             "baseline_sig": bool(baseline_test["is_significant"]),
+            "f_0_val": baseline_p_value,
             "p_val_toward_value": agg_p_val_toward_val,
             "p_val_toward_non_value": agg_p_val_toward_non,
+            "abs_effect": agg_abs_effect,
             "steerability_value": s_A,
             "steerability_non_value": s_B,
+            "avg_steerability": agg_avg_steer,
+            "abs_steerability": agg_abs_steer,
             "asymmetry": asym,
             "normalized_asymmetry": norm_asym,
+            "base_bias": agg_base_bias,
             "sig_rate": agg_sig_rate,
             "backfire_rate": (
                 all_backfire_count / all_backfire_total if all_backfire_total else 0.0
@@ -982,6 +1036,8 @@ def analyze_model(
                 if all_backfire_sig_total
                 else 0.0
             ),
+            "n_backfires": all_backfire_count,
+            "n_backfires_sig": all_backfire_sig_count,
             "n_observations": all_backfire_total,
             "n_sig_nudges": all_backfire_sig_total,
         },
@@ -1123,6 +1179,262 @@ def _discover_values(model: str) -> set[str]:
     return values
 
 
+def _build_overview_rows(
+    all_metrics: list[dict],
+    nudge_types: list[str] | None = None,
+) -> list[dict]:
+    """Build flat list of row dicts (one per value x model x influence_type)."""
+    rows: list[dict] = []
+    for m in all_metrics:
+        for inf_type, it in sorted(m["by_influence_type"].items()):
+            if nudge_types and inf_type not in nudge_types:
+                continue
+            rows.append(
+                {
+                    "value": m["selected_value"],
+                    "model": m["model"],
+                    "influence_type": inf_type,
+                    "n_dilemmas": m["n_dilemmas"],
+                    "baseline_p_value": m["overall"]["baseline_p_value_side"],
+                    "base_bias": it["base_bias"],
+                    "f_toward_val": it["p_val_toward_value"],
+                    "f_toward_nval": it["p_val_toward_non_value"],
+                    "abs_effect": it["abs_effect"],
+                    "steerability_value": it["steerability_value"],
+                    "steerability_non_value": it["steerability_non_value"],
+                    "avg_steerability": it["avg_steerability"],
+                    "abs_steerability": it["abs_steerability"],
+                    "asymmetry": it["asymmetry"],
+                    "normalized_asymmetry": it["normalized_asymmetry"],
+                    "sig_rate": it["sig_rate"],
+                    "backfire_rate": it["backfire_rate"],
+                    "sig_backfire_rate": it["backfire_sig_rate"],
+                    "n_observations": it["n_observations"],
+                    "n_sig_nudges": it["n_sig_nudges"],
+                    "n_backfires": it["n_backfires"],
+                    "n_backfires_sig": it["n_backfires_sig"],
+                }
+            )
+    return rows
+
+
+_OVERVIEW_CSV_FIELDS = [
+    "value",
+    "model",
+    "influence_type",
+    "n_dilemmas",
+    "baseline_p_value",
+    "base_bias",
+    "f_toward_val",
+    "f_toward_nval",
+    "abs_effect",
+    "steerability_value",
+    "steerability_non_value",
+    "avg_steerability",
+    "abs_steerability",
+    "asymmetry",
+    "normalized_asymmetry",
+    "sig_rate",
+    "backfire_rate",
+    "sig_backfire_rate",
+    "n_observations",
+    "n_sig_nudges",
+    "n_backfires",
+    "n_backfires_sig",
+]
+
+
+def _write_overview_csv(rows: list[dict], output_path: str) -> None:
+    import csv as csv_mod
+
+    with open(output_path, "w", newline="") as f:
+        writer = csv_mod.DictWriter(
+            f, fieldnames=_OVERVIEW_CSV_FIELDS, extrasaction="ignore"
+        )
+        writer.writeheader()
+        for r in sorted(
+            rows, key=lambda x: (x["value"], x["model"], x["influence_type"])
+        ):
+            out = {}
+            for k in _OVERVIEW_CSV_FIELDS:
+                v = r.get(k)
+                out[k] = "" if v is None else v
+            writer.writerow(out)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def _print_overview_table(rows: list[dict]) -> None:
+    """Print the main per-row overview table to stdout."""
+    header = (
+        f"{'Value':<14} {'Model':<34} {'Nudge':<16} "
+        f"{'n':>4} {'P(val)':>6} {'Bias':>5} "
+        f"{'|Eff|':>6} {'s(v)':>7} {'s(~v)':>7} {'|s|':>7} "
+        f"{'Asym':>7} {'N-Asy':>7} "
+        f"{'Sig%':>5} {'BF%':>5} {'N':>5}"
+    )
+    print(f"\n{header}")
+    print("-" * len(header))
+
+    for r in sorted(rows, key=lambda x: (x["value"], x["model"], x["influence_type"])):
+        print(
+            f"{r['value']:<14} "
+            f"{r['model']:<34} "
+            f"{r['influence_type']:<16} "
+            f"{r['n_dilemmas']:>4d} "
+            f"{r['baseline_p_value']:>6.3f} "
+            f"{_fmt(r['base_bias'], '.3f'):>5} "
+            f"{_fmt(r['abs_effect'], '.3f'):>6} "
+            f"{_fmt(r['steerability_value'], '.3f'):>7} "
+            f"{_fmt(r['steerability_non_value'], '.3f'):>7} "
+            f"{_fmt(r['abs_steerability'], '.3f'):>7} "
+            f"{_fmt(r['asymmetry'], '.3f'):>7} "
+            f"{_fmt(r['normalized_asymmetry'], '.3f'):>7} "
+            f"{r['sig_rate']:>5.1%} "
+            f"{r['backfire_rate']:>5.1%} "
+            f"{r['n_observations']:>5d}"
+        )
+
+
+def _compute_aggregate(rows: list[dict]) -> dict | None:
+    """Compute aggregate statistics over a list of flat overview rows."""
+    if not rows:
+        return None
+
+    def _mean(key: str):
+        vals = [r[key] for r in rows if r.get(key) is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    def _ci(values: list[float]):
+        nv = len(values)
+        if nv == 0:
+            return None, None, None
+        mean = sum(values) / nv
+        if nv == 1:
+            return mean, mean, mean
+        variance = sum((x - mean) ** 2 for x in values) / (nv - 1)
+        import math as _math
+
+        se = _math.sqrt(variance) / _math.sqrt(nv)
+        return mean, mean - 1.96 * se, mean + 1.96 * se
+
+    total_obs = sum(r["n_observations"] for r in rows)
+    total_sig = sum(r["n_sig_nudges"] for r in rows)
+    total_bf = sum(r["n_backfires"] for r in rows)
+    total_bf_sig = sum(r["n_backfires_sig"] for r in rows)
+
+    abs_eff_m, abs_eff_lo, abs_eff_hi = _ci(
+        [r["abs_effect"] for r in rows if r["abs_effect"] is not None]
+    )
+    avg_s_m, avg_s_lo, avg_s_hi = _ci(
+        [r["avg_steerability"] for r in rows if r["avg_steerability"] is not None]
+    )
+    abs_s_m, abs_s_lo, abs_s_hi = _ci(
+        [r["abs_steerability"] for r in rows if r["abs_steerability"] is not None]
+    )
+    abs_a_m, abs_a_lo, abs_a_hi = _ci(
+        [abs(r["asymmetry"]) for r in rows if r["asymmetry"] is not None]
+    )
+    abs_na_m, abs_na_lo, abs_na_hi = _ci(
+        [
+            abs(r["normalized_asymmetry"])
+            for r in rows
+            if r["normalized_asymmetry"] is not None
+        ]
+    )
+    bias_m, bias_lo, bias_hi = _ci(
+        [r["base_bias"] for r in rows if r["base_bias"] is not None]
+    )
+
+    def _pack_ci(m, lo, hi):
+        return (lo, hi) if m is not None else None
+
+    return {
+        "n": len(rows),
+        "baseline_p_value": _mean("baseline_p_value"),
+        "base_bias": bias_m,
+        "base_bias_ci": _pack_ci(bias_m, bias_lo, bias_hi),
+        "abs_effect": abs_eff_m,
+        "abs_effect_ci": _pack_ci(abs_eff_m, abs_eff_lo, abs_eff_hi),
+        "avg_steerability": avg_s_m,
+        "avg_steerability_ci": _pack_ci(avg_s_m, avg_s_lo, avg_s_hi),
+        "abs_steerability": abs_s_m,
+        "abs_steerability_ci": _pack_ci(abs_s_m, abs_s_lo, abs_s_hi),
+        "abs_asymmetry": abs_a_m,
+        "abs_asymmetry_ci": _pack_ci(abs_a_m, abs_a_lo, abs_a_hi),
+        "abs_norm_asymmetry": abs_na_m,
+        "abs_norm_asymmetry_ci": _pack_ci(abs_na_m, abs_na_lo, abs_na_hi),
+        "sig_rate": total_sig / total_obs if total_obs > 0 else 0.0,
+        "backfire_rate": total_bf / total_obs if total_obs > 0 else 0.0,
+        "sig_backfire_rate": total_bf_sig / total_sig if total_sig > 0 else 0.0,
+        "n_observations": total_obs,
+    }
+
+
+def _fmt_ci(val, ci, fmt=".3f"):
+    if val is None:
+        return "n/a"
+    s = f"{val:{fmt}}"
+    if ci is not None and ci[0] is not None:
+        s += f" ({ci[0]:{fmt}}, {ci[1]:{fmt}})"
+    return s
+
+
+def _print_aggregate_line(label: str, agg: dict) -> None:
+    parts = [f"n={agg['n']}"]
+    if agg.get("baseline_p_value") is not None:
+        parts.append(f"P(val)={agg['baseline_p_value']:.3f}")
+    parts.append(f"base_bias={_fmt_ci(agg['base_bias'], agg.get('base_bias_ci'))}")
+    parts.append(f"|effect|={_fmt_ci(agg['abs_effect'], agg.get('abs_effect_ci'))}")
+    parts.append(
+        f"|steer|={_fmt_ci(agg['abs_steerability'], agg.get('abs_steerability_ci'))}"
+    )
+    parts.append(
+        f"avg_steer={_fmt_ci(agg['avg_steerability'], agg.get('avg_steerability_ci'))}"
+    )
+    parts.append(f"|asym|={_fmt_ci(agg['abs_asymmetry'], agg.get('abs_asymmetry_ci'))}")
+    parts.append(
+        f"|n-asym|={_fmt_ci(agg['abs_norm_asymmetry'], agg.get('abs_norm_asymmetry_ci'))}"
+    )
+    parts.append(f"sig={agg['sig_rate']:.1%}")
+    parts.append(f"backfire={agg['backfire_rate']:.1%}")
+    parts.append(f"sig_backfire={agg['sig_backfire_rate']:.1%}")
+    print(f"  {label}: {', '.join(parts)}")
+
+
+def _print_aggregate_stats(rows: list[dict]) -> None:
+    """Print aggregate statistics grouped by value, influence type, and model."""
+
+    # --- By value ---
+    values = sorted({r["value"] for r in rows})
+    print(f"\nBy Value ({len(values)}):")
+    for value in values:
+        agg = _compute_aggregate([r for r in rows if r["value"] == value])
+        if agg:
+            _print_aggregate_line(value, agg)
+
+    # --- By influence type ---
+    inf_types = sorted({r["influence_type"] for r in rows})
+    print(f"\nBy Influence Type ({len(inf_types)}):")
+    for inf_type in inf_types:
+        agg = _compute_aggregate([r for r in rows if r["influence_type"] == inf_type])
+        if agg:
+            _print_aggregate_line(inf_type, agg)
+
+    # --- By model ---
+    models = sorted({r["model"] for r in rows})
+    print(f"\nBy Model ({len(models)}):")
+    for model in models:
+        agg = _compute_aggregate([r for r in rows if r["model"] == model])
+        if agg:
+            _print_aggregate_line(model, agg)
+
+    # --- Overall ---
+    agg = _compute_aggregate(rows)
+    if agg:
+        print("\nOverall:")
+        _print_aggregate_line("all", agg)
+
+
 def run_overview(
     models: list[str] | None = None,
     values: list[str] | None = None,
@@ -1168,335 +1480,19 @@ def run_overview(
         print("No results found.")
         return
 
+    rows = _build_overview_rows(all_metrics, nudge_types)
+    if not rows:
+        print("No rows after filtering.")
+        return
+
     if output:
-        _write_overview_csv(all_metrics, output, nudge_types)
+        _write_overview_csv(rows, output)
     else:
-        print_overview(all_metrics, nudge_types)
-
-
-def _print_overview_across_models_row(
-    value: str,
-    overalls: list[dict],
-    header_len: int,
-) -> None:
-    n_total = sum(o.get("n_observations", 0) for o in overalls)
-    print(
-        f"{value:<14} "
-        f"{'  across models':<32} "
-        f"{'':>4} "
-        f"{_safe_mean_of(overalls, 'baseline_p_value_side') or 0:<8.3f} "
-        f"{_fmt(_safe_mean_of(overalls, 'steerability_value')):>8} "
-        f"{_fmt(_safe_mean_of(overalls, 'steerability_non_value')):>8} "
-        f"{_fmt(_safe_mean_abs_of(overalls, 'steerability_value')):>8} "
-        f"{_fmt(_safe_mean_abs_of(overalls, 'steerability_non_value')):>8} "
-        f"{_fmt(_safe_mean_of(overalls, 'asymmetry')):>8} "
-        f"{_fmt(_safe_mean_of(overalls, 'normalized_asymmetry')):>8} "
-        f"{_safe_mean_of(overalls, 'sig_rate') or 0:>5.1%} "
-        f"{_safe_mean_of(overalls, 'backfire_rate') or 0:>5.1%} "
-        f"{n_total:>6d}"
-    )
-    print("-" * header_len)
-
-
-def _print_nudge_overall_row(
-    model: str,
-    rows: list[dict],
-    header_len: int,
-) -> None:
-    def _safe_mean(key):
-        vals = [r[key] for r in rows if r.get(key) is not None]
-        return sum(vals) / len(vals) if vals else None
-
-    def _safe_mean_abs(key):
-        vals = [abs(r[key]) for r in rows if r.get(key) is not None]
-        return sum(vals) / len(vals) if vals else None
-
-    n_total = sum(r.get("n_observations", 0) for r in rows)
-    print(
-        f"{'  overall':<14} "
-        f"{model:<32} "
-        f"{_fmt(_safe_mean('steerability_value')):>8} "
-        f"{_fmt(_safe_mean('steerability_non_value')):>8} "
-        f"{_fmt(_safe_mean_abs('steerability_value')):>8} "
-        f"{_fmt(_safe_mean_abs('steerability_non_value')):>8} "
-        f"{_fmt(_safe_mean('asymmetry')):>8} "
-        f"{_safe_mean('sig_rate') or 0:>5.1%} "
-        f"{_safe_mean('backfire_rate') or 0:>5.1%} "
-        f"{n_total:>6d}"
-    )
-    print("-" * header_len)
-
-
-def print_overview(
-    all_metrics: list[dict],
-    nudge_types: list[str] | None = None,
-) -> None:
-    print(f"\n{'='*110}")
-    print("CROSS-VALUE OVERVIEW (global)")
-    print(f"{'='*110}")
-
-    header = (
-        f"{'Value':<14} {'Model':<32} {'n':>4} {'P(val)':<8} "
-        f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
-        f"{'Asym':>8} {'N-Asym':>8} "
-        f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
-    )
-    print(f"\n{header}")
-    print("-" * len(header))
-
-    sorted_m = sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"]))
-    current_value = None
-    value_overalls: list[dict] = []
-    for m in sorted_m:
-        if (
-            current_value is not None
-            and m["selected_value"] != current_value
-            and len(value_overalls) > 1
-        ):
-            _print_overview_across_models_row(
-                current_value, value_overalls, len(header)
-            )
-        if m["selected_value"] != current_value:
-            value_overalls = []
-            current_value = m["selected_value"]
-        o = m["overall"]
-        print(
-            f"{m['selected_value']:<14} "
-            f"{m['model']:<32} "
-            f"{m['n_dilemmas']:>4d} "
-            f"{o['baseline_p_value_side']:<8.3f} "
-            f"{_fmt(o['steerability_value']):>8} "
-            f"{_fmt(o['steerability_non_value']):>8} "
-            f"{_fmt(_abs(o['steerability_value'])):>8} "
-            f"{_fmt(_abs(o['steerability_non_value'])):>8} "
-            f"{_fmt(o['asymmetry']):>8} "
-            f"{_fmt(o['normalized_asymmetry']):>8} "
-            f"{o['sig_rate']:>5.1%} "
-            f"{o['backfire_rate']:>5.1%} "
-            f"{o['n_observations']:>6d}"
-        )
-        value_overalls.append(o)
-    if current_value is not None and len(value_overalls) > 1:
-        _print_overview_across_models_row(current_value, value_overalls, len(header))
-
-    inf_types: set[str] = set()
-    for m in all_metrics:
-        inf_types.update(m["by_influence_type"])
-
-    type_list = sorted(inf_types)
-    if nudge_types:
-        type_list = [t for t in type_list if t in nudge_types]
-
-    for inf_type in type_list:
-        print(f"\n--- {inf_type} ---")
-        sub_header = (
-            f"{'Value':<14} {'Model':<32} "
-            f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
-            f"{'Asym':>8} "
-            f"{'Sig%':>6} {'BF%':>6} {'N':>6}"
-        )
-        print(sub_header)
-        print("-" * len(sub_header))
-
-        sorted_metrics = sorted(
-            all_metrics, key=lambda x: (x["model"], x["selected_value"])
-        )
-        current_model = None
-        model_rows: list[dict] = []
-        all_model_overall_rows: list[dict] = []
-        for m in sorted_metrics:
-            it = m["by_influence_type"].get(inf_type)
-            if it is None:
-                continue
-            if current_model is not None and m["model"] != current_model and model_rows:
-                _print_nudge_overall_row(current_model, model_rows, len(sub_header))
-                all_model_overall_rows.extend(model_rows)
-                model_rows = []
-            current_model = m["model"]
-            print(
-                f"{m['selected_value']:<14} "
-                f"{m['model']:<32} "
-                f"{_fmt(it['steerability_value']):>8} "
-                f"{_fmt(it['steerability_non_value']):>8} "
-                f"{_fmt(_abs(it['steerability_value'])):>8} "
-                f"{_fmt(_abs(it['steerability_non_value'])):>8} "
-                f"{_fmt(it['asymmetry']):>8} "
-                f"{it['sig_rate']:>5.1%} "
-                f"{it['backfire_rate']:>5.1%} "
-                f"{it['n_observations']:>6d}"
-            )
-            model_rows.append(it)
-        if current_model is not None and model_rows:
-            _print_nudge_overall_row(current_model, model_rows, len(sub_header))
-            all_model_overall_rows.extend(model_rows)
-        if (
-            len(
-                {
-                    m["model"]
-                    for m in sorted_metrics
-                    if m["by_influence_type"].get(inf_type)
-                }
-            )
-            > 1
-        ):
-            n_total = sum(r.get("n_observations", 0) for r in all_model_overall_rows)
-            print(
-                f"{'  across models':<14} "
-                f"{'':<32} "
-                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'steerability_value')):>8} "
-                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'steerability_non_value')):>8} "
-                f"{_fmt(_safe_mean_abs_of(all_model_overall_rows, 'steerability_value')):>8} "
-                f"{_fmt(_safe_mean_abs_of(all_model_overall_rows, 'steerability_non_value')):>8} "
-                f"{_fmt(_safe_mean_of(all_model_overall_rows, 'asymmetry')):>8} "
-                f"{_safe_mean_of(all_model_overall_rows, 'sig_rate') or 0:>5.1%} "
-                f"{_safe_mean_of(all_model_overall_rows, 'backfire_rate') or 0:>5.1%} "
-                f"{n_total:>6d}"
-            )
-            print("=" * len(sub_header))
-
-    model_names = sorted({m["model"] for m in all_metrics})
-    if len(all_metrics) > len(model_names):
-        print("\n--- Average across values (per model) ---")
-        avg_header = (
-            f"{'Model':<32} {'n_vals':>6} "
-            f"{'s(val)':>8} {'s(~val)':>8} {'|s(v)|':>8} {'|s(~v)|':>8} "
-            f"{'Asym':>8} {'N-Asym':>8} "
-            f"{'Sig%':>6} {'BF%':>6}"
-        )
-        print(avg_header)
-        print("-" * len(avg_header))
-        for model in model_names:
-            mm = [m for m in all_metrics if m["model"] == model]
-            n_vals = len(mm)
-            vals_s_A = [
-                m["overall"]["steerability_value"]
-                for m in mm
-                if m["overall"]["steerability_value"] is not None
-            ]
-            vals_s_B = [
-                m["overall"]["steerability_non_value"]
-                for m in mm
-                if m["overall"]["steerability_non_value"] is not None
-            ]
-            vals_asym = [
-                m["overall"]["asymmetry"]
-                for m in mm
-                if m["overall"]["asymmetry"] is not None
-            ]
-            vals_nasym = [
-                m["overall"]["normalized_asymmetry"]
-                for m in mm
-                if m["overall"]["normalized_asymmetry"] is not None
-            ]
-            vals_sig = [m["overall"]["sig_rate"] for m in mm]
-            vals_bf = [m["overall"]["backfire_rate"] for m in mm]
-
-            def _mean(vs):
-                return sum(vs) / len(vs) if vs else None
-
-            def _mean_abs(vs):
-                return sum(abs(v) for v in vs) / len(vs) if vs else None
-
-            print(
-                f"{model:<32} {n_vals:>6d} "
-                f"{_fmt(_mean(vals_s_A)):>8} "
-                f"{_fmt(_mean(vals_s_B)):>8} "
-                f"{_fmt(_mean_abs(vals_s_A)):>8} "
-                f"{_fmt(_mean_abs(vals_s_B)):>8} "
-                f"{_fmt(_mean(vals_asym)):>8} "
-                f"{_fmt(_mean(vals_nasym)):>8} "
-                f"{_mean(vals_sig) or 0:>5.1%} "
-                f"{_mean(vals_bf) or 0:>5.1%}"
-            )
-
-        if len(model_names) > 1:
-            all_overalls = [m["overall"] for m in all_metrics]
-            n_vals_total = len(all_metrics)
-            print("-" * len(avg_header))
-            print(
-                f"{'  across models':<32} {n_vals_total:>6d} "
-                f"{_fmt(_safe_mean_of(all_overalls, 'steerability_value')):>8} "
-                f"{_fmt(_safe_mean_of(all_overalls, 'steerability_non_value')):>8} "
-                f"{_fmt(_safe_mean_abs_of(all_overalls, 'steerability_value')):>8} "
-                f"{_fmt(_safe_mean_abs_of(all_overalls, 'steerability_non_value')):>8} "
-                f"{_fmt(_safe_mean_of(all_overalls, 'asymmetry')):>8} "
-                f"{_fmt(_safe_mean_of(all_overalls, 'normalized_asymmetry')):>8} "
-                f"{_safe_mean_of(all_overalls, 'sig_rate') or 0:>5.1%} "
-                f"{_safe_mean_of(all_overalls, 'backfire_rate') or 0:>5.1%}"
-            )
-
-
-def _write_overview_csv(
-    all_metrics: list[dict],
-    output_path: str,
-    nudge_types: list[str] | None = None,
-) -> None:
-    import csv as csv_mod
-
-    rows = []
-    for m in sorted(all_metrics, key=lambda x: (x["selected_value"], x["model"])):
-        o = m["overall"]
-        base_row = {
-            "value": m["selected_value"],
-            "model": m["model"],
-            "n_dilemmas": m["n_dilemmas"],
-            "influence_type": "overall",
-            "baseline_p_value": o["baseline_p_value_side"],
-            "p_toward_value": o.get("p_val_toward_value"),
-            "p_toward_non_value": o.get("p_val_toward_non_value"),
-            "steerability_value": o["steerability_value"],
-            "steerability_non_value": o["steerability_non_value"],
-            "asymmetry": o["asymmetry"],
-            "normalized_asymmetry": o["normalized_asymmetry"],
-            "sig_rate": o["sig_rate"],
-            "backfire_rate": o["backfire_rate"],
-            "n_observations": o["n_observations"],
-        }
-        rows.append(base_row)
-
-        for inf_type, it in sorted(m["by_influence_type"].items()):
-            if nudge_types and inf_type not in nudge_types:
-                continue
-            rows.append(
-                {
-                    "value": m["selected_value"],
-                    "model": m["model"],
-                    "n_dilemmas": m["n_dilemmas"],
-                    "influence_type": inf_type,
-                    "baseline_p_value": o["baseline_p_value_side"],
-                    "p_toward_value": it.get("p_val_toward_value"),
-                    "p_toward_non_value": it.get("p_val_toward_non_value"),
-                    "steerability_value": it["steerability_value"],
-                    "steerability_non_value": it["steerability_non_value"],
-                    "asymmetry": it["asymmetry"],
-                    "normalized_asymmetry": it.get("normalized_asymmetry"),
-                    "sig_rate": it["sig_rate"],
-                    "backfire_rate": it["backfire_rate"],
-                    "n_observations": it["n_observations"],
-                }
-            )
-
-    fieldnames = [
-        "value",
-        "model",
-        "n_dilemmas",
-        "influence_type",
-        "baseline_p_value",
-        "p_toward_value",
-        "p_toward_non_value",
-        "steerability_value",
-        "steerability_non_value",
-        "asymmetry",
-        "normalized_asymmetry",
-        "sig_rate",
-        "backfire_rate",
-        "n_observations",
-    ]
-    with open(output_path, "w", newline="") as f:
-        writer = csv_mod.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"Wrote {len(rows)} rows to {output_path}")
+        print(f"\n{'=' * 110}")
+        print("CROSS-VALUE OVERVIEW (global)")
+        print(f"{'=' * 110}")
+        _print_overview_table(rows)
+        _print_aggregate_stats(rows)
 
 
 def run_analysis(
