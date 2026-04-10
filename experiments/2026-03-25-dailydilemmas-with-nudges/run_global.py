@@ -180,6 +180,49 @@ def filter_dilemmas_global(
     return result
 
 
+def filter_rare_primary_values(
+    gdilemmas: list[GlobalDilemma],
+    threshold: int = 10,
+) -> list[GlobalDilemma]:
+    """Iteratively remove dilemmas whose primary values are too rare.
+
+    A primary value is "rare" if it appears fewer than *threshold* times
+    across all remaining dilemmas (counting both the to_do and not_to_do
+    sides).  After each removal pass the counts are recomputed; the process
+    repeats until no rare values remain (convergence).
+    """
+    from collections import Counter
+
+    current = list(gdilemmas)
+    iteration = 0
+    while True:
+        iteration += 1
+        counts: Counter[str] = Counter()
+        for gd in current:
+            counts[gd.primary_value_to_do] += 1
+            counts[gd.primary_value_not_to_do] += 1
+
+        rare = {v for v, c in counts.items() if c < threshold}
+        if not rare:
+            break
+
+        before = len(current)
+        current = [
+            gd
+            for gd in current
+            if gd.primary_value_to_do not in rare
+            and gd.primary_value_not_to_do not in rare
+        ]
+        removed = before - len(current)
+        print(
+            f"  Occurrence filter iter {iteration}: dropped {len(rare)} rare "
+            f"values, removed {removed} dilemmas "
+            f"({len(current)} remaining)"
+        )
+
+    return current
+
+
 # ---------------------------------------------------------------------------
 # Conditions
 # ---------------------------------------------------------------------------
@@ -1526,6 +1569,14 @@ async def main():
         help="Print sample prompts without API calls",
     )
     parser.add_argument(
+        "--occurrence-threshold",
+        type=int,
+        default=10,
+        help="Minimum number of occurrences for a primary value to be kept. "
+        "Dilemmas with a primary value that appears fewer than this many "
+        "times are iteratively removed until convergence (default: 10).",
+    )
+    parser.add_argument(
         "--max-dilemmas",
         type=int,
         help="Limit number of dilemmas (for testing)",
@@ -1561,6 +1612,21 @@ async def main():
 
     if not gdilemmas:
         print("No dilemmas with distinct primary values found.")
+        sys.exit(1)
+
+    if args.occurrence_threshold > 0:
+        n_before = len(gdilemmas)
+        gdilemmas = filter_rare_primary_values(
+            gdilemmas, threshold=args.occurrence_threshold
+        )
+        if len(gdilemmas) < n_before:
+            print(
+                f"  Occurrence threshold ({args.occurrence_threshold}): "
+                f"{n_before} → {len(gdilemmas)} dilemmas"
+            )
+
+    if not gdilemmas:
+        print("No dilemmas remaining after occurrence filtering.")
         sys.exit(1)
 
     primary_values = set()
