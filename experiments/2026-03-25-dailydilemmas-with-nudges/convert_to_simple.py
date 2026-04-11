@@ -297,7 +297,6 @@ def convert_model_value(
         if not toward_val and not toward_nval:
             continue
 
-        # Base condition
         base_dir = (
             output_dir / f"simple_{value}" / model / nudge_type / f"{TIMESTAMP}_base"
         )
@@ -327,16 +326,7 @@ def convert_model_value(
             _write_graph(val_graph, val_dir, model)
             n_written += 1
 
-        # Nudge toward non-value — group by opponent value
-        nval_by_opponent: dict[str, list[dict]] = defaultdict(list)
-        for r in toward_nval:
-            pv_to = r["primary_value_to_do"]
-            pv_not = r["primary_value_not_to_do"]
-            opponent = pv_not if pv_to == value else pv_to
-            nval_by_opponent[opponent].append(r)
-
         # Combine all toward-non-value results into a single condition
-        # The "target_group" is the generic non-value label
         if toward_nval:
             nval_label = f"non_{value}"
             nval_dir = (
