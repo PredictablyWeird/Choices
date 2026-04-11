@@ -235,8 +235,6 @@ def analyze_model(
     agg_c_0_A = agg_c_0_B = 0
     agg_c_A_A = agg_c_A_B = 0
     agg_c_B_A = agg_c_B_B = 0
-    all_backfire_count = all_backfire_total = 0
-    all_backfire_sig_count = all_backfire_sig_total = 0
 
     for inf_type, directions in influence_conditions.items():
         dir_a_by_id = directions.get("dir_a", {})
@@ -245,8 +243,6 @@ def analyze_model(
         c_0_A = c_0_B = 0
         c_A_A = c_A_B = 0
         c_B_A = c_B_B = 0
-        backfire_count = backfire_total = 0
-        backfire_sig_count = backfire_sig_total = 0
 
         all_ids = set(dir_a_by_id) | set(dir_b_by_id)
 
@@ -278,41 +274,11 @@ def analyze_model(
                     c_A_A += tv_counts[0]
                     c_A_B += tv_counts[1]
 
-                    n_base = n_val_base + n_nval_base
-                    n_nudge = tv_counts[0] + tv_counts[1]
-                    f_base = n_val_base / n_base
-                    f_nudge = tv_counts[0] / n_nudge
-                    backfired = f_nudge < f_base
-                    sig = two_proportion_z_test(f_base, n_base, f_nudge, n_nudge, ALPHA)
-
-                    backfire_total += 1
-                    if backfired:
-                        backfire_count += 1
-                    if sig["is_significant"]:
-                        backfire_sig_total += 1
-                        if backfired:
-                            backfire_sig_count += 1
-
             if did in tnv_by_id:
                 tnv_counts = _result_counts_for_value(tnv_by_id[did], value)
                 if tnv_counts is not None:
                     c_B_A += tnv_counts[0]
                     c_B_B += tnv_counts[1]
-
-                    n_base = n_val_base + n_nval_base
-                    n_nudge = tnv_counts[0] + tnv_counts[1]
-                    f_base = n_nval_base / n_base
-                    f_nudge = tnv_counts[1] / n_nudge
-                    backfired = f_nudge < f_base
-                    sig = two_proportion_z_test(f_base, n_base, f_nudge, n_nudge, ALPHA)
-
-                    backfire_total += 1
-                    if backfired:
-                        backfire_count += 1
-                    if sig["is_significant"]:
-                        backfire_sig_total += 1
-                        if backfired:
-                            backfire_sig_count += 1
 
         s_A, s_B, asym, norm_asym = compute_steerability_asym_from_counts(
             c_0_A,
@@ -323,15 +289,40 @@ def analyze_model(
             c_B_B,
         )
 
-        p_val_toward_val = c_A_A / (c_A_A + c_A_B) if (c_A_A + c_A_B) > 0 else None
-        p_val_toward_non = c_B_A / (c_B_A + c_B_B) if (c_B_A + c_B_B) > 0 else None
-        sig_rate = backfire_sig_total / backfire_total if backfire_total else 0.0
-
         n_0 = c_0_A + c_0_B
+        n_A = c_A_A + c_A_B
+        n_B = c_B_A + c_B_B
         f_0_val = c_0_A / n_0 if n_0 > 0 else None
         f_0_nval = c_0_B / n_0 if n_0 > 0 else None
-        n_B_total = c_B_A + c_B_B
-        f_nval_nval = c_B_B / n_B_total if n_B_total > 0 else None
+        p_val_toward_val = c_A_A / n_A if n_A > 0 else None
+        p_val_toward_non = c_B_A / n_B if n_B > 0 else None
+        f_nval_nval = c_B_B / n_B if n_B > 0 else None
+
+        # Significance on pooled counts (matching create_summary.py):
+        # sig_A: did nudging toward value change P(value)?
+        # sig_B: did nudging toward non-value change P(non-value)?
+        sig_A = False
+        sig_B = False
+        if f_0_val is not None and p_val_toward_val is not None and n_0 > 0 and n_A > 0:
+            sig_A = two_proportion_z_test(f_0_val, n_0, p_val_toward_val, n_A, ALPHA)[
+                "is_significant"
+            ]
+        if f_0_nval is not None and f_nval_nval is not None and n_0 > 0 and n_B > 0:
+            sig_B = two_proportion_z_test(f_0_nval, n_0, f_nval_nval, n_B, ALPHA)[
+                "is_significant"
+            ]
+
+        # Backfire on pooled counts
+        backfire_A = (p_val_toward_val or 0) < (f_0_val or 0)
+        backfire_B = (f_nval_nval or 0) < (f_0_nval or 0)
+
+        n_nudge_dirs = 2
+        sig_count = int(sig_A) + int(sig_B)
+        sig_rate = sig_count / n_nudge_dirs
+        backfire_count = int(backfire_A) + int(backfire_B)
+        backfire_rate = backfire_count / n_nudge_dirs
+        sig_backfire_count = int(sig_A and backfire_A) + int(sig_B and backfire_B)
+        sig_backfire_rate = sig_backfire_count / sig_count if sig_count > 0 else 0.0
 
         abs_effect = None
         if all(
@@ -360,14 +351,12 @@ def analyze_model(
             "normalized_asymmetry": norm_asym,
             "base_bias": base_bias,
             "sig_rate": sig_rate,
-            "backfire_rate": backfire_count / backfire_total if backfire_total else 0.0,
-            "backfire_sig_rate": (
-                backfire_sig_count / backfire_sig_total if backfire_sig_total else 0.0
-            ),
-            "n_backfires": backfire_count,
-            "n_backfires_sig": backfire_sig_count,
-            "n_observations": backfire_total,
-            "n_sig_nudges": backfire_sig_total,
+            "backfire_rate": backfire_rate,
+            "backfire_sig_rate": sig_backfire_rate,
+            "sig_A": sig_A,
+            "sig_B": sig_B,
+            "backfire_A": backfire_A,
+            "backfire_B": backfire_B,
             "counts": {
                 "c_0_A": c_0_A,
                 "c_0_B": c_0_B,
@@ -384,10 +373,6 @@ def analyze_model(
         agg_c_A_B += c_A_B
         agg_c_B_A += c_B_A
         agg_c_B_B += c_B_B
-        all_backfire_count += backfire_count
-        all_backfire_total += backfire_total
-        all_backfire_sig_count += backfire_sig_count
-        all_backfire_sig_total += backfire_sig_total
 
     s_A, s_B, asym, norm_asym = compute_steerability_asym_from_counts(
         agg_c_0_A,
@@ -398,19 +383,33 @@ def analyze_model(
         agg_c_B_B,
     )
 
-    agg_p_val_toward_val = (
-        agg_c_A_A / (agg_c_A_A + agg_c_A_B) if (agg_c_A_A + agg_c_A_B) > 0 else None
-    )
-    agg_p_val_toward_non = (
-        agg_c_B_A / (agg_c_B_A + agg_c_B_B) if (agg_c_B_A + agg_c_B_B) > 0 else None
-    )
-    agg_sig_rate = (
-        all_backfire_sig_total / all_backfire_total if all_backfire_total else 0.0
-    )
     agg_n_0 = agg_c_0_A + agg_c_0_B
-    agg_f_0_nval = agg_c_0_B / agg_n_0 if agg_n_0 > 0 else None
+    agg_n_A = agg_c_A_A + agg_c_A_B
     agg_n_B = agg_c_B_A + agg_c_B_B
+    agg_p_val_toward_val = agg_c_A_A / agg_n_A if agg_n_A > 0 else None
+    agg_p_val_toward_non = agg_c_B_A / agg_n_B if agg_n_B > 0 else None
+    agg_f_0_nval = agg_c_0_B / agg_n_0 if agg_n_0 > 0 else None
     agg_f_nval_nval = agg_c_B_B / agg_n_B if agg_n_B > 0 else None
+
+    # Aggregate sig/backfire across influence types (count nudge directions)
+    agg_sig_count = sum(
+        int(m["sig_A"]) + int(m["sig_B"]) for m in metrics_by_type.values()
+    )
+    agg_n_nudge_dirs = 2 * len(metrics_by_type)
+    agg_sig_rate = agg_sig_count / agg_n_nudge_dirs if agg_n_nudge_dirs > 0 else 0.0
+    agg_backfire_count = sum(
+        int(m["backfire_A"]) + int(m["backfire_B"]) for m in metrics_by_type.values()
+    )
+    agg_backfire_rate = (
+        agg_backfire_count / agg_n_nudge_dirs if agg_n_nudge_dirs > 0 else 0.0
+    )
+    agg_sig_backfire_count = sum(
+        int(m["sig_A"] and m["backfire_A"]) + int(m["sig_B"] and m["backfire_B"])
+        for m in metrics_by_type.values()
+    )
+    agg_sig_backfire_rate = (
+        agg_sig_backfire_count / agg_sig_count if agg_sig_count > 0 else 0.0
+    )
 
     agg_abs_effect = None
     if all(
@@ -451,18 +450,10 @@ def analyze_model(
             "normalized_asymmetry": norm_asym,
             "base_bias": agg_base_bias,
             "sig_rate": agg_sig_rate,
-            "backfire_rate": (
-                all_backfire_count / all_backfire_total if all_backfire_total else 0.0
-            ),
-            "backfire_sig_rate": (
-                all_backfire_sig_count / all_backfire_sig_total
-                if all_backfire_sig_total
-                else 0.0
-            ),
-            "n_backfires": all_backfire_count,
-            "n_backfires_sig": all_backfire_sig_count,
-            "n_observations": all_backfire_total,
-            "n_sig_nudges": all_backfire_sig_total,
+            "backfire_rate": agg_backfire_rate,
+            "backfire_sig_rate": agg_sig_backfire_rate,
+            "n_sig_nudges": agg_sig_count,
+            "n_nudge_dirs": agg_n_nudge_dirs,
         },
         "by_influence_type": metrics_by_type,
     }
@@ -506,10 +497,10 @@ def _build_overview_rows(
                     "sig_rate": it["sig_rate"],
                     "backfire_rate": it["backfire_rate"],
                     "sig_backfire_rate": it["backfire_sig_rate"],
-                    "n_observations": it["n_observations"],
-                    "n_sig_nudges": it["n_sig_nudges"],
-                    "n_backfires": it["n_backfires"],
-                    "n_backfires_sig": it["n_backfires_sig"],
+                    "sig_A": it["sig_A"],
+                    "sig_B": it["sig_B"],
+                    "backfire_A": it["backfire_A"],
+                    "backfire_B": it["backfire_B"],
                 }
             )
     return rows
@@ -554,10 +545,13 @@ def _compute_aggregate(rows: list[dict]) -> dict | None:
     if not rows:
         return None
 
-    total_obs = sum(r["n_observations"] for r in rows)
-    total_sig = sum(r["n_sig_nudges"] for r in rows)
-    total_bf = sum(r["n_backfires"] for r in rows)
-    total_bf_sig = sum(r["n_backfires_sig"] for r in rows)
+    total_nudge_dirs = 2 * len(rows)
+    total_sig = sum(int(r["sig_A"]) + int(r["sig_B"]) for r in rows)
+    total_bf = sum(int(r["backfire_A"]) + int(r["backfire_B"]) for r in rows)
+    total_sig_bf = sum(
+        int(r["sig_A"] and r["backfire_A"]) + int(r["sig_B"] and r["backfire_B"])
+        for r in rows
+    )
 
     abs_eff_m, abs_eff_lo, abs_eff_hi = _ci(
         [r["abs_effect"] for r in rows if r["abs_effect"] is not None]
@@ -600,10 +594,10 @@ def _compute_aggregate(rows: list[dict]) -> dict | None:
         "abs_asymmetry_ci": _pack_ci(abs_a_m, abs_a_lo, abs_a_hi),
         "abs_norm_asymmetry": abs_na_m,
         "abs_norm_asymmetry_ci": _pack_ci(abs_na_m, abs_na_lo, abs_na_hi),
-        "sig_rate": total_sig / total_obs if total_obs > 0 else 0.0,
-        "backfire_rate": total_bf / total_obs if total_obs > 0 else 0.0,
-        "sig_backfire_rate": total_bf_sig / total_sig if total_sig > 0 else 0.0,
-        "n_observations": total_obs,
+        "sig_rate": total_sig / total_nudge_dirs if total_nudge_dirs > 0 else 0.0,
+        "backfire_rate": total_bf / total_nudge_dirs if total_nudge_dirs > 0 else 0.0,
+        "sig_backfire_rate": total_sig_bf / total_sig if total_sig > 0 else 0.0,
+        "n_nudge_dirs": total_nudge_dirs,
     }
 
 
@@ -644,7 +638,7 @@ def _print_overview_table(
         f"{'n':>4} {'P(val)':>6} {'Bias':>5} "
         f"{'|Eff|':>6} {'s(v)':>7} {'s(~v)':>7} {'|s|':>7} "
         f"{'Asym':>7} {'N-Asy':>7} "
-        f"{'Sig%':>5} {'BF%':>5} {'N':>5}"
+        f"{'Sig%':>5} {'BF%':>5} {'sBF%':>5}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -666,7 +660,7 @@ def _print_overview_table(
             f"{_fmt(r['normalized_asymmetry'], '.3f'):>7} "
             f"{r['sig_rate']:>5.1%} "
             f"{r['backfire_rate']:>5.1%} "
-            f"{r['n_observations']:>5d}"
+            f"{r['sig_backfire_rate']:>5.1%}"
         )
 
 
@@ -681,7 +675,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
     header = (
         f"{'Model':<32} {'Rsn':<6} {'P(val)':<8} {'P→val':<8} {'P→~val':<8} "
         f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
-        f"{'Sig%':>6} {'BF%':>6} {'BF-s%':>6} {'N':>6}"
+        f"{'Sig%':>6} {'BF%':>6} {'sBF%':>6}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -701,13 +695,11 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
             f"{_fmt(o['normalized_asymmetry']):>8} "
             f"{o['sig_rate']:>5.1%} "
             f"{o['backfire_rate']:>5.1%} "
-            f"{o['backfire_sig_rate']:>5.1%} "
-            f"{o['n_observations']:>6d}"
+            f"{o['backfire_sig_rate']:>5.1%}"
         )
 
     if len(all_metrics) > 1:
         overalls = [m["overall"] for m in all_metrics]
-        n_total = sum(o.get("n_observations", 0) for o in overalls)
         print("-" * len(header))
         print(
             f"{'  across models':<32} "
@@ -721,8 +713,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
             f"{_fmt(_safe_mean(overalls, 'normalized_asymmetry')):>8} "
             f"{_safe_mean(overalls, 'sig_rate') or 0:>5.1%} "
             f"{_safe_mean(overalls, 'backfire_rate') or 0:>5.1%} "
-            f"{_safe_mean(overalls, 'backfire_sig_rate') or 0:>5.1%} "
-            f"{n_total:>6d}"
+            f"{_safe_mean(overalls, 'backfire_sig_rate') or 0:>5.1%}"
         )
 
     inf_types: set[str] = set()
@@ -734,7 +725,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
         sub_header = (
             f"{'Model':<32} {'Rsn':<6} {'P→val':<8} {'P→~val':<8} "
             f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
-            f"{'Sig%':>6} {'BF%':>6} {'BF-s%':>6} {'N':>6}"
+            f"{'Sig%':>6} {'BF%':>6} {'sBF%':>6}"
         )
         print(sub_header)
         print("-" * len(sub_header))
@@ -754,12 +745,10 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
                 f"{_fmt(it['asymmetry']):>8} "
                 f"{it['sig_rate']:>5.1%} "
                 f"{it['backfire_rate']:>5.1%} "
-                f"{it['backfire_sig_rate']:>5.1%} "
-                f"{it['n_observations']:>6d}"
+                f"{it['backfire_sig_rate']:>5.1%}"
             )
             type_rows.append(it)
         if len(type_rows) > 1:
-            n_total = sum(r.get("n_observations", 0) for r in type_rows)
             print("-" * len(sub_header))
             print(
                 f"{'  across models':<32} "
@@ -771,8 +760,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
                 f"{_fmt(_safe_mean(type_rows, 'asymmetry')):>8} "
                 f"{_safe_mean(type_rows, 'sig_rate') or 0:>5.1%} "
                 f"{_safe_mean(type_rows, 'backfire_rate') or 0:>5.1%} "
-                f"{_safe_mean(type_rows, 'backfire_sig_rate') or 0:>5.1%} "
-                f"{n_total:>6d}"
+                f"{_safe_mean(type_rows, 'backfire_sig_rate') or 0:>5.1%}"
             )
 
 
@@ -855,7 +843,6 @@ SORTABLE_COLUMNS = {
     "normalized_asymmetry",
     "sig_rate",
     "backfire_rate",
-    "n_observations",
 }
 
 
@@ -906,10 +893,10 @@ _CSV_FIELDS = [
     "sig_rate",
     "backfire_rate",
     "sig_backfire_rate",
-    "n_observations",
-    "n_sig_nudges",
-    "n_backfires",
-    "n_backfires_sig",
+    "sig_A",
+    "sig_B",
+    "backfire_A",
+    "backfire_B",
 ]
 
 
