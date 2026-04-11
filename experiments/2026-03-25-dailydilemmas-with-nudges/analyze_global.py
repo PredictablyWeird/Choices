@@ -49,6 +49,7 @@ from choices.analysis.metrics import compute_steerability_asym_from_counts
 from choices.analysis.utils import (
     binomial_test_vs_half,
     get_base_model_name,
+    get_reasoning_condition,
     two_proportion_z_test,
 )
 
@@ -93,30 +94,27 @@ def _discover_values(model: str) -> set[str]:
 
 
 def _get_reasoning_condition(model_dir_name: str) -> str:
-    """Derive a reasoning condition label from the model directory name.
+    """Determine the reasoning condition for a model results directory.
 
-    Convention used by run_global.py:
-      <model>             → uses the model's default (native reasoning or none)
-      <model>-reasoning   → ReasoningMode.BEFORE was applied (instructed)
-
-    For models whose key contains "-non-reasoning", the native reasoning is
-    turned off → condition "none".  Models ending in plain "-reasoning"
-    (excluding the "-non-reasoning" case) indicate an active reasoning model.
+    Reads the stored model key and reasoning_mode from the baseline results
+    and delegates to ``get_reasoning_condition`` which knows about reasoning
+    models (low/medium/high/off) and instructed reasoning (before/after/none).
     """
-    if model_dir_name.endswith("-reasoning") and not model_dir_name.endswith(
-        "-non-reasoning"
-    ):
-        base = model_dir_name[: -len("-reasoning")]
-        if base.endswith("-non-reasoning"):
-            return "before"
-        return "before"
+    baseline = _load_condition(model_dir_name, "baseline")
+    if baseline is None:
+        return "unknown"
 
-    from choices.utils import model_has_active_reasoning
+    stored_model = baseline.get("model", model_dir_name)
+    result_dir = results_dir() / model_dir_name / "baseline"
+    cond = get_reasoning_condition(stored_model, result_dir)
 
-    if model_has_active_reasoning(model_dir_name):
-        return "native"
-
-    return "none"
+    # For chat models where no result_dir reasoning_mode was found, fall back
+    # to the config block stored in the results JSON.
+    if cond == "unknown":
+        rm = baseline.get("config", {}).get("reasoning_mode")
+        if rm is not None:
+            return rm
+    return cond
 
 
 # ---------------------------------------------------------------------------
