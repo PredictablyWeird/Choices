@@ -14,6 +14,9 @@ influence_types:
   #- social_norm
   - emotional
   - user_preference
+  - virtue
+  - role_play
+  - weak_evidence
 
 # Responses per dilemma per condition
 k_per_dilemma: 3
