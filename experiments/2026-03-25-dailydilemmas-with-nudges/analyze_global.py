@@ -7,6 +7,15 @@ and per-nudge-type metrics.  Supports filtering and aggregation by reasoning
 condition (none, before, native) so that instructed-reasoning and
 native-reasoning models can be compared side-by-side.
 
+Flip rates measure how often the majority choice (across k runs) changes:
+  - flip_toward: flip rate when the nudge reinforces the baseline majority
+  - flip_away:   flip rate when the nudge opposes the baseline majority
+  - flip_all:    combined across both nudge directions
+
+Baseline reliability mode (--baseline-reliability) compares two independent
+baseline runs (baseline vs baseline_2) to measure test-retest flip rates,
+i.e. how often the model's majority choice changes with no nudge at all.
+
 Usage:
     # Single-value analysis for all models
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/analyze_global.py \
@@ -32,6 +41,10 @@ Usage:
     # Sort by column
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/analyze_global.py \
         --sort abs_steerability --reverse
+
+    # Baseline reliability (test-retest)
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/analyze_global.py \
+        --baseline-reliability
 """
 
 from __future__ import annotations
@@ -41,6 +54,7 @@ import csv as csv_mod
 import json
 import math
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -703,7 +717,7 @@ def _print_overview_table(
         f"{'n':>4} {'P(val)':>6} {'Bias':>5} "
         f"{'|Eff|':>6} {'s(v)':>7} {'s(~v)':>7} {'|s|':>7} "
         f"{'Asym':>7} {'N-Asy':>7} "
-        f"{'Sig%':>5} {'Fl→':>5} {'Fl←':>5} {'Fl':>5}"
+        f"{'Sig%':>5} {'→Fl':>5} {'←Fl':>5} {'Fl':>5}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -741,7 +755,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
     header = (
         f"{'Model':<32} {'Rsn':<6} {'P(val)':<8} {'P→val':<8} {'P→~val':<8} "
         f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
-        f"{'Sig%':>6} {'Fl→%':>6} {'Fl←%':>6} {'Fl%':>6}"
+        f"{'Sig%':>6} {'→Fl%':>6} {'←Fl%':>6} {'Fl%':>6}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -793,7 +807,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
         sub_header = (
             f"{'Model':<32} {'Rsn':<6} {'P→val':<8} {'P→~val':<8} "
             f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
-            f"{'Sig%':>6} {'Fl→%':>6} {'Fl←%':>6} {'Fl%':>6}"
+            f"{'Sig%':>6} {'→Fl%':>6} {'←Fl%':>6} {'Fl%':>6}"
         )
         print(sub_header)
         print("-" * len(sub_header))
@@ -991,6 +1005,234 @@ def _write_csv(rows: list[dict], output_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Baseline reliability (test-retest flip rates)
+# ---------------------------------------------------------------------------
+
+
+def _majority_choice(n_val: int, n_nval: int) -> str | None:
+    """Return 'value', 'non_value', or None if tied."""
+    if n_val > n_nval:
+        return "value"
+    if n_nval > n_val:
+        return "non_value"
+    return None
+
+
+def _compute_baseline_reliability(
+    model: str,
+    baseline_name: str = "baseline",
+    baseline_2_name: str = "baseline_2",
+) -> dict | None:
+    """Compare two baseline runs and compute per-dilemma flip rates.
+
+    Each dilemma is counted once for the totals. For the per-value breakdown,
+    each dilemma appears under both its primary values (to_do and not_to_do).
+
+    Flip rates are split into three categories:
+      - flip_toward: dilemmas where baseline_1 majority was "value"
+      - flip_away:   dilemmas where baseline_1 majority was "non_value"
+      - flip_all:    all dilemmas combined
+    """
+    b1 = _load_condition(model, baseline_name)
+    b2 = _load_condition(model, baseline_2_name)
+    if b1 is None or b2 is None:
+        return None
+
+    b1_by_id: dict[int, dict] = {r["dilemma_id"]: r for r in b1["results"]}
+    b2_by_id: dict[int, dict] = {r["dilemma_id"]: r for r in b2["results"]}
+
+    common_ids = sorted(set(b1_by_id) & set(b2_by_id))
+    if not common_ids:
+        return None
+
+    @dataclass
+    class _FlipBucket:
+        n: int = 0
+        n_flips: int = 0
+
+    per_value_toward: dict[str, _FlipBucket] = {}
+    per_value_away: dict[str, _FlipBucket] = {}
+    per_value_all: dict[str, _FlipBucket] = {}
+
+    total_toward = _FlipBucket()
+    total_away = _FlipBucket()
+    total_all = _FlipBucket()
+    total_skipped = 0
+
+    for did in common_ids:
+        r1 = b1_by_id[did]
+        r2 = b2_by_id[did]
+        pv_to_do = r1["primary_value_to_do"]
+        pv_not_to_do = r1["primary_value_not_to_do"]
+
+        counts1 = _result_counts_for_value(r1, pv_to_do)
+        counts2 = _result_counts_for_value(r2, pv_to_do)
+        if counts1 is None or counts2 is None:
+            total_skipped += 1
+            continue
+
+        n_val_1, n_nval_1, _ = counts1
+        n_val_2, n_nval_2, _ = counts2
+
+        maj1 = _majority_choice(n_val_1, n_nval_1)
+        maj2 = _majority_choice(n_val_2, n_nval_2)
+        if maj1 is None or maj2 is None:
+            total_skipped += 1
+            continue
+
+        is_flip = maj1 != maj2
+        flip_int = int(is_flip)
+
+        total_all.n += 1
+        total_all.n_flips += flip_int
+
+        for v in (pv_to_do, pv_not_to_do):
+            pv_all = per_value_all.setdefault(v, _FlipBucket())
+            pv_all.n += 1
+            pv_all.n_flips += flip_int
+
+        if maj1 == "value":
+            total_toward.n += 1
+            total_toward.n_flips += flip_int
+            for v in (pv_to_do, pv_not_to_do):
+                pv_tw = per_value_toward.setdefault(v, _FlipBucket())
+                pv_tw.n += 1
+                pv_tw.n_flips += flip_int
+        else:
+            total_away.n += 1
+            total_away.n_flips += flip_int
+            for v in (pv_to_do, pv_not_to_do):
+                pv_aw = per_value_away.setdefault(v, _FlipBucket())
+                pv_aw.n += 1
+                pv_aw.n_flips += flip_int
+
+    def _rate(bucket: _FlipBucket) -> float:
+        return bucket.n_flips / bucket.n if bucket.n > 0 else 0.0
+
+    all_values = sorted(set(per_value_all))
+
+    return {
+        "model": model,
+        "n_dilemmas": len(common_ids),
+        "n_compared": total_all.n,
+        "n_skipped": total_skipped,
+        "n_flips": total_all.n_flips,
+        "flip_rate": _rate(total_all),
+        "flip_toward_n": total_toward.n_flips,
+        "flip_toward_total": total_toward.n,
+        "flip_toward_rate": _rate(total_toward),
+        "flip_away_n": total_away.n_flips,
+        "flip_away_total": total_away.n,
+        "flip_away_rate": _rate(total_away),
+        "per_value": {
+            v: {
+                "n": per_value_all[v].n,
+                "n_flips": per_value_all[v].n_flips,
+                "flip_rate": _rate(per_value_all[v]),
+                "flip_toward_n": per_value_toward.get(v, _FlipBucket()).n_flips,
+                "flip_toward_total": per_value_toward.get(v, _FlipBucket()).n,
+                "flip_toward_rate": _rate(per_value_toward.get(v, _FlipBucket())),
+                "flip_away_n": per_value_away.get(v, _FlipBucket()).n_flips,
+                "flip_away_total": per_value_away.get(v, _FlipBucket()).n,
+                "flip_away_rate": _rate(per_value_away.get(v, _FlipBucket())),
+            }
+            for v in all_values
+        },
+    }
+
+
+def _fmt_flip3(toward_n, toward_tot, away_n, away_tot, all_n, all_tot) -> str:
+    """Format three flip-rate columns: →Fl  ←Fl  Fl"""
+    tw = f"{toward_n / toward_tot:.1%}" if toward_tot else "  n/a"
+    aw = f"{away_n / away_tot:.1%}" if away_tot else "  n/a"
+    al = f"{all_n / all_tot:.1%}" if all_tot else "  n/a"
+    return f"{tw:>6} {aw:>6} {al:>6}"
+
+
+def _print_baseline_reliability(results: list[dict]) -> None:
+    """Print baseline reliability (test-retest) results."""
+    print(f"\n{'=' * 80}")
+    print("BASELINE RELIABILITY (test-retest flip rates)")
+    print(f"{'=' * 80}")
+
+    header = f"{'Model':<40} {'Rsn':<6} {'n':>5}  " f"{'→Fl':>6} {'←Fl':>6} {'Fl':>6}"
+    print(f"\n{header}")
+    print("-" * len(header))
+
+    for r in results:
+        reasoning = _get_reasoning_condition(r["model"])
+        flip_cols = _fmt_flip3(
+            r["flip_toward_n"],
+            r["flip_toward_total"],
+            r["flip_away_n"],
+            r["flip_away_total"],
+            r["n_flips"],
+            r["n_compared"],
+        )
+        print(
+            f"{r['model']:<40} "
+            f"{reasoning:<6} "
+            f"{r['n_compared']:>5}  "
+            f"{flip_cols}"
+        )
+
+    if len(results) > 1:
+        tot_compared = sum(r["n_compared"] for r in results)
+        tot_tw_n = sum(r["flip_toward_n"] for r in results)
+        tot_tw_t = sum(r["flip_toward_total"] for r in results)
+        tot_aw_n = sum(r["flip_away_n"] for r in results)
+        tot_aw_t = sum(r["flip_away_total"] for r in results)
+        tot_flips = sum(r["n_flips"] for r in results)
+        flip_cols = _fmt_flip3(
+            tot_tw_n, tot_tw_t, tot_aw_n, tot_aw_t, tot_flips, tot_compared
+        )
+        print("-" * len(header))
+        print(f"{'  all models':<40} {'':6} " f"{tot_compared:>5}  " f"{flip_cols}")
+
+    all_values: set[str] = set()
+    for r in results:
+        all_values.update(r["per_value"])
+
+    print("\nPer Value:")
+    val_header = f"  {'Value':<20} {'n':>5}  " f"{'→Fl':>6} {'←Fl':>6} {'Fl':>6}"
+    print(val_header)
+    print("  " + "-" * (len(val_header) - 2))
+
+    for v in sorted(all_values):
+        n = tw_n = tw_t = aw_n = aw_t = flips = 0
+        for r in results:
+            vd = r["per_value"].get(v)
+            if vd:
+                n += vd["n"]
+                flips += vd["n_flips"]
+                tw_n += vd["flip_toward_n"]
+                tw_t += vd["flip_toward_total"]
+                aw_n += vd["flip_away_n"]
+                aw_t += vd["flip_away_total"]
+        flip_cols = _fmt_flip3(tw_n, tw_t, aw_n, aw_t, flips, n)
+        print(f"  {v:<20} {n:>5}  {flip_cols}")
+
+    if len(results) > 1:
+        print("\nPer Model x Value:")
+        for r in results:
+            reasoning = _get_reasoning_condition(r["model"])
+            base_model = get_base_model_name(r["model"])
+            label = f"{base_model} ({reasoning})"
+            print(f"\n  {label}:")
+            for v in sorted(r["per_value"]):
+                vd = r["per_value"][v]
+                flip_cols = _fmt_flip3(
+                    vd["flip_toward_n"],
+                    vd["flip_toward_total"],
+                    vd["flip_away_n"],
+                    vd["flip_away_total"],
+                    vd["n_flips"],
+                    vd["n"],
+                )
+                print(f"    {v:<20} {vd['n']:>5}  {flip_cols}")
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -1043,6 +1285,13 @@ def main() -> None:
         default=None,
         help="Reasoning conditions to include: 'none', 'before', 'native' "
         "(default: all)",
+    )
+
+    # --- Modes ---
+    parser.add_argument(
+        "--baseline-reliability",
+        action="store_true",
+        help="Compare baseline vs baseline_2 to compute test-retest flip rates",
     )
 
     # --- Output ---
@@ -1104,6 +1353,25 @@ def main() -> None:
             sort_desc += " (descending)"
         print(sort_desc)
     print("=" * 80)
+
+    # --- Baseline reliability mode ---
+    if args.baseline_reliability:
+        reliability_results = []
+        for model in models:
+            r = _compute_baseline_reliability(model)
+            if r is not None:
+                reasoning = _get_reasoning_condition(model)
+                if args.reasoning and reasoning not in args.reasoning:
+                    continue
+                reliability_results.append(r)
+        if reliability_results:
+            _print_baseline_reliability(reliability_results)
+        else:
+            print(
+                "No models found with both baseline and baseline_2 results. "
+                "Run with --baseline-2 first."
+            )
+        return
 
     # --- Single-value mode ---
     if args.value:

@@ -2,10 +2,15 @@
 # Same 4 models as the original Choices paper for direct comparison.
 
 models:
+  - llama-33-70b
   - gpt-5-2-non-reasoning
   - deepseek-v3-2-non-reasoning
-  #- grok-41-fast-non-reasoning
-  - llama-33-70b
+  - grok-41-fast-non-reasoning
+  - qwen3-235b-a22b-2507
+  - gpt-5-2-reasoning
+  - deepseek-v3-2-reasoning
+  - grok-41-fast-reasoning
+  - qwen3-235b-a22b-2507-reasoning
 
 influence_types:
   #- few_shot_action

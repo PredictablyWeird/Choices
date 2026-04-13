@@ -28,7 +28,10 @@ Metrics (same as run_value.py):
   - Baseline preference: P(choosing value-side option)
   - Steerability: log-odds shift when nudged toward each side
   - Asymmetry: s(B) - s(A) and normalized version
-  - Backfiring rate: fraction of nudges that move probability against intended direction
+  - Flip rates: fraction of dilemmas where the majority choice changes
+
+A second independent baseline (baseline_2) can be collected with --baseline-2
+for test-retest reliability analysis (see analyze_global.py --baseline-reliability).
 
 Analysis is in analyze_global.py.
 
@@ -48,6 +51,14 @@ Usage:
     # Run all models, all dilemmas (no value filter)
     uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
         --all
+
+    # Run a second baseline for test-retest reliability
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
+        --model llama-33-70b --condition baseline_2
+
+    # Run everything including baseline_2
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/run_global.py \
+        --all --baseline-2
 """
 
 from __future__ import annotations
@@ -215,7 +226,7 @@ def filter_rare_primary_values(
 # ---------------------------------------------------------------------------
 
 
-def get_conditions(config: dict) -> list[dict]:
+def get_conditions(config: dict, include_baseline_2: bool = False) -> list[dict]:
     """Build the condition list.
 
     Each condition dict has:
@@ -228,6 +239,8 @@ def get_conditions(config: dict) -> list[dict]:
     conditions: list[dict] = [
         {"name": "baseline", "influence_type": None},
     ]
+    if include_baseline_2:
+        conditions.append({"name": "baseline_2", "influence_type": None})
     for inf_type in config["influence_types"]:
         conditions.append({"name": inf_type, "influence_type": inf_type})
     return conditions
@@ -616,9 +629,10 @@ async def run_model(
     conditions: list[dict] | None = None,
     dry_run: bool = False,
     reasoning_mode: ReasoningMode = ReasoningMode.NONE,
+    include_baseline_2: bool = False,
 ) -> None:
     if conditions is None:
-        conditions = get_conditions(config)
+        conditions = get_conditions(config, include_baseline_2=include_baseline_2)
 
     model_dir_name = (
         f"{model}-reasoning" if reasoning_mode == ReasoningMode.BEFORE else model
@@ -700,6 +714,12 @@ async def main():
         type=int,
         help="Limit number of dilemmas (for testing)",
     )
+    parser.add_argument(
+        "--baseline-2",
+        action="store_true",
+        help="Include a second independent baseline run (baseline_2) for "
+        "test-retest reliability analysis",
+    )
     args = parser.parse_args()
 
     reasoning_mode = ReasoningMode(args.reasoning)
@@ -748,7 +768,7 @@ async def main():
         gdilemmas = gdilemmas[: args.max_dilemmas]
         print(f"Limited to {len(gdilemmas)} dilemmas")
 
-    all_conditions = get_conditions(config)
+    all_conditions = get_conditions(config, include_baseline_2=args.baseline_2)
 
     if args.dry_run and not args.all and not args.model:
         return
@@ -762,10 +782,13 @@ async def main():
                 all_dilemmas,
                 dry_run=args.dry_run,
                 reasoning_mode=reasoning_mode,
+                include_baseline_2=args.baseline_2,
             )
 
     elif args.model:
         if args.condition:
+            if args.condition == "baseline_2":
+                all_conditions = get_conditions(config, include_baseline_2=True)
             matching = [c for c in all_conditions if c["name"] == args.condition]
             if not matching:
                 print(f"Unknown condition: {args.condition}")
@@ -788,6 +811,7 @@ async def main():
                 all_dilemmas,
                 dry_run=args.dry_run,
                 reasoning_mode=reasoning_mode,
+                include_baseline_2=args.baseline_2,
             )
         else:
             parser.error("Specify --condition, --all-conditions, or --all")
