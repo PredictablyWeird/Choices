@@ -244,6 +244,9 @@ def analyze_model(
         c_A_A = c_A_B = 0
         c_B_A = c_B_B = 0
 
+        flip_toward_n = flip_toward_total = 0
+        flip_away_n = flip_away_total = 0
+
         all_ids = set(dir_a_by_id) | set(dir_b_by_id)
 
         for did in all_ids:
@@ -257,6 +260,13 @@ def analyze_model(
 
             c_0_A += n_val_base
             c_0_B += n_nval_base
+
+            if n_val_base > n_nval_base:
+                base_majority = "value"
+            elif n_nval_base > n_val_base:
+                base_majority = "non_value"
+            else:
+                base_majority = None
 
             if value_is_to_do:
                 toward_value_id = "dir_a"
@@ -273,12 +283,44 @@ def analyze_model(
                 if tv_counts is not None:
                     c_A_A += tv_counts[0]
                     c_A_B += tv_counts[1]
+                    if base_majority is not None:
+                        nudge_maj = (
+                            "value"
+                            if tv_counts[0] > tv_counts[1]
+                            else "non_value"
+                            if tv_counts[1] > tv_counts[0]
+                            else None
+                        )
+                        if nudge_maj is not None:
+                            is_flip = base_majority != nudge_maj
+                            if base_majority == "value":
+                                flip_toward_total += 1
+                                flip_toward_n += int(is_flip)
+                            else:
+                                flip_away_total += 1
+                                flip_away_n += int(is_flip)
 
             if did in tnv_by_id:
                 tnv_counts = _result_counts_for_value(tnv_by_id[did], value)
                 if tnv_counts is not None:
                     c_B_A += tnv_counts[0]
                     c_B_B += tnv_counts[1]
+                    if base_majority is not None:
+                        nudge_maj = (
+                            "value"
+                            if tnv_counts[0] > tnv_counts[1]
+                            else "non_value"
+                            if tnv_counts[1] > tnv_counts[0]
+                            else None
+                        )
+                        if nudge_maj is not None:
+                            is_flip = base_majority != nudge_maj
+                            if base_majority == "non_value":
+                                flip_toward_total += 1
+                                flip_toward_n += int(is_flip)
+                            else:
+                                flip_away_total += 1
+                                flip_away_n += int(is_flip)
 
         s_A, s_B, asym, norm_asym = compute_steerability_asym_from_counts(
             c_0_A,
@@ -312,17 +354,17 @@ def analyze_model(
                 "is_significant"
             ]
 
-        # Backfire on pooled counts
-        backfire_A = (p_val_toward_val or 0) < (f_0_val or 0)
-        backfire_B = (f_nval_nval or 0) < (f_0_nval or 0)
-
         n_nudge_dirs = 2
         sig_count = int(sig_A) + int(sig_B)
         sig_rate = sig_count / n_nudge_dirs
-        backfire_count = int(backfire_A) + int(backfire_B)
-        backfire_rate = backfire_count / n_nudge_dirs
-        sig_backfire_count = int(sig_A and backfire_A) + int(sig_B and backfire_B)
-        sig_backfire_rate = sig_backfire_count / sig_count if sig_count > 0 else 0.0
+
+        flip_all_total = flip_toward_total + flip_away_total
+        flip_all_n = flip_toward_n + flip_away_n
+        flip_rate_toward = (
+            flip_toward_n / flip_toward_total if flip_toward_total > 0 else 0.0
+        )
+        flip_rate_away = flip_away_n / flip_away_total if flip_away_total > 0 else 0.0
+        flip_rate_all = flip_all_n / flip_all_total if flip_all_total > 0 else 0.0
 
         abs_effect = None
         if all(
@@ -351,12 +393,15 @@ def analyze_model(
             "normalized_asymmetry": norm_asym,
             "base_bias": base_bias,
             "sig_rate": sig_rate,
-            "backfire_rate": backfire_rate,
-            "backfire_sig_rate": sig_backfire_rate,
             "sig_A": sig_A,
             "sig_B": sig_B,
-            "backfire_A": backfire_A,
-            "backfire_B": backfire_B,
+            "flip_rate_toward": flip_rate_toward,
+            "flip_rate_away": flip_rate_away,
+            "flip_rate_all": flip_rate_all,
+            "n_flip_toward": flip_toward_n,
+            "n_flip_toward_total": flip_toward_total,
+            "n_flip_away": flip_away_n,
+            "n_flip_away_total": flip_away_total,
             "counts": {
                 "c_0_A": c_0_A,
                 "c_0_B": c_0_B,
@@ -391,25 +436,21 @@ def analyze_model(
     agg_f_0_nval = agg_c_0_B / agg_n_0 if agg_n_0 > 0 else None
     agg_f_nval_nval = agg_c_B_B / agg_n_B if agg_n_B > 0 else None
 
-    # Aggregate sig/backfire across influence types (count nudge directions)
+    # Aggregate sig/flip across influence types
     agg_sig_count = sum(
         int(m["sig_A"]) + int(m["sig_B"]) for m in metrics_by_type.values()
     )
     agg_n_nudge_dirs = 2 * len(metrics_by_type)
     agg_sig_rate = agg_sig_count / agg_n_nudge_dirs if agg_n_nudge_dirs > 0 else 0.0
-    agg_backfire_count = sum(
-        int(m["backfire_A"]) + int(m["backfire_B"]) for m in metrics_by_type.values()
+
+    agg_flip_toward_n = sum(m["n_flip_toward"] for m in metrics_by_type.values())
+    agg_flip_toward_total = sum(
+        m["n_flip_toward_total"] for m in metrics_by_type.values()
     )
-    agg_backfire_rate = (
-        agg_backfire_count / agg_n_nudge_dirs if agg_n_nudge_dirs > 0 else 0.0
-    )
-    agg_sig_backfire_count = sum(
-        int(m["sig_A"] and m["backfire_A"]) + int(m["sig_B"] and m["backfire_B"])
-        for m in metrics_by_type.values()
-    )
-    agg_sig_backfire_rate = (
-        agg_sig_backfire_count / agg_sig_count if agg_sig_count > 0 else 0.0
-    )
+    agg_flip_away_n = sum(m["n_flip_away"] for m in metrics_by_type.values())
+    agg_flip_away_total = sum(m["n_flip_away_total"] for m in metrics_by_type.values())
+    agg_flip_all_n = agg_flip_toward_n + agg_flip_away_n
+    agg_flip_all_total = agg_flip_toward_total + agg_flip_away_total
 
     agg_abs_effect = None
     if all(
@@ -450,10 +491,21 @@ def analyze_model(
             "normalized_asymmetry": norm_asym,
             "base_bias": agg_base_bias,
             "sig_rate": agg_sig_rate,
-            "backfire_rate": agg_backfire_rate,
-            "backfire_sig_rate": agg_sig_backfire_rate,
             "n_sig_nudges": agg_sig_count,
             "n_nudge_dirs": agg_n_nudge_dirs,
+            "flip_rate_toward": agg_flip_toward_n / agg_flip_toward_total
+            if agg_flip_toward_total > 0
+            else 0.0,
+            "flip_rate_away": agg_flip_away_n / agg_flip_away_total
+            if agg_flip_away_total > 0
+            else 0.0,
+            "flip_rate_all": agg_flip_all_n / agg_flip_all_total
+            if agg_flip_all_total > 0
+            else 0.0,
+            "n_flip_toward": agg_flip_toward_n,
+            "n_flip_toward_total": agg_flip_toward_total,
+            "n_flip_away": agg_flip_away_n,
+            "n_flip_away_total": agg_flip_away_total,
         },
         "by_influence_type": metrics_by_type,
     }
@@ -495,12 +547,15 @@ def _build_overview_rows(
                     "asymmetry": it["asymmetry"],
                     "normalized_asymmetry": it["normalized_asymmetry"],
                     "sig_rate": it["sig_rate"],
-                    "backfire_rate": it["backfire_rate"],
-                    "sig_backfire_rate": it["backfire_sig_rate"],
                     "sig_A": it["sig_A"],
                     "sig_B": it["sig_B"],
-                    "backfire_A": it["backfire_A"],
-                    "backfire_B": it["backfire_B"],
+                    "flip_rate_toward": it["flip_rate_toward"],
+                    "flip_rate_away": it["flip_rate_away"],
+                    "flip_rate_all": it["flip_rate_all"],
+                    "n_flip_toward": it["n_flip_toward"],
+                    "n_flip_toward_total": it["n_flip_toward_total"],
+                    "n_flip_away": it["n_flip_away"],
+                    "n_flip_away_total": it["n_flip_away_total"],
                 }
             )
     return rows
@@ -547,11 +602,13 @@ def _compute_aggregate(rows: list[dict]) -> dict | None:
 
     total_nudge_dirs = 2 * len(rows)
     total_sig = sum(int(r["sig_A"]) + int(r["sig_B"]) for r in rows)
-    total_bf = sum(int(r["backfire_A"]) + int(r["backfire_B"]) for r in rows)
-    total_sig_bf = sum(
-        int(r["sig_A"] and r["backfire_A"]) + int(r["sig_B"] and r["backfire_B"])
-        for r in rows
-    )
+
+    tot_flip_toward_n = sum(r["n_flip_toward"] for r in rows)
+    tot_flip_toward_total = sum(r["n_flip_toward_total"] for r in rows)
+    tot_flip_away_n = sum(r["n_flip_away"] for r in rows)
+    tot_flip_away_total = sum(r["n_flip_away_total"] for r in rows)
+    tot_flip_all_n = tot_flip_toward_n + tot_flip_away_n
+    tot_flip_all_total = tot_flip_toward_total + tot_flip_away_total
 
     abs_eff_m, abs_eff_lo, abs_eff_hi = _ci(
         [r["abs_effect"] for r in rows if r["abs_effect"] is not None]
@@ -595,8 +652,15 @@ def _compute_aggregate(rows: list[dict]) -> dict | None:
         "abs_norm_asymmetry": abs_na_m,
         "abs_norm_asymmetry_ci": _pack_ci(abs_na_m, abs_na_lo, abs_na_hi),
         "sig_rate": total_sig / total_nudge_dirs if total_nudge_dirs > 0 else 0.0,
-        "backfire_rate": total_bf / total_nudge_dirs if total_nudge_dirs > 0 else 0.0,
-        "sig_backfire_rate": total_sig_bf / total_sig if total_sig > 0 else 0.0,
+        "flip_rate_toward": tot_flip_toward_n / tot_flip_toward_total
+        if tot_flip_toward_total > 0
+        else 0.0,
+        "flip_rate_away": tot_flip_away_n / tot_flip_away_total
+        if tot_flip_away_total > 0
+        else 0.0,
+        "flip_rate_all": tot_flip_all_n / tot_flip_all_total
+        if tot_flip_all_total > 0
+        else 0.0,
         "n_nudge_dirs": total_nudge_dirs,
     }
 
@@ -623,8 +687,9 @@ def _print_aggregate_line(label: str, agg: dict) -> None:
         f"|n-asym|={_fmt_ci(agg['abs_norm_asymmetry'], agg.get('abs_norm_asymmetry_ci'))}"
     )
     parts.append(f"sig={agg['sig_rate']:.1%}")
-    parts.append(f"backfire={agg['backfire_rate']:.1%}")
-    parts.append(f"sig_backfire={agg['sig_backfire_rate']:.1%}")
+    parts.append(f"flip_toward={agg['flip_rate_toward']:.1%}")
+    parts.append(f"flip_away={agg['flip_rate_away']:.1%}")
+    parts.append(f"flip_all={agg['flip_rate_all']:.1%}")
     print(f"  {label}: {', '.join(parts)}")
 
 
@@ -638,7 +703,7 @@ def _print_overview_table(
         f"{'n':>4} {'P(val)':>6} {'Bias':>5} "
         f"{'|Eff|':>6} {'s(v)':>7} {'s(~v)':>7} {'|s|':>7} "
         f"{'Asym':>7} {'N-Asy':>7} "
-        f"{'Sig%':>5} {'BF%':>5} {'sBF%':>5}"
+        f"{'Sig%':>5} {'Fl→':>5} {'Fl←':>5} {'Fl':>5}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -659,8 +724,9 @@ def _print_overview_table(
             f"{_fmt(r['asymmetry'], '.3f'):>7} "
             f"{_fmt(r['normalized_asymmetry'], '.3f'):>7} "
             f"{r['sig_rate']:>5.1%} "
-            f"{r['backfire_rate']:>5.1%} "
-            f"{r['sig_backfire_rate']:>5.1%}"
+            f"{r['flip_rate_toward']:>5.1%} "
+            f"{r['flip_rate_away']:>5.1%} "
+            f"{r['flip_rate_all']:>5.1%}"
         )
 
 
@@ -675,7 +741,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
     header = (
         f"{'Model':<32} {'Rsn':<6} {'P(val)':<8} {'P→val':<8} {'P→~val':<8} "
         f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} {'N-Asym':>8} "
-        f"{'Sig%':>6} {'BF%':>6} {'sBF%':>6}"
+        f"{'Sig%':>6} {'Fl→%':>6} {'Fl←%':>6} {'Fl%':>6}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -694,8 +760,9 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
             f"{_fmt(o['asymmetry']):>8} "
             f"{_fmt(o['normalized_asymmetry']):>8} "
             f"{o['sig_rate']:>5.1%} "
-            f"{o['backfire_rate']:>5.1%} "
-            f"{o['backfire_sig_rate']:>5.1%}"
+            f"{o['flip_rate_toward']:>5.1%} "
+            f"{o['flip_rate_away']:>5.1%} "
+            f"{o['flip_rate_all']:>5.1%}"
         )
 
     if len(all_metrics) > 1:
@@ -712,8 +779,9 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
             f"{_fmt(_safe_mean(overalls, 'asymmetry')):>8} "
             f"{_fmt(_safe_mean(overalls, 'normalized_asymmetry')):>8} "
             f"{_safe_mean(overalls, 'sig_rate') or 0:>5.1%} "
-            f"{_safe_mean(overalls, 'backfire_rate') or 0:>5.1%} "
-            f"{_safe_mean(overalls, 'backfire_sig_rate') or 0:>5.1%}"
+            f"{_safe_mean(overalls, 'flip_rate_toward') or 0:>5.1%} "
+            f"{_safe_mean(overalls, 'flip_rate_away') or 0:>5.1%} "
+            f"{_safe_mean(overalls, 'flip_rate_all') or 0:>5.1%}"
         )
 
     inf_types: set[str] = set()
@@ -725,7 +793,7 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
         sub_header = (
             f"{'Model':<32} {'Rsn':<6} {'P→val':<8} {'P→~val':<8} "
             f"{'s(val)':>8} {'s(~val)':>8} {'Asym':>8} "
-            f"{'Sig%':>6} {'BF%':>6} {'sBF%':>6}"
+            f"{'Sig%':>6} {'Fl→%':>6} {'Fl←%':>6} {'Fl%':>6}"
         )
         print(sub_header)
         print("-" * len(sub_header))
@@ -744,8 +812,9 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
                 f"{_fmt(it['steerability_non_value']):>8} "
                 f"{_fmt(it['asymmetry']):>8} "
                 f"{it['sig_rate']:>5.1%} "
-                f"{it['backfire_rate']:>5.1%} "
-                f"{it['backfire_sig_rate']:>5.1%}"
+                f"{it['flip_rate_toward']:>5.1%} "
+                f"{it['flip_rate_away']:>5.1%} "
+                f"{it['flip_rate_all']:>5.1%}"
             )
             type_rows.append(it)
         if len(type_rows) > 1:
@@ -759,8 +828,9 @@ def _print_single_value_table(all_metrics: list[dict]) -> None:
                 f"{_fmt(_safe_mean(type_rows, 'steerability_non_value')):>8} "
                 f"{_fmt(_safe_mean(type_rows, 'asymmetry')):>8} "
                 f"{_safe_mean(type_rows, 'sig_rate') or 0:>5.1%} "
-                f"{_safe_mean(type_rows, 'backfire_rate') or 0:>5.1%} "
-                f"{_safe_mean(type_rows, 'backfire_sig_rate') or 0:>5.1%}"
+                f"{_safe_mean(type_rows, 'flip_rate_toward') or 0:>5.1%} "
+                f"{_safe_mean(type_rows, 'flip_rate_away') or 0:>5.1%} "
+                f"{_safe_mean(type_rows, 'flip_rate_all') or 0:>5.1%}"
             )
 
 
@@ -842,7 +912,9 @@ SORTABLE_COLUMNS = {
     "asymmetry",
     "normalized_asymmetry",
     "sig_rate",
-    "backfire_rate",
+    "flip_rate_toward",
+    "flip_rate_away",
+    "flip_rate_all",
 }
 
 
@@ -891,12 +963,15 @@ _CSV_FIELDS = [
     "asymmetry",
     "normalized_asymmetry",
     "sig_rate",
-    "backfire_rate",
-    "sig_backfire_rate",
     "sig_A",
     "sig_B",
-    "backfire_A",
-    "backfire_B",
+    "flip_rate_toward",
+    "flip_rate_away",
+    "flip_rate_all",
+    "n_flip_toward",
+    "n_flip_toward_total",
+    "n_flip_away",
+    "n_flip_away_total",
 ]
 
 
