@@ -97,15 +97,16 @@ comparisons involve individuals.
 ## BBQ Dataset
 
 The BBQ JSONL files are downloaded automatically on first run into the
-`data/` subdirectory.  The 6 supported (binary) categories are:
+`data/` subdirectory.  The 3 supported (binary) categories are:
 
-age, disability, gender, nationality, appearance, ses.
+age, disability, ses.
 
-Three categories with more than two social groups — ethnicity (6),
-religion (8), sexuality (4) — are **not currently supported** because
-the nudge text targets a single group that may not appear in every
-question.  Future work could handle these by filtering questions per
-nudge target or generating per-question nudge text.
+The remaining 6 categories have more than two group tags in the actual
+data (gender has 12, nationality 7, appearance 10, ethnicity 6,
+religion 8, sexuality 4) and are **not currently supported** because the
+nudge text targets a single group that may not appear in every question.
+Future work could handle these by filtering questions per nudge target
+or generating per-question nudge text.
 
 Two intersectional categories (race\_x\_ses, race\_x\_gender) are also
 not included in the default batch config.

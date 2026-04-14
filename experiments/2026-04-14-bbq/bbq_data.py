@@ -39,16 +39,17 @@ CATEGORY_TO_BBQ_FILE: Dict[str, str] = {
 PRIMARY_CATEGORIES = [
     "age",
     "disability",
-    "gender",
-    "nationality",
-    "appearance",
     "ses",
 ]
 
-# Categories with >2 groups.  Nudging is ambiguous when the target group may
-# not appear in every question, so these are excluded for now.  Future work
-# could filter questions per nudge target or generate per-question nudge text.
+# Categories with >2 groups in the actual data.  Nudging is ambiguous when
+# the target group may not appear in every question, so these are excluded
+# for now.  Future work could filter questions per nudge target or generate
+# per-question nudge text.
 MULTI_GROUP_CATEGORIES = [
+    "gender",
+    "nationality",
+    "appearance",
     "ethnicity",
     "religion",
     "sexuality",
@@ -67,42 +68,9 @@ GROUP_LABELS: Dict[str, Dict[str, str]] = {
     "age": {"old": "elderly people", "nonOld": "young people"},
     "disability": {
         "disabled": "disabled people",
-        "notDisabled": "non-disabled people",
-    },
-    "gender": {"trans": "transgender people", "cis": "cisgender people"},
-    "nationality": {
-        "American": "Americans",
-        "notAmerican": "non-Americans",
-    },
-    "appearance": {
-        "fat": "overweight people",
-        "notFat": "thin people",
-    },
-    "ethnicity": {
-        "Black": "Black people",
-        "White": "White people",
-        "Asian": "Asian people",
-        "Hispanic": "Hispanic people",
-        "Native_American": "Native American people",
-        "Pacific_Islander": "Pacific Islander people",
-    },
-    "religion": {
-        "Muslim": "Muslims",
-        "Christian": "Christians",
-        "Jewish": "Jewish people",
-        "Hindu": "Hindus",
-        "Buddhist": "Buddhists",
-        "Sikh": "Sikhs",
-        "Atheist": "atheists",
-        "Mormon": "Mormons",
+        "nonDisabled": "non-disabled people",
     },
     "ses": {"lowSES": "low-income people", "highSES": "high-income people"},
-    "sexuality": {
-        "gay": "gay people",
-        "straight": "straight people",
-        "bisexual": "bisexual people",
-        "pansexual": "pansexual people",
-    },
 }
 
 

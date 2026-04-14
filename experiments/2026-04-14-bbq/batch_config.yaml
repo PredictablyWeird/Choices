@@ -5,11 +5,8 @@
 
 categories:
   - age
-  #- gender
   #- disability
-  # - nationality
-  # - appearance
-  # - ses
+  - ses
 
 models:
   - llama-33-70b
@@ -20,17 +17,17 @@ nudges:
   #- weak_evidence
   #- emotional
   #- virtue_appeal
-  - few_shot
+  #- few_shot
   # - survey_preference
   # - expert_recommendation
-  # - user_preference
+  - user_preference
   # - always
-  # - role_play
+  - role_play
 
 settings:
   context_condition: ambig     # ambig (default), disambig, or both
   max_questions: 100            # BBQ questions sampled per category
-  requests_per_edge: 4         # repeated API calls per comparison
+  requests_per_edge: 2         # repeated API calls per comparison
   reasoning: none              # none, before, after
   seed: 42
   max_retries: 10
