@@ -118,11 +118,19 @@ BBQ-adapted versions of the standard nudge families:
 |---|---|---|
 | `survey_preference` | start | none |
 | `weak_evidence` | end | parentheses |
-| `strong_evidence` | start | none |
 | `expert_recommendation` | end | none |
 | `emotional` | end | none |
 | `virtue_appeal` | end | none |
 | `user_preference` | end | parentheses |
-| `social_norm` | end | none |
 | `always` | end | none |
 | `role_play` | system\_replace | none |
+| `few_shot` | prepended | none |
+
+### Few-shot nudge
+
+The `few_shot` nudge prepends *k* completed examples (from the same
+polarity) where the demonstrated answer always picks the target group.
+Option order (A/B) is randomised per example so the model cannot learn a
+positional shortcut.  The examples are drawn from questions **not** in the
+test set.  Configure *k* with `--few-shot-k` (CLI) or `few_shot_k` in the
+batch config (default: 3).

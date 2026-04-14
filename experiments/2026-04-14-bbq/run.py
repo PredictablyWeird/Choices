@@ -73,6 +73,8 @@ from bbq_data import (  # noqa: E402
 )
 from bbq_nudges import (  # noqa: E402
     BBQ_NUDGE_TEMPLATES,
+    DEFAULT_FEW_SHOT_K,
+    build_few_shot_examples,
     generate_bbq_nudge_text,
     get_bbq_nudge_defaults,
 )
@@ -135,6 +137,11 @@ def build_bbq_prompt(
     formatted_nudge = _format_nudge(nudge_text, nudge_brackets) if nudge_text else None
 
     parts: list[str] = []
+
+    # Few-shot: prepend demonstration examples, then "Now answer this question:"
+    if formatted_nudge and nudge_position == "few_shot":
+        parts.append(formatted_nudge)
+        parts.append("---\n\nNow answer this question:")
 
     if formatted_nudge and nudge_position == "start":
         parts.append(formatted_nudge)
@@ -535,9 +542,12 @@ async def _run_conditions(
     save_dir: str,
     reasoning: str,
     max_retries: int,
+    few_shot_pool: Optional[List[Dict[str, Any]]] = None,
+    few_shot_k: int = DEFAULT_FEW_SHOT_K,
 ) -> Dict[str, ExperimentResults]:
     """Run base + nudge conditions for one (experiment_category, nudge) pair."""
     effective_nudge_name = nudge_type
+    is_few_shot = nudge_type == "few_shot"
 
     if target_group == "base":
         groups_to_nudge: list[str] = []
@@ -578,8 +588,16 @@ async def _run_conditions(
         other_groups = [g for g in group_tags if g != tg]
         other_group = other_groups[0] if other_groups else None
 
-        nudge_text = generate_bbq_nudge_text(nudge_type, category, tg, other_group)
-        position, brackets = get_bbq_nudge_defaults(nudge_type)
+        if is_few_shot:
+            if not few_shot_pool:
+                raise ValueError("few_shot nudge requires a non-empty few_shot_pool")
+            nudge_text = build_few_shot_examples(
+                few_shot_pool, target_group=tg, k=few_shot_k, seed=seed
+            )
+            position, brackets = "few_shot", "none"
+        else:
+            nudge_text = generate_bbq_nudge_text(nudge_type, category, tg, other_group)
+            position, brackets = get_bbq_nudge_defaults(nudge_type)
 
         print(f"\nRunning nudge towards: {tg}")
         print("-" * 80)
@@ -619,6 +637,7 @@ async def run_bbq_nudging_experiments(
     save_dir: str = DEFAULT_SAVE_DIR,
     data_dir: str = DEFAULT_DATA_DIR,
     target_group: Optional[str] = None,
+    few_shot_k: int = DEFAULT_FEW_SHOT_K,
 ) -> Dict[str, ExperimentResults]:
     """
     Run baseline + nudged conditions for a single (category, nudge_type).
@@ -628,13 +647,13 @@ async def run_bbq_nudging_experiments(
     analysed separately.  ``max_questions`` is applied **per polarity
     split**, so each sub-experiment gets up to that many questions.
 
+    For ``few_shot`` nudges, the remaining (non-test) examples from the
+    same polarity are used as the demonstration pool.
+
     Returns dict mapping ``"{polarity}/{condition}"`` -> ExperimentResults.
     """
     download_bbq_data(data_dir, categories=[category])
     raw = load_bbq_category(category, data_dir)
-    # Filter by context condition but don't sample yet — sampling is
-    # applied per polarity split so max_questions controls the size of
-    # each sub-experiment independently.
     pairwise = prepare_pairwise_examples(
         raw,
         context_condition=context_condition,
@@ -649,32 +668,56 @@ async def run_bbq_nudging_experiments(
 
     polarity_splits = _split_by_polarity(pairwise)
 
-    # Sample per polarity split.
-    if max_questions is not None:
-        rng = random.Random(seed)
-        for key in polarity_splits:
-            subset = polarity_splits[key]
-            if len(subset) > max_questions:
-                polarity_splits[key] = rng.sample(subset, max_questions)
+    # Sample per polarity split, keeping the remainder as a few-shot pool.
+    test_splits: Dict[str, List[Dict[str, Any]]] = {}
+    pool_splits: Dict[str, List[Dict[str, Any]]] = {}
+    rng = random.Random(seed)
+    for key, subset in polarity_splits.items():
+        if max_questions is not None and len(subset) > max_questions:
+            sampled = rng.sample(subset, max_questions)
+            sampled_ids = {ex["example_id"] for ex in sampled}
+            test_splits[key] = sampled
+            pool_splits[key] = [
+                ex for ex in subset if ex["example_id"] not in sampled_ids
+            ]
+        else:
+            test_splits[key] = subset
+            pool_splits[key] = []
+
+    is_few_shot = nudge_type == "few_shot"
 
     print(f"\nBBQ category: {category}")
     print(f"Context condition: {context_condition}")
     print(
         f"Pairwise examples per polarity (max_questions={max_questions}): "
-        f"neg={len(polarity_splits.get('neg', []))}, "
-        f"pos={len(polarity_splits.get('pos', []))}"
+        f"neg={len(test_splits.get('neg', []))}, "
+        f"pos={len(test_splits.get('pos', []))}"
     )
+    if is_few_shot:
+        print(
+            f"Few-shot pool: neg={len(pool_splits.get('neg', []))}, "
+            f"pos={len(pool_splits.get('pos', []))}, k={few_shot_k}"
+        )
     print(f"Nudge type: {nudge_type}")
     print("=" * 80)
 
     all_results: Dict[str, ExperimentResults] = {}
 
-    for polarity_key, subset in polarity_splits.items():
+    for polarity_key, subset in test_splits.items():
         experiment_category = f"{category}_{polarity_key}"
         group_tags = get_group_tags_for_category(subset)
 
         if len(group_tags) < 2:
             print(f"\nSkipping {experiment_category}: only {len(group_tags)} group(s)")
+            continue
+
+        few_shot_pool = pool_splits.get(polarity_key, []) if is_few_shot else None
+
+        if is_few_shot and not few_shot_pool:
+            print(
+                f"\nWARNING: No few-shot pool for {experiment_category}. "
+                f"Increase data or decrease max_questions."
+            )
             continue
 
         print(f"\n>>> Polarity split: {experiment_category} ({len(subset)} questions)")
@@ -694,6 +737,8 @@ async def run_bbq_nudging_experiments(
             save_dir=save_dir,
             reasoning=reasoning,
             max_retries=max_retries,
+            few_shot_pool=few_shot_pool,
+            few_shot_k=few_shot_k,
         )
 
         for cond_key, res in sub_results.items():
@@ -726,6 +771,7 @@ async def run_batch(config_path: str) -> None:
     seed = settings.get("seed", 42)
     reasoning = settings.get("reasoning", "none")
     max_retries = settings.get("max_retries", 10)
+    few_shot_k = settings.get("few_shot_k", DEFAULT_FEW_SHOT_K)
     save_dir = settings.get("save_dir", DEFAULT_SAVE_DIR)
     data_dir = settings.get("data_dir", DEFAULT_DATA_DIR)
 
@@ -757,6 +803,7 @@ async def run_batch(config_path: str) -> None:
                         max_retries=max_retries,
                         save_dir=save_dir,
                         data_dir=data_dir,
+                        few_shot_k=few_shot_k,
                     )
                 except Exception as exc:
                     print(f"\nERROR: {exc}")
@@ -786,11 +833,16 @@ def list_nudges():
     print("\nAvailable BBQ nudge types:")
     print("=" * 80)
     for name, nudge in BBQ_NUDGE_TEMPLATES.items():
-        template_short = (
-            nudge.template[:70] + "..." if len(nudge.template) > 70 else nudge.template
-        )
         print(f"\n  {name}:")
-        print(f"    Template: {template_short}")
+        if name == "few_shot":
+            print("    Prepends k completed examples biased toward the target group")
+        else:
+            template_short = (
+                nudge.template[:70] + "..."
+                if len(nudge.template) > 70
+                else nudge.template
+            )
+            print(f"    Template: {template_short}")
         print(f"    Position: {nudge.position}  |  Brackets: {nudge.brackets}")
     print("\n" + "=" * 80)
 
@@ -878,6 +930,12 @@ Examples:
         help="Run only one condition: 'base' or a group tag (e.g. 'old')",
     )
     parser.add_argument(
+        "--few-shot-k",
+        type=int,
+        default=DEFAULT_FEW_SHOT_K,
+        help=f"Number of few-shot examples when using --nudge few_shot (default: {DEFAULT_FEW_SHOT_K})",
+    )
+    parser.add_argument(
         "--config", type=str, default=None, help="Path to batch YAML config"
     )
     parser.add_argument(
@@ -910,6 +968,7 @@ Examples:
                 save_dir=args.save_dir,
                 data_dir=args.data_dir,
                 target_group=args.target_group,
+                few_shot_k=args.few_shot_k,
             )
         )
     else:

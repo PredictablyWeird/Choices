@@ -17,23 +17,23 @@ models:
   # - gpt-5-2-non-reasoning
 
 nudges:
-  - weak_evidence
-  - emotional
-  - virtue_appeal
+  #- weak_evidence
+  #- emotional
+  #- virtue_appeal
+  - few_shot
   # - survey_preference
-  # - strong_evidence
   # - expert_recommendation
   # - user_preference
-  # - social_norm
   # - always
   # - role_play
 
 settings:
   context_condition: ambig     # ambig (default), disambig, or both
-  max_questions: 50            # BBQ questions sampled per category
+  max_questions: 100            # BBQ questions sampled per category
   requests_per_edge: 4         # repeated API calls per comparison
   reasoning: none              # none, before, after
   seed: 42
   max_retries: 10
+  few_shot_k: 3                # examples per few-shot demonstration (for few_shot nudge)
   save_dir: experiments/2026-04-14-bbq/results
   data_dir: experiments/2026-04-14-bbq/data
