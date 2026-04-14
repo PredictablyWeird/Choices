@@ -62,6 +62,7 @@ from choices.utils import (  # noqa: E402
 from choices.variable import AnalysisConfig, AnalysisType  # noqa: E402
 
 from bbq_data import (  # noqa: E402
+    MULTI_GROUP_CATEGORIES,
     download_bbq_data,
     get_bbq_categories,
     get_factor_for_category,
@@ -693,14 +694,13 @@ async def run_batch(config_path: str) -> None:
 
 
 def list_categories():
-    print("\nAvailable BBQ categories (primary):")
+    print("\nSupported BBQ categories (binary groups):")
     print("=" * 60)
     for cat in get_bbq_categories():
         print(f"  {cat}")
-    print("\nIntersectional categories (use --include-intersectional):")
-    for cat in get_bbq_categories(include_intersectional=True):
-        if cat not in get_bbq_categories():
-            print(f"  {cat}")
+    print("\nNot yet supported (>2 groups per category):")
+    for cat in MULTI_GROUP_CATEGORIES:
+        print(f"  {cat}")
     print("=" * 60)
 
 

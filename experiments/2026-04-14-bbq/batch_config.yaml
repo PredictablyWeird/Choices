@@ -6,13 +6,10 @@
 categories:
   - age
   - gender
-  - ethnicity
-  # - disability
+  - disability
   # - nationality
   # - appearance
-  # - religion
   # - ses
-  # - sexuality
 
 models:
   - llama-3.3-70b

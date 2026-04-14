@@ -35,15 +35,22 @@ CATEGORY_TO_BBQ_FILE: Dict[str, str] = {
     "race_x_gender": "Race_x_gender",
 }
 
+# Categories with exactly two groups, suitable for binary nudging experiments.
 PRIMARY_CATEGORIES = [
     "age",
     "disability",
     "gender",
     "nationality",
     "appearance",
+    "ses",
+]
+
+# Categories with >2 groups.  Nudging is ambiguous when the target group may
+# not appear in every question, so these are excluded for now.  Future work
+# could filter questions per nudge target or generate per-question nudge text.
+MULTI_GROUP_CATEGORIES = [
     "ethnicity",
     "religion",
-    "ses",
     "sexuality",
 ]
 
@@ -52,7 +59,7 @@ INTERSECTIONAL_CATEGORIES = [
     "race_x_gender",
 ]
 
-ALL_CATEGORIES = PRIMARY_CATEGORIES + INTERSECTIONAL_CATEGORIES
+ALL_CATEGORIES = PRIMARY_CATEGORIES + MULTI_GROUP_CATEGORIES + INTERSECTIONAL_CATEGORIES
 
 # Human-readable group labels used for nudge text and display.
 # Keyed by the short category name.
@@ -110,10 +117,8 @@ def _bbq_file(category: str) -> str:
     return bbq
 
 
-def get_bbq_categories(include_intersectional: bool = False) -> List[str]:
-    """Return the list of available BBQ categories (short lowercase names)."""
-    if include_intersectional:
-        return list(ALL_CATEGORIES)
+def get_bbq_categories() -> List[str]:
+    """Return the supported BBQ categories (binary-group only)."""
     return list(PRIMARY_CATEGORIES)
 
 
