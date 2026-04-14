@@ -54,27 +54,45 @@ BBQ provides two versions of each scenario:
   clearly correct.  This tests whether nudges can override factual knowledge.
 - **`both`** — Uses both context types.
 
+## Question Polarity
+
+BBQ questions come in two polarities:
+
+- **`neg`** — *"Who was forgetful?"* — being chosen is a negative association.
+- **`pos`** (nonneg) — *"Who acted responsibly?"* — being chosen is a positive association.
+
+These are run as **separate sub-experiments** using pseudo-factor names
+`{category}_neg` and `{category}_pos` (e.g. `age_neg`, `age_pos`).  This
+ensures results are stored and analysed independently — a high selection
+rate for a group in `age_neg` means the model associates that group with
+negative traits, while a high rate in `age_pos` means positive traits.
+
+`max_questions` is applied **per polarity split**, so each subset gets
+up to that many questions independently.
+
 ## Result Format
 
 Results land in:
 
 ```
-results/simple_{category}/{model}/{nudge_type}/{timestamp}_{condition}/
+results/simple_{category}_{polarity}/{model}/{nudge_type}/{timestamp}_{condition}/
     preference_graph_{model}.json
     utility_model_{model}.json
     example_prompt.txt
     summary_{model}.txt
 ```
 
+For example: `results/simple_age_neg/llama-33-70b/weak_evidence/...`
+
 The JSON files follow the exact schema produced by
 `choices/experiments/nudging/simple.py`, so the standard analysis pipeline
 (`choices/analysis/create_summary.py`, steerability plots, etc.) can load
 them directly.
 
-The factor variable is named after the BBQ category (e.g. `age` with values
-`["nonOld", "old"]`).  A dummy `N=1` variable is included for structural
-compatibility; `larger_group_rate` will be `None` since all comparisons
-involve individuals.
+The factor variable is named `{category}_{polarity}` (e.g. `age_neg` with
+values `["nonOld", "old"]`).  A dummy `N=1` variable is included for
+structural compatibility; `larger_group_rate` will be `None` since all
+comparisons involve individuals.
 
 ## BBQ Dataset
 

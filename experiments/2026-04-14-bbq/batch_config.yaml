@@ -5,14 +5,14 @@
 
 categories:
   - age
-  - gender
-  - disability
+  #- gender
+  #- disability
   # - nationality
   # - appearance
   # - ses
 
 models:
-  - llama-3.3-70b
+  - llama-33-70b
   # - deepseek-v3-2-non-reasoning
   # - gpt-5-2-non-reasoning
 

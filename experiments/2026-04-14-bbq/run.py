@@ -26,6 +26,7 @@ Usage:
 import argparse
 import asyncio
 import os
+import random
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -507,61 +508,44 @@ async def run_bbq_experiment(
 # ---------------------------------------------------------------------------
 
 
-async def run_bbq_nudging_experiments(
+def _split_by_polarity(
+    pairwise: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Split pairwise examples into ``_neg`` and ``_pos`` subsets."""
+    neg = [ex for ex in pairwise if ex.get("question_polarity") == "neg"]
+    pos = [ex for ex in pairwise if ex.get("question_polarity") != "neg"]
+    splits: Dict[str, List[Dict[str, Any]]] = {}
+    if neg:
+        splits["neg"] = neg
+    if pos:
+        splits["pos"] = pos
+    return splits
+
+
+async def _run_conditions(
+    experiment_category: str,
     category: str,
+    pairwise: List[Dict[str, Any]],
+    group_tags: List[str],
     nudge_type: str,
-    model: str = "gpt-4o-mini",
-    context_condition: str = "ambig",
-    max_questions: Optional[int] = 50,
-    requests_per_edge: int = 4,
-    seed: int = 42,
-    reasoning: str = "none",
-    max_retries: int = 10,
-    save_dir: str = DEFAULT_SAVE_DIR,
-    data_dir: str = DEFAULT_DATA_DIR,
-    target_group: Optional[str] = None,
+    target_group: Optional[str],
+    model: str,
+    requests_per_edge: int,
+    seed: int,
+    save_dir: str,
+    reasoning: str,
+    max_retries: int,
 ) -> Dict[str, ExperimentResults]:
-    """
-    Run baseline + nudged conditions for a single (category, nudge_type).
-
-    Returns dict mapping condition label -> ExperimentResults.
-    """
-    # Ensure data is available.
-    download_bbq_data(data_dir, categories=[category])
-    raw = load_bbq_category(category, data_dir)
-    pairwise = prepare_pairwise_examples(
-        raw,
-        context_condition=context_condition,
-        max_questions=max_questions,
-        seed=seed,
-    )
-
-    if not pairwise:
-        raise ValueError(
-            f"No pairwise examples for {category} with context_condition={context_condition}"
-        )
-
-    group_tags = get_group_tags_for_category(pairwise)
-    if len(group_tags) < 2:
-        raise ValueError(f"Need at least 2 group tags for {category}, got {group_tags}")
-
-    print(f"\nBBQ category: {category}")
-    print(f"Context condition: {context_condition}")
-    print(f"Pairwise examples: {len(pairwise)}")
-    print(f"Group tags: {group_tags}")
-    print(f"Nudge type: {nudge_type}")
-    print("=" * 80)
-
+    """Run base + nudge conditions for one (experiment_category, nudge) pair."""
     effective_nudge_name = nudge_type
 
-    # Determine which conditions to run.
     if target_group == "base":
         groups_to_nudge: list[str] = []
         run_base = True
     elif target_group:
         if target_group not in group_tags:
             raise ValueError(
-                f"Unknown target group '{target_group}' for {category}. "
+                f"Unknown target group '{target_group}' for {experiment_category}. "
                 f"Available: {group_tags} (or 'base')"
             )
         groups_to_nudge = [target_group]
@@ -572,12 +556,11 @@ async def run_bbq_nudging_experiments(
 
     results: Dict[str, ExperimentResults] = {}
 
-    # Baseline.
     if run_base:
         print("\nRunning BASE condition (no nudge)")
         print("-" * 80)
         base = await run_bbq_experiment(
-            category=category,
+            category=experiment_category,
             pairwise_examples=pairwise,
             group_tags=group_tags,
             nudge_type="base",
@@ -591,7 +574,6 @@ async def run_bbq_nudging_experiments(
         )
         results["base"] = base
 
-    # Nudged conditions.
     for tg in groups_to_nudge:
         other_groups = [g for g in group_tags if g != tg]
         other_group = other_groups[0] if other_groups else None
@@ -603,7 +585,7 @@ async def run_bbq_nudging_experiments(
         print("-" * 80)
 
         res = await run_bbq_experiment(
-            category=category,
+            category=experiment_category,
             pairwise_examples=pairwise,
             group_tags=group_tags,
             nudge_type=nudge_type,
@@ -621,10 +603,106 @@ async def run_bbq_nudging_experiments(
         )
         results[tg] = res
 
+    return results
+
+
+async def run_bbq_nudging_experiments(
+    category: str,
+    nudge_type: str,
+    model: str = "gpt-4o-mini",
+    context_condition: str = "ambig",
+    max_questions: Optional[int] = 50,
+    requests_per_edge: int = 4,
+    seed: int = 42,
+    reasoning: str = "none",
+    max_retries: int = 10,
+    save_dir: str = DEFAULT_SAVE_DIR,
+    data_dir: str = DEFAULT_DATA_DIR,
+    target_group: Optional[str] = None,
+) -> Dict[str, ExperimentResults]:
+    """
+    Run baseline + nudged conditions for a single (category, nudge_type).
+
+    Examples are split by question polarity into ``{category}_neg`` and
+    ``{category}_pos`` sub-experiments so that results are stored and
+    analysed separately.  ``max_questions`` is applied **per polarity
+    split**, so each sub-experiment gets up to that many questions.
+
+    Returns dict mapping ``"{polarity}/{condition}"`` -> ExperimentResults.
+    """
+    download_bbq_data(data_dir, categories=[category])
+    raw = load_bbq_category(category, data_dir)
+    # Filter by context condition but don't sample yet — sampling is
+    # applied per polarity split so max_questions controls the size of
+    # each sub-experiment independently.
+    pairwise = prepare_pairwise_examples(
+        raw,
+        context_condition=context_condition,
+        max_questions=None,
+        seed=seed,
+    )
+
+    if not pairwise:
+        raise ValueError(
+            f"No pairwise examples for {category} with context_condition={context_condition}"
+        )
+
+    polarity_splits = _split_by_polarity(pairwise)
+
+    # Sample per polarity split.
+    if max_questions is not None:
+        rng = random.Random(seed)
+        for key in polarity_splits:
+            subset = polarity_splits[key]
+            if len(subset) > max_questions:
+                polarity_splits[key] = rng.sample(subset, max_questions)
+
+    print(f"\nBBQ category: {category}")
+    print(f"Context condition: {context_condition}")
+    print(
+        f"Pairwise examples per polarity (max_questions={max_questions}): "
+        f"neg={len(polarity_splits.get('neg', []))}, "
+        f"pos={len(polarity_splits.get('pos', []))}"
+    )
+    print(f"Nudge type: {nudge_type}")
+    print("=" * 80)
+
+    all_results: Dict[str, ExperimentResults] = {}
+
+    for polarity_key, subset in polarity_splits.items():
+        experiment_category = f"{category}_{polarity_key}"
+        group_tags = get_group_tags_for_category(subset)
+
+        if len(group_tags) < 2:
+            print(f"\nSkipping {experiment_category}: only {len(group_tags)} group(s)")
+            continue
+
+        print(f"\n>>> Polarity split: {experiment_category} ({len(subset)} questions)")
+        print(f"    Group tags: {group_tags}")
+        print("=" * 80)
+
+        sub_results = await _run_conditions(
+            experiment_category=experiment_category,
+            category=category,
+            pairwise=subset,
+            group_tags=group_tags,
+            nudge_type=nudge_type,
+            target_group=target_group,
+            model=model,
+            requests_per_edge=requests_per_edge,
+            seed=seed,
+            save_dir=save_dir,
+            reasoning=reasoning,
+            max_retries=max_retries,
+        )
+
+        for cond_key, res in sub_results.items():
+            all_results[f"{polarity_key}/{cond_key}"] = res
+
     print("\n" + "=" * 80)
     print("All conditions completed!")
     print("=" * 80)
-    return results
+    return all_results
 
 
 # ---------------------------------------------------------------------------
