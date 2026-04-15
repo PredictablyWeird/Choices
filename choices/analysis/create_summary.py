@@ -930,7 +930,7 @@ def format_table(
             if r.normalized_steerability_asym is not None
             else "N/A"
         )
-        factor_with_levels = f"{r.level_A}/{r.level_B}"
+        factor_with_levels = f"{r.factor} ({r.level_A}/{r.level_B})"
 
         # Format frequency columns with asterisks for significant changes
         f_A_B_str = f"{r.f_A_B:.{decimals}f}{'*' if r.sig_A else ''}"
@@ -1242,6 +1242,16 @@ Examples:
         "in the table and aggregate stats",
     )
 
+    parser.add_argument(
+        "--combinations",
+        nargs="+",
+        default=None,
+        help="List of dimension combinations for additional aggregate stats sections. "
+        "Specify as dash-separated dimensions: model-influence, model-factor, "
+        "factor-influence, model-factor-influence. "
+        "Dimensions: model, factor, influence (= nudge type)",
+    )
+
     args = parser.parse_args()
 
     print("=" * 80)
@@ -1270,6 +1280,8 @@ Examples:
         print(sort_desc)
     if args.hide_columns:
         print(f"Hidden columns: {args.hide_columns}")
+    if args.combinations:
+        print(f"Combination aggregates: {args.combinations}")
     print("=" * 80)
     print()
 
@@ -2146,6 +2158,135 @@ Examples:
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
                 f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
             )
+
+    # Combination aggregate statistics (if --combinations is specified)
+    if args.combinations:
+        COMBO_DIM_KEY = {
+            "model": lambda r: (get_base_model_name(r.model), r.reasoning_condition),
+            "factor": lambda r: r.factor,
+            "influence": lambda r: r.nudge_type,
+        }
+        COMBO_DIM_LABEL = {
+            "model": lambda r: f"{get_model_display_name(r.model) if show_display_names else get_base_model_name(r.model)} ({r.reasoning_condition})",
+            "factor": lambda r: r.factor,
+            "influence": lambda r: r.nudge_type,
+        }
+
+        for combo_spec in args.combinations:
+            dims = combo_spec.lower().split("-")
+            unknown = [d for d in dims if d not in COMBO_DIM_KEY]
+            if unknown:
+                print(
+                    f"\nWarning: Unknown dimensions {unknown} in '{combo_spec}'. "
+                    f"Valid dimensions: model, factor, influence"
+                )
+                continue
+
+            combo_groups: Dict[tuple, List[FrequencyResult]] = defaultdict(list)
+            for r in results:
+                key_parts = []
+                for d in dims:
+                    val = COMBO_DIM_KEY[d](r)
+                    if isinstance(val, tuple):
+                        key_parts.extend(val)
+                    else:
+                        key_parts.append(val)
+                combo_groups[tuple(key_parts)].append(r)
+
+            print(f"\nCombination: {combo_spec} ({len(combo_groups)} groups):")
+            for group_key in sorted(combo_groups.keys(), key=str):
+                group_results = combo_groups[group_key]
+                representative = group_results[0]
+                label_parts = [COMBO_DIM_LABEL[d](representative) for d in dims]
+                group_label = " / ".join(label_parts)
+
+                n_factors = len(set(r.factor for r in group_results))
+                (
+                    avg_steer,
+                    avg_asym,
+                    avg_asym_ci,
+                    avg_n_asym,
+                    avg_n_asym_ci,
+                    avg_effect,
+                    avg_abs_steer,
+                    sig_rate,
+                    sig_backfire_rate,
+                    backfire_rate,
+                    base_bias,
+                    base_bias_ci,
+                    avg_p_large,
+                    avg_p_large_ci,
+                    avg_p_large_base,
+                    avg_p_large_base_ci,
+                    avg_p_large_A,
+                    avg_p_large_A_ci,
+                    avg_p_large_B,
+                    avg_p_large_B_ci,
+                    avg_p_large_AB,
+                    avg_p_large_AB_ci,
+                ) = get_steer_stats(group_results)
+
+                effect_str = f"|effect|={avg_effect:.{decimals}f}"
+                abs_steer_str = (
+                    f"|steer|={avg_abs_steer:.{decimals}f}"
+                    if avg_abs_steer is not None
+                    else "|steer|=N/A"
+                )
+                steer_str = (
+                    f"avg_steer={avg_steer:.{decimals}f}"
+                    if avg_steer is not None
+                    else "avg_steer=N/A"
+                )
+                sig_str = f"sig={sig_rate:.1%}"
+                backfire_str_val = f"sig_backfire={sig_backfire_rate:.1%}"
+
+                if base_bias is not None and base_bias_ci is not None:
+                    base_bias_str = f"base_bias={base_bias:.{decimals}f} ({base_bias_ci[0]:.{decimals}f}, {base_bias_ci[1]:.{decimals}f})"
+                else:
+                    base_bias_str = "base_bias=N/A"
+
+                if avg_p_large is not None and avg_p_large_ci is not None:
+                    p_large_str = f"P(Large)={avg_p_large:.{decimals}f} ({avg_p_large_ci[0]:.{decimals}f}, {avg_p_large_ci[1]:.{decimals}f})"
+                else:
+                    p_large_str = "P(Large)=N/A"
+                lg_detail_str = fmt_lg_details(
+                    n_factors,
+                    avg_p_large_base,
+                    avg_p_large_base_ci,
+                    avg_p_large_A,
+                    avg_p_large_A_ci,
+                    avg_p_large_B,
+                    avg_p_large_B_ci,
+                    avg_p_large_AB,
+                    avg_p_large_AB_ci,
+                )
+
+                if avg_asym is not None and avg_asym_ci is not None:
+                    asym_str = f"|asym|={avg_asym:.{decimals}f} ({avg_asym_ci[0]:.{decimals}f}, {avg_asym_ci[1]:.{decimals}f})"
+                else:
+                    asym_str = "|asym|=N/A"
+                if avg_n_asym is not None and avg_n_asym_ci is not None:
+                    n_asym_str = f"|n-asym|={avg_n_asym:.{decimals}f} ({avg_n_asym_ci[0]:.{decimals}f}, {avg_n_asym_ci[1]:.{decimals}f})"
+                else:
+                    n_asym_str = "|n-asym|=N/A"
+
+                if n_factors > 1 or "factor" not in dims:
+                    print(
+                        f"  {group_label}: n={len(group_results)}, {effect_str}, "
+                        f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, "
+                        f"{base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str_val}"
+                    )
+                else:
+                    avg_f_0_B = sum(r.f_0_B for r in group_results) / len(group_results)
+                    avg_f_A_B = sum(r.f_A_B for r in group_results) / len(group_results)
+                    avg_f_B_B = sum(r.f_B_B for r in group_results) / len(group_results)
+                    print(
+                        f"  {group_label}: n={len(group_results)}, "
+                        f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
+                        f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, "
+                        f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, "
+                        f"{base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str_val}"
+                    )
 
     # Overall statistics
     (
