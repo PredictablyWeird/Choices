@@ -12,6 +12,7 @@ Answering", Findings of ACL 2022.  https://arxiv.org/abs/2110.08193
 import json
 import random
 import urllib.request
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -185,11 +186,28 @@ def _extract_pairwise(example: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+def subsample_per_question_index(
+    examples: List[Dict[str, Any]],
+    max_samples_per_question: int,
+    rng: random.Random,
+) -> List[Dict[str, Any]]:
+    """Stratified subsample: keep at most *max_samples_per_question* rows
+    per ``question_index``, chosen randomly via *rng*."""
+    by_qi: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for ex in examples:
+        by_qi[ex["question_index"]].append(ex)
+    result: List[Dict[str, Any]] = []
+    for group in by_qi.values():
+        if len(group) > max_samples_per_question:
+            result.extend(rng.sample(group, max_samples_per_question))
+        else:
+            result.extend(group)
+    return result
+
+
 def prepare_pairwise_examples(
     examples: List[Dict[str, Any]],
     context_condition: str = "ambig",
-    max_questions: Optional[int] = None,
-    seed: int = 42,
 ) -> List[Dict[str, Any]]:
     """
     Filter and convert BBQ examples into pairwise forced-choice records.
@@ -200,8 +218,6 @@ def prepare_pairwise_examples(
             "ambig"    – ambiguous only (default).
             "disambig" – disambiguated only.
             "both"     – no filtering by context condition.
-        max_questions: If set, randomly sample at most this many examples.
-        seed: Random seed for sampling.
 
     Returns:
         List of pairwise dicts ready for prompt generation.
@@ -214,10 +230,6 @@ def prepare_pairwise_examples(
         record = _extract_pairwise(ex)
         if record is not None:
             filtered.append(record)
-
-    if max_questions is not None and len(filtered) > max_questions:
-        rng = random.Random(seed)
-        filtered = rng.sample(filtered, max_questions)
 
     return filtered
 

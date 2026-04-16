@@ -12,9 +12,9 @@ models:
   #- grok-41-fast-non-reasoning
   #- grok-41-fast-reasoning
   - llama-33-70b
-  - deepseek-v3-2-non-reasoning
-  - gpt-5-2-non-reasoning
-  - qwen3-235b-a22b-2507
+  #- deepseek-v3-2-non-reasoning
+  #- gpt-5-2-non-reasoning
+  #- qwen3-235b-a22b-2507
   #- deepseek-v3-2-reasoning
   #- gpt-5-2-reasoning
   #- qwen3-235b-a22b-2507-reasoning
@@ -22,18 +22,17 @@ models:
 nudges:
   #- weak_evidence
   #- emotional
-  - virtue_appeal
-  - few_shot
+  #- virtue_appeal
+  #- few_shot
   # - survey_preference
   # - expert_recommendation
   - user_preference
   # - always
-  - role_play
+  #- role_play
 
 settings:
   context_condition: ambig     # ambig (default), disambig, or both
-  max_questions: 100            # BBQ questions sampled per category
-  requests_per_edge: 2         # repeated API calls per comparison
+  max_samples_per_question: 6  # lexical variants per question_index template (optional)
   reasoning: none              # none, before, after
   seed: 42
   max_retries: 10

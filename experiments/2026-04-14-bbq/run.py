@@ -70,6 +70,7 @@ from bbq_data import (  # noqa: E402
     get_group_tags_for_category,
     load_bbq_category,
     prepare_pairwise_examples,
+    subsample_per_question_index,
 )
 from bbq_nudges import (  # noqa: E402
     BBQ_NUDGE_TEMPLATES,
@@ -193,7 +194,6 @@ async def run_bbq_experiment(
     nudge_position: str = "end",
     nudge_brackets: str = "none",
     model: str = "gpt-4o-mini",
-    requests_per_edge: int = 4,
     seed: int = 42,
     save_dir: str = DEFAULT_SAVE_DIR,
     reasoning: str = "none",
@@ -293,18 +293,6 @@ async def run_bbq_experiment(
         prompt_list.append(prompt_flip)
         prompt_idx_to_key[prompt_idx] = (id_a, id_b, "flipped")
         prompt_idx += 1
-
-    # Repeat prompts for requests_per_edge > 1.
-    if requests_per_edge > 1:
-        orig_prompts = prompt_list.copy()
-        orig_mapping = prompt_idx_to_key.copy()
-        prompt_list = []
-        prompt_idx_to_key = {}
-        for _rep in range(requests_per_edge):
-            offset = len(prompt_list)
-            prompt_list.extend(orig_prompts)
-            for orig_idx, key in orig_mapping.items():
-                prompt_idx_to_key[offset + orig_idx] = key
 
     if verbose:
         print(f"Total prompts to send: {len(prompt_list)}")
@@ -427,7 +415,7 @@ async def run_bbq_experiment(
     graph_config: Dict[str, Any] = {
         "simple_experiment_config": {
             "max_requests": len(prompt_list),
-            "requests_per_edge": requests_per_edge,
+            "requests_per_edge": 1,
             "seed": seed,
             "reasoning_mode": reasoning_mode.value,
         },
@@ -533,7 +521,6 @@ async def _run_conditions(
     nudge_type: str,
     target_group: Optional[str],
     model: str,
-    requests_per_edge: int,
     seed: int,
     save_dir: str,
     reasoning: str,
@@ -571,7 +558,6 @@ async def _run_conditions(
             group_tags=group_tags,
             nudge_type="base",
             model=model,
-            requests_per_edge=requests_per_edge,
             seed=seed,
             save_dir=save_dir,
             reasoning=reasoning,
@@ -608,7 +594,6 @@ async def _run_conditions(
             nudge_position=position,
             nudge_brackets=brackets,
             model=model,
-            requests_per_edge=requests_per_edge,
             seed=seed,
             save_dir=save_dir,
             reasoning=reasoning,
@@ -625,8 +610,7 @@ async def run_bbq_nudging_experiments(
     nudge_type: str,
     model: str = "gpt-4o-mini",
     context_condition: str = "ambig",
-    max_questions: Optional[int] = 50,
-    requests_per_edge: int = 4,
+    max_samples_per_question: Optional[int] = None,
     seed: int = 42,
     reasoning: str = "none",
     max_retries: int = 10,
@@ -640,11 +624,11 @@ async def run_bbq_nudging_experiments(
 
     Examples are split by question polarity into ``{category}_neg`` and
     ``{category}_pos`` sub-experiments so that results are stored and
-    analysed separately.  ``max_questions`` is applied **per polarity
-    split**, so each sub-experiment gets up to that many questions.
+    analysed separately.
 
-    For ``few_shot`` nudges, the remaining (non-test) examples from the
-    same polarity are used as the demonstration pool.
+    If ``max_samples_per_question`` is set, at most that many lexical
+    variants are kept per ``question_index`` (per polarity split).
+    Remaining variants feed the few-shot pool when applicable.
 
     Returns dict mapping ``"{polarity}/{condition}"`` -> ExperimentResults.
     """
@@ -653,8 +637,6 @@ async def run_bbq_nudging_experiments(
     pairwise = prepare_pairwise_examples(
         raw,
         context_condition=context_condition,
-        max_questions=None,
-        seed=seed,
     )
 
     if not pairwise:
@@ -664,13 +646,16 @@ async def run_bbq_nudging_experiments(
 
     polarity_splits = _split_by_polarity(pairwise)
 
-    # Sample per polarity split, keeping the remainder as a few-shot pool.
+    # Stratified subsample per polarity split, keeping the remainder as a
+    # few-shot pool.
     test_splits: Dict[str, List[Dict[str, Any]]] = {}
     pool_splits: Dict[str, List[Dict[str, Any]]] = {}
     rng = random.Random(seed)
     for key, subset in polarity_splits.items():
-        if max_questions is not None and len(subset) > max_questions:
-            sampled = rng.sample(subset, max_questions)
+        if max_samples_per_question is not None:
+            sampled = subsample_per_question_index(
+                subset, max_samples_per_question, rng
+            )
             sampled_ids = {ex["example_id"] for ex in sampled}
             test_splits[key] = sampled
             pool_splits[key] = [
@@ -685,7 +670,8 @@ async def run_bbq_nudging_experiments(
     print(f"\nBBQ category: {category}")
     print(f"Context condition: {context_condition}")
     print(
-        f"Pairwise examples per polarity (max_questions={max_questions}): "
+        f"Pairwise examples per polarity "
+        f"(max_samples_per_question={max_samples_per_question}): "
         f"neg={len(test_splits.get('neg', []))}, "
         f"pos={len(test_splits.get('pos', []))}"
     )
@@ -712,7 +698,7 @@ async def run_bbq_nudging_experiments(
         if is_few_shot and not few_shot_pool:
             print(
                 f"\nWARNING: No few-shot pool for {experiment_category}. "
-                f"Increase data or decrease max_questions."
+                f"Increase data or decrease max_samples_per_question."
             )
             continue
 
@@ -728,7 +714,6 @@ async def run_bbq_nudging_experiments(
             nudge_type=nudge_type,
             target_group=target_group,
             model=model,
-            requests_per_edge=requests_per_edge,
             seed=seed,
             save_dir=save_dir,
             reasoning=reasoning,
@@ -762,8 +747,7 @@ async def run_batch(config_path: str) -> None:
     settings = cfg.get("settings", {})
 
     context_condition = settings.get("context_condition", "ambig")
-    max_questions = settings.get("max_questions", 50)
-    requests_per_edge = settings.get("requests_per_edge", 4)
+    max_samples_per_question = settings.get("max_samples_per_question", None)
     seed = settings.get("seed", 42)
     reasoning = settings.get("reasoning", "none")
     max_retries = settings.get("max_retries", 10)
@@ -792,8 +776,7 @@ async def run_batch(config_path: str) -> None:
                         nudge_type=nudge,
                         model=mdl,
                         context_condition=context_condition,
-                        max_questions=max_questions,
-                        requests_per_edge=requests_per_edge,
+                        max_samples_per_question=max_samples_per_question,
                         seed=seed,
                         reasoning=reasoning,
                         max_retries=max_retries,
@@ -880,16 +863,10 @@ Examples:
         help="Which BBQ contexts to use (default: ambig)",
     )
     parser.add_argument(
-        "--max-questions",
+        "--max-samples-per-question",
         type=int,
-        default=50,
-        help="Max BBQ questions to sample per category (default: 50)",
-    )
-    parser.add_argument(
-        "--requests-per-edge",
-        type=int,
-        default=4,
-        help="Repeated requests per comparison (default: 4)",
+        default=None,
+        help="Max lexical variants per question_index template (default: all)",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed (default: 42)"
@@ -956,8 +933,7 @@ Examples:
                 nudge_type=args.nudge,
                 model=args.model,
                 context_condition=args.context_condition,
-                max_questions=args.max_questions,
-                requests_per_edge=args.requests_per_edge,
+                max_samples_per_question=args.max_samples_per_question,
                 seed=args.seed,
                 reasoning=args.reasoning,
                 max_retries=args.max_retries,
