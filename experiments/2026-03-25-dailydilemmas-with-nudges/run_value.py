@@ -315,7 +315,7 @@ async def run_condition(
 ) -> list[DilemmaResult] | None:
     """Run a single condition for one model across all filtered dilemmas."""
     condition_name = condition["name"]
-    k = config["k_per_dilemma"]
+    k = config.get("repetitions", config.get("k_per_dilemma", 3))
     max_concurrent = config.get("max_concurrent", 100)
 
     save_dir = results_dir_for(selected_value) / model / condition_name
@@ -448,7 +448,7 @@ async def run_condition(
         "selected_value": selected_value,
         "timestamp": datetime.now().isoformat(),
         "config": {
-            "k_per_dilemma": k,
+            "repetitions": k,
             "seed": config["seed"],
             "influence_type": condition.get("influence_type"),
             "nudge_toward": condition.get("nudge_toward"),

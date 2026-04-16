@@ -8,6 +8,17 @@ value are discarded.  Results are stored globally per model — one baseline fil
 and one file per influence type — so that per-value analysis is a post-hoc
 slice with no re-running.
 
+Option-order balancing
+~~~~~~~~~~~~~~~~~~~~~~
+Every dilemma is queried in **both** option orderings (which action is
+Option A vs Option B).  The config key ``repetitions`` controls how many
+times each ordering is queried, so the total queries per dilemma per
+condition is ``2 * repetitions``.  For example, ``repetitions: 3`` means
+6 queries (3 with the original order + 3 with the flipped order).
+
+Responses from the flipped ordering are normalised back to the original
+frame (A↔B swapped) before storage, so downstream analysis is unaffected.
+
 Nudge directions are always value-level.  For each dilemma the influence type
 produces two prompts (dir_a and dir_b), both stored in the same file:
   dir_a  =  "promote the to_do-side's primary value"
@@ -132,10 +143,15 @@ class PromptTag:
     info: DilemmaPromptInfo
     direction: str | None  # "dir_a", "dir_b", or None (baseline)
     gdilemma: GlobalDilemma
+    flipped: bool = False  # True when option order is inverted
 
     @property
     def result_key(self) -> str:
-        """Composite key for resume: 'dilemma_id' or 'dilemma_id:direction'."""
+        """Composite key for resume: 'dilemma_id' or 'dilemma_id:direction'.
+
+        Both orderings (original and flipped) share the same result_key
+        so their responses are aggregated into a single result entry.
+        """
         if self.direction is None:
             return str(self.info.dilemma_id)
         return f"{self.info.dilemma_id}:{self.direction}"
@@ -258,6 +274,7 @@ def _build_nudge_prompt(
     config: dict,
     all_dilemmas: list[Dilemma],
     reasoning_mode: ReasoningMode = ReasoningMode.NONE,
+    flip: bool = False,
 ) -> DilemmaPromptInfo:
     """Build a single nudge prompt for one dilemma in one direction."""
     seed = config["seed"]
@@ -308,6 +325,7 @@ def _build_nudge_prompt(
         nudge_brackets=influence.brackets,
         reasoning_mode=reasoning_mode,
         seed=seed,
+        flip=flip,
     )
 
 
@@ -320,33 +338,53 @@ def build_prompts_for_condition(
 ) -> list[PromptTag]:
     """Build prompts for every dilemma under one condition.
 
-    For baseline, returns one PromptTag per dilemma (direction=None).
-    For influence types, returns two PromptTags per dilemma (dir_a + dir_b).
-    Nudge text always references the dilemma's own primary values.
+    For each dilemma, generates prompts in **both** option orderings
+    (original and flipped).  Both orderings share the same ``result_key``
+    so their responses are aggregated into one result entry.
+
+    For baseline: 2 PromptTags per dilemma (original + flipped).
+    For influence types: 4 PromptTags per dilemma (dir_a × 2 + dir_b × 2).
     """
     seed = config["seed"]
     influence_type = condition["influence_type"]
 
     tags: list[PromptTag] = []
     for gd in gdilemmas:
-        if influence_type is None:
-            info = build_prompt(
-                dilemma=gd.dilemma,
-                reasoning_mode=reasoning_mode,
-                seed=seed,
-            )
-            tags.append(PromptTag(info=info, direction=None, gdilemma=gd))
-        else:
-            for direction in ("dir_a", "dir_b"):
-                info = _build_nudge_prompt(
-                    gd,
-                    direction,
-                    influence_type,
-                    config,
-                    all_dilemmas,
+        for flip in (False, True):
+            if influence_type is None:
+                info = build_prompt(
+                    dilemma=gd.dilemma,
                     reasoning_mode=reasoning_mode,
+                    seed=seed,
+                    flip=flip,
                 )
-                tags.append(PromptTag(info=info, direction=direction, gdilemma=gd))
+                tags.append(
+                    PromptTag(
+                        info=info,
+                        direction=None,
+                        gdilemma=gd,
+                        flipped=flip,
+                    )
+                )
+            else:
+                for direction in ("dir_a", "dir_b"):
+                    info = _build_nudge_prompt(
+                        gd,
+                        direction,
+                        influence_type,
+                        config,
+                        all_dilemmas,
+                        reasoning_mode=reasoning_mode,
+                        flip=flip,
+                    )
+                    tags.append(
+                        PromptTag(
+                            info=info,
+                            direction=direction,
+                            gdilemma=gd,
+                            flipped=flip,
+                        )
+                    )
 
     return tags
 
@@ -398,6 +436,11 @@ def _merge_result(existing: dict, new_responses: list[str], to_do_is_a: bool) ->
     return merged
 
 
+def _normalize_flipped_responses(parsed: list[str]) -> list[str]:
+    """Swap A↔B so flipped-prompt responses are in the original ordering frame."""
+    return ["B" if r == "A" else "A" if r == "B" else r for r in parsed]
+
+
 async def run_condition(
     model: str,
     gdilemmas: list[GlobalDilemma],
@@ -409,11 +452,17 @@ async def run_condition(
 ) -> list[DilemmaResult] | None:
     """Run a single condition for one model across all dilemmas.
 
-    Supports incremental top-up: if k_per_dilemma was increased, runs only
+    Each dilemma is queried in both option orderings (original and flipped).
+    ``repetitions`` in the config controls how many times each ordering is
+    queried, so the total responses per dilemma per condition is
+    ``2 * repetitions``.
+
+    Supports incremental top-up: if repetitions was increased, runs only
     the delta for prompts that already have partial results.
     """
     condition_name = condition["name"]
-    k = config["k_per_dilemma"]
+    repetitions = config.get("repetitions", config.get("k_per_dilemma", 3))
+    total_k = 2 * repetitions
     max_concurrent = config.get("max_concurrent", 100)
 
     model_dir_name = (
@@ -438,44 +487,69 @@ async def run_condition(
         reasoning_mode=reasoning_mode,
     )
 
-    # Determine what needs running: new prompts get full k, existing
-    # prompts with fewer than k responses get the delta.
-    tags_with_delta: list[tuple[PromptTag, int]] = []
-    n_complete = 0
+    # Group tags by result_key (original + flipped share a key).
+    # Compute the per-tag delta needed to reach 2 * repetitions total.
+    from collections import defaultdict
+
+    tags_by_rkey: dict[str, list[PromptTag]] = defaultdict(list)
     for tag in all_tags:
-        existing = existing_results.get(tag.result_key)
+        tags_by_rkey[tag.result_key].append(tag)
+
+    tags_with_delta: list[tuple[PromptTag, int]] = []
+    n_new_keys = 0
+    n_topup_keys = 0
+    n_complete = 0
+    for rkey, rkey_tags in tags_by_rkey.items():
+        existing = existing_results.get(rkey)
         if existing is None:
-            tags_with_delta.append((tag, k))
+            n_new_keys += 1
+            for tag in rkey_tags:
+                tags_with_delta.append((tag, repetitions))
         else:
             have = len(existing.get("responses", []))
-            delta = k - have
-            if delta > 0:
-                tags_with_delta.append((tag, delta))
-            else:
+            need = total_k - have
+            if need <= 0:
                 n_complete += 1
+            else:
+                n_topup_keys += 1
+                per_tag, extra = divmod(need, len(rkey_tags))
+                for i, tag in enumerate(rkey_tags):
+                    delta = per_tag + (1 if i < extra else 0)
+                    if delta > 0:
+                        tags_with_delta.append((tag, delta))
 
     if not tags_with_delta and not dry_run:
-        print(f"  All {len(all_tags)} prompts already done with K>={k}, skipping")
+        print(
+            f"  All {len(tags_by_rkey)} result keys already done "
+            f"with >={total_k} responses, skipping"
+        )
         return None
 
-    n_new = sum(1 for _, d in tags_with_delta if d == k)
-    n_topup = len(tags_with_delta) - n_new
     parts = []
-    if n_new:
-        parts.append(f"{n_new} new")
-    if n_topup:
-        parts.append(f"{n_topup} top-up")
-    print(f"  {' + '.join(parts)} prompts to run ({n_complete} already complete)")
+    if n_new_keys:
+        parts.append(f"{n_new_keys} new")
+    if n_topup_keys:
+        parts.append(f"{n_topup_keys} top-up")
+    print(
+        f"  {' + '.join(parts)} dilemma-condition keys to run "
+        f"({n_complete} already complete, "
+        f"repetitions={repetitions}, total_per_key={total_k})"
+    )
 
     if dry_run:
-        for tag in all_tags[:2]:
+        shown = 0
+        for tag in all_tags:
+            if shown >= 4:
+                break
             info = tag.info
             print(
                 f"\n  --- Dilemma {info.dilemma_id} "
-                f"(dir={tag.direction}, to_do_is_A={info.to_do_is_a}) ---"
+                f"(dir={tag.direction}, flipped={tag.flipped}, "
+                f"to_do_is_A={info.to_do_is_a}) ---"
             )
             print(f"  System: {info.system_prompt}")
             print(f"  Prompt:\n{info.prompt_text}")
+            shown += 1
         return None
 
     uses_reasoning = reasoning_mode != ReasoningMode.NONE or model_has_active_reasoning(
@@ -493,8 +567,6 @@ async def run_condition(
     agent = create_agent(model_key=model, **agent_config)
 
     # Group by delta_k so each API batch uses a uniform K
-    from collections import defaultdict
-
     by_delta: dict[int, list[PromptTag]] = defaultdict(list)
     for tag, delta_k in tags_with_delta:
         by_delta[delta_k].append(tag)
@@ -540,20 +612,29 @@ async def run_condition(
             gd = tag.gdilemma
             rkey = tag.result_key
 
-            existing = existing_results.get(rkey)
+            # Normalize flipped responses to the original ordering frame
+            if tag.flipped:
+                parsed = _normalize_flipped_responses(parsed)
+
+            # to_do_is_a for the original (non-flipped) ordering
+            original_to_do_is_a = (
+                info.to_do_is_a if not tag.flipped else not info.to_do_is_a
+            )
+
+            existing = all_results_by_key.get(rkey)
             if existing is not None:
-                merged = _merge_result(existing, parsed, info.to_do_is_a)
+                merged = _merge_result(existing, parsed, original_to_do_is_a)
                 all_results_by_key[rkey] = merged
             else:
                 n_to_do, n_not_to_do, n_unparseable = _count_responses(
                     parsed,
-                    info.to_do_is_a,
+                    original_to_do_is_a,
                 )
                 all_results_by_key[rkey] = asdict(
                     DilemmaResult(
                         dilemma_id=info.dilemma_id,
                         direction=tag.direction,
-                        to_do_is_a=info.to_do_is_a,
+                        to_do_is_a=original_to_do_is_a,
                         primary_value_to_do=gd.primary_value_to_do,
                         primary_value_not_to_do=gd.primary_value_not_to_do,
                         responses=parsed,
@@ -579,7 +660,7 @@ async def run_condition(
         "condition": condition_name,
         "timestamp": datetime.now().isoformat(),
         "config": {
-            "k_per_dilemma": k,
+            "repetitions": repetitions,
             "seed": config["seed"],
             "influence_type": condition.get("influence_type"),
             "reasoning_mode": reasoning_mode.value,
@@ -595,7 +676,8 @@ async def run_condition(
     n_total = len(all_results_by_key)
     print(
         f"  Saved {n_total} results "
-        f"({n_new} new, {n_topup} topped up, {total_api_calls} API calls) "
+        f"({n_new_keys} new, {n_topup_keys} topped up, "
+        f"{total_api_calls} API calls) "
         f"to {results_path}"
     )
 
@@ -611,6 +693,7 @@ async def run_condition(
             f.write(f"\n\n{'=' * 60}\n")
             f.write(f"Dilemma ID: {info.dilemma_id}\n")
             f.write(f"Direction: {tag.direction}\n")
+            f.write(f"Flipped: {tag.flipped}\n")
             f.write(f"to_do is Option A: {info.to_do_is_a}\n")
             f.write(f"Condition: {condition_name}\n")
             f.write(

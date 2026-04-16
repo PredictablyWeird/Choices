@@ -194,8 +194,10 @@ def _build_graph_for_value(
             "fields": {factor_name: "categorical"},
         },
         "simple_experiment_config": {
-            "max_requests": config.get("k_per_dilemma", 3),
-            "requests_per_edge": config.get("k_per_dilemma", 3),
+            "max_requests": config.get("repetitions", config.get("k_per_dilemma", 3)),
+            "requests_per_edge": config.get(
+                "repetitions", config.get("k_per_dilemma", 3)
+            ),
             "seed": config.get("seed", 42),
             "reasoning_mode": config.get("reasoning_mode", "none"),
         },

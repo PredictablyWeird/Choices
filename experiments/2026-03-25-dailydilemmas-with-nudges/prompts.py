@@ -55,6 +55,7 @@ def build_prompt(
     nudge_brackets: str = "none",
     reasoning_mode: ReasoningMode = ReasoningMode.NONE,
     seed: int = 42,
+    flip: bool = False,
 ) -> DilemmaPromptInfo:
     """
     Build a prompt for a single dilemma under a given condition.
@@ -66,11 +67,15 @@ def build_prompt(
         nudge_brackets: Bracket style for the nudge.
         reasoning_mode: Whether to include reasoning instructions.
         seed: Seed for deterministic A/B ordering.
+        flip: If True, invert the deterministic A/B assignment so the
+              option that was A becomes B and vice versa.
 
     Returns:
         DilemmaPromptInfo with the rendered prompt and A/B mapping.
     """
     to_do_is_a = assign_option_order(dilemma.id, seed)
+    if flip:
+        to_do_is_a = not to_do_is_a
 
     if to_do_is_a:
         option_a_text = dilemma.action_to_do
