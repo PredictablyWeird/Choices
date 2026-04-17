@@ -1382,11 +1382,20 @@ Examples:
         Optional[Tuple[float, float]],  # CI for base_bias
         Optional[float],
         Optional[Tuple[float, float]],  # CI for avg_p_large
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_p_large_base
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_p_large_A
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_p_large_B
+        Optional[float],
+        Optional[Tuple[float, float]],  # CI for avg_p_large_AB
+        float,  # sig_asym_rate
     ]:
         """
         Returns (avg_steer, avg_asym, avg_asym_ci, avg_n_asym, avg_n_asym_ci,
                  avg_effect, avg_abs_steer, sig_rate, sig_backfire_rate, backfire_rate,
-                 base_bias, base_bias_ci, avg_p_large, avg_p_large_ci).
+                 base_bias, base_bias_ci, avg_p_large, avg_p_large_ci, ..., sig_asym_rate).
         - avg_asym: mean of |asym| (non-normalized)
         - avg_asym_ci: (ci_low, ci_high) for |asym|
         - avg_n_asym: mean of |n-asym| (normalized)
@@ -1398,6 +1407,7 @@ Examples:
         - base_bias_ci: (ci_low, ci_high) for base_bias
         - avg_p_large: average P(larger group) across experiments
         - avg_p_large_ci: (ci_low, ci_high) for avg_p_large
+        - sig_asym_rate: fraction of experiments with significant steerability asymmetry
         """
         steer_results = [r for r in result_list if r.avg_steerability is not None]
         asym_results = [r for r in result_list if r.steerability_asym is not None]
@@ -1522,6 +1532,9 @@ Examples:
             avg_p_large_AB, ci_low, ci_high = compute_ci(vals)
             avg_p_large_AB_ci = (ci_low, ci_high)
 
+        sig_asym_count = sum(int(r.sig_asym) for r in result_list)
+        sig_asym_rate = sig_asym_count / len(result_list) if result_list else 0.0
+
         return (
             avg_steer,
             avg_asym,
@@ -1545,6 +1558,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         )
 
     def fmt_val_ci(
@@ -1610,6 +1624,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         ) = get_steer_stats(model_results)
 
         display_name = (
@@ -1625,6 +1640,7 @@ Examples:
             else "|steer|=N/A"
         )
         sig_str = f"sig={sig_rate:.1%}"
+        sig_asym_str = f"sig_asym={sig_asym_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         # Format base_bias with CI
@@ -1669,7 +1685,7 @@ Examples:
                 n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1694,7 +1710,7 @@ Examples:
             print(
                 f"  {display_name} ({reasoning_condition}): n={len(model_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
 
     # By reasoning condition
@@ -1729,6 +1745,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         ) = get_steer_stats(reasoning_results)
 
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
@@ -1738,6 +1755,7 @@ Examples:
             else "|steer|=N/A"
         )
         sig_str = f"sig={sig_rate:.1%}"
+        sig_asym_str = f"sig_asym={sig_asym_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         # Format base_bias with CI
@@ -1782,7 +1800,7 @@ Examples:
                 n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1807,7 +1825,7 @@ Examples:
             print(
                 f"  {reasoning_condition}: n={len(reasoning_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
 
     # Combined reasoning condition groups
@@ -1845,6 +1863,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         ) = get_steer_stats(combo_results)
 
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
@@ -1854,6 +1873,7 @@ Examples:
             else "|steer|=N/A"
         )
         sig_str = f"sig={sig_rate:.1%}"
+        sig_asym_str = f"sig_asym={sig_asym_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         # Format base_bias with CI
@@ -1898,7 +1918,7 @@ Examples:
                 n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {combo_name}: n={len(combo_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -1923,7 +1943,7 @@ Examples:
             print(
                 f"  {combo_name}: n={len(combo_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
 
     # By factor (single factor by definition)
@@ -1957,6 +1977,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         ) = get_steer_stats(factor_results)
         # Get level info
         level_A = factor_results[0].level_A if factor_results else "?"
@@ -2019,6 +2040,7 @@ Examples:
             avg_p_large_AB_ci,
         )
         sig_str = f"sig={sig_rate:.1%}"
+        sig_asym_str = f"sig_asym={sig_asym_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
         # Compute sig rates towards each level (considering all nudges)
         # sig_towards_A = nudge towards A worked + nudge towards B backfired
@@ -2046,7 +2068,7 @@ Examples:
         print(
             f"  {factor} (A={level_A}, B={level_B}): n={len(factor_results)}, "
             f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_asym_str}, {abs_asym_str}, {abs_n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
+            f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {raw_asym_str}, {abs_asym_str}, {abs_n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {sig_A_str}, {sig_B_str}, {backfire_str}"
         )
 
     # By nudge type
@@ -2078,6 +2100,7 @@ Examples:
             avg_p_large_B_ci,
             avg_p_large_AB,
             avg_p_large_AB_ci,
+            sig_asym_rate,
         ) = get_steer_stats(nudge_results)
 
         effect_str = f"|effect|={avg_effect:.{decimals}f}"
@@ -2087,6 +2110,7 @@ Examples:
             else "|steer|=N/A"
         )
         sig_str = f"sig={sig_rate:.1%}"
+        sig_asym_str = f"sig_asym={sig_asym_rate:.1%}"
         backfire_str = f"sig_backfire={sig_backfire_rate:.1%}"
 
         # Format base_bias with CI
@@ -2131,7 +2155,7 @@ Examples:
                 n_asym_str = "|n-asym|=N/A"
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, {effect_str}, "
-                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"{abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
         else:
             # Single factor: show frequency metrics and steerability
@@ -2156,7 +2180,7 @@ Examples:
             print(
                 f"  {nudge_type}: n={len(nudge_results)}, "
                 f"f_0(B)={avg_f_0_B:.{decimals}f}, f_A(B)={avg_f_A_B:.{decimals}f}, "
-                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {backfire_str}"
+                f"f_B(B)={avg_f_B_B:.{decimals}f}, {effect_str}, {abs_steer_str}, {steer_str}, {asym_str}, {n_asym_str}, {base_bias_str}, {p_large_str}{lg_detail_str}, {sig_str}, {sig_asym_str}, {backfire_str}"
             )
 
     # Combination aggregate statistics (if --combinations is specified)
@@ -2312,6 +2336,7 @@ Examples:
         overall_avg_p_large_B_ci,
         overall_avg_p_large_AB,
         overall_avg_p_large_AB_ci,
+        overall_sig_asym_rate,
     ) = get_steer_stats(results)
     total_nudges = 2 * len(results)
 
@@ -2360,6 +2385,11 @@ Examples:
     total_sig = sum(int(r.sig_A) + int(r.sig_B) for r in results)
     print(
         f"  Significant Change Rate: {overall_sig_rate:.1%} ({total_sig}/{total_nudges})"
+    )
+
+    total_sig_asym = sum(int(r.sig_asym) for r in results)
+    print(
+        f"  Significant Asymmetry Rate: {overall_sig_asym_rate:.1%} ({total_sig_asym}/{len(results)})"
     )
 
     # Significant backfire statistics (only counting statistically significant backfires)

@@ -174,12 +174,18 @@ def get_reasoning_condition(model: str, result_dir: Optional[Path] = None) -> st
         effort = get_reasoning_effort_from_model(model)
         if effort is not None:
             return effort
-        # Reasoning model but no effort configured - check model name
-        if model.endswith("-non-reasoning"):
-            return "off"
-        return "low"  # Default for reasoning models
 
-    # For chat models, check the reasoning_mode from results
+        # The suffix matched but the model has no config in models.yaml —
+        # likely a user-modified directory name (e.g. "llama-33-70b-reasoning"
+        # for a chat model with instructed reasoning).  Fall through to the
+        # result_dir check instead of assuming native reasoning.
+        if model in _get_models_config():
+            if model.endswith("-non-reasoning"):
+                return "off"
+            return "low"  # Default for known reasoning models
+
+    # For chat models (or unrecognised directory names), check reasoning_mode
+    # stored in the result directory's utility_model JSON.
     if result_dir is not None:
         reasoning_mode = get_reasoning_mode_from_results(result_dir)
         if reasoning_mode is not None:
