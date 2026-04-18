@@ -57,6 +57,11 @@ results/
 results*
 *.pdf
 
+# Daily Dilemmas (local / large inputs — not versioned)
+analysis/daily_dilemmas/
+analysis/dd_dataset/
+analysis/dd_fig9/
+
 # Analysis outputs (regenerable)
 analysis/*.json
 analysis/plots/*.pdf
