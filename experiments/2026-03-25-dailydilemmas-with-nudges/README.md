@@ -22,7 +22,7 @@ dd_dataset/
 The commands below use `analysis/results_global/...`, `analysis/dd_dataset/...`, and `analysis/dd_fig9/...` as a concrete instance of that pattern. Large or machine-specific trees (`analysis/dd_dataset/`, `analysis/daily_dilemmas/`, `analysis/dd_fig9/`, etc.) are gitignored in this repo; copy or regenerate data locally.
 
 - Build edges (include all non-null reasoning traces; relax party-based filters):
-  -`uv run python -m choices.analysis.daily_dilemmas.daily_dilemmas_results_to_edges \
+  -`uv run python experiments/2026-03-25-dailydilemmas-with-nudges/daily_dilemmas_results_to_edges.py \
   --results-root analysis/results_global/deepseek-v3-2-reasoning \
   --party-csv analysis/dd_dataset/action_to_party_to_value.csv \
   --output-baseline analysis/dd_fig9/edges_baseline_smaller.json \

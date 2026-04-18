@@ -20,7 +20,7 @@ This script:
   trace like the paper workflow.
 
 Usage:
-    uv run python -m choices.analysis.daily_dilemmas.daily_dilemmas_results_to_edges \\
+    uv run python experiments/2026-03-25-dailydilemmas-with-nudges/daily_dilemmas_results_to_edges.py \\
         --results-root analysis/results_global/deepseek-v3-2-reasoning \\
         --party-csv analysis/dd_dataset/action_to_party_to_value.csv \\
         --output-nudged analysis/dd_fig9/edges_nudged_smaller.json \\
