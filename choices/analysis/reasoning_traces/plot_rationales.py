@@ -75,13 +75,7 @@ RATIONALE_DISPLAY_NAMES = {
     "random_or_arbitrary": "Random / arbitrary",
     "task_compliance": "Task compliance",
     "feels_right": "Feels right",
-    "legal_compliance": "Legal / rule compliance",
-    "honesty_integrity": "Honesty / integrity",
-    "self_interest": "Self-interest",
-    "harm_care_safety": "Harm / care / safety",
-    "deontology_duty": "Deontology / duty",
     "context": "Contextual information",
-    "utilitarian_consequentialist": "Utilitarian / consequentialist",
     "other": "Other",
 }
 

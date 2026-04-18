@@ -31,7 +31,7 @@ The commands below use `analysis/results_global/...`, `analysis/dd_dataset/...`,
   `
 
 - Rationale detection (baseline):
-  -`uv run python -m choices.analysis.reasoning_traces.rationale_detection \
+  -`uv run python experiments/2026-03-25-dailydilemmas-with-nudges/rationale_detection.py \
   --input analysis/dd_fig9/edges_baseline_smaller.json \
   --output analysis/dd_fig9/baseline_smaller_rationales.json \
   --condition baseline \
@@ -39,7 +39,7 @@ The commands below use `analysis/results_global/...`, `analysis/dd_dataset/...`,
   `
 
 - Rationale detection (nudged; stratified by `nudge_type`, total capped):
-  -`uv run python -m choices.analysis.reasoning_traces.rationale_detection \
+  -`uv run python experiments/2026-03-25-dailydilemmas-with-nudges/rationale_detection.py \
   --input analysis/dd_fig9/edges_nudged_smaller.json \
   --output analysis/dd_fig9/nudged_smaller_rationales.json \
   --condition nudged \
