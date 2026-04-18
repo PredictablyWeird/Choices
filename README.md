@@ -2,6 +2,8 @@
 
 Framework for running preference elicitation experiments.
 
+Note: For reproducing results from our paper "Moral Preferences of LLMs Under Directed Contextual Influence", see the branch [https://github.com/PredictablyWeird/Choices/tree/arxiv-version](arxiv-version).
+
 ## Setup
 
 - Clone the repo
@@ -169,6 +171,7 @@ experiment = Experiment(
 - `choices/experiments/exchange_rates.py` — Multi-variable experiments
 - `choices/experiments/medical_triage.py` — Custom prompts and subclassing
 
+---
 
 ## Analysis Scripts
 

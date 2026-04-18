@@ -161,7 +161,24 @@ async def run_batch_completions(
                     continue
 
                 # Success
-                results[message_idx] = parse_response(raw_response)
+                try:
+                    results[message_idx] = parse_response(raw_response)
+                except Exception:
+                    counts["errors"] += 1
+                    if verbose:
+                        print(
+                            f"[Parse error] Attempt {attempt + 1}/{max_retries} "
+                            f"for message index {message_idx}: response content was None"
+                        )
+                    if attempt == max_retries - 1:
+                        results[message_idx] = LLMResponse(content=None)
+                        return
+                    sleep_for = retry_delay
+                    if use_jitter:
+                        sleep_for += random.uniform(0, 1)
+                    await asyncio.sleep(sleep_for)
+                    retry_delay = min(retry_delay * 2.0, max_delay)
+                    continue
                 return
 
     # Create and run tasks with progress tracking
@@ -674,7 +691,15 @@ class LiteLLMAgent:
             return await litellm_acompletion(**completion_kwargs)
 
         def parse_response(response: Any) -> LLMResponse:
-            return LLMResponse(content=response.choices[0].message.content.strip())
+            content = response.choices[0].message.content
+            if content is None:
+                refusal = getattr(response.choices[0].message, "refusal", None)
+                if refusal:
+                    raise ValueError(f"Model refused to respond: {refusal}")
+                raise ValueError(
+                    f"Model returned empty content (finish_reason={response.choices[0].finish_reason})"
+                )
+            return LLMResponse(content=content.strip())
 
         return await run_batch_completions(
             messages=messages,
