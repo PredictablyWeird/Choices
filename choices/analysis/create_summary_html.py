@@ -25,11 +25,24 @@ from choices.analysis.create_summary import (
 from choices.analysis.utils import get_base_model_name, get_model_display_name
 
 
+def _sanitize_for_json(val):
+    """Convert numpy types to native Python types for JSON serialization."""
+    import numpy as np
+
+    if isinstance(val, np.bool_):
+        return bool(val)
+    if isinstance(val, np.integer):
+        return int(val)
+    if isinstance(val, np.floating):
+        return float(val)
+    return val
+
+
 def results_to_json(results: List[FrequencyResult]) -> List[dict]:
     """Convert FrequencyResult objects to JSON-serializable dicts with display metadata."""
     rows = []
     for r in results:
-        d = dataclasses.asdict(r)
+        d = {k: _sanitize_for_json(v) for k, v in dataclasses.asdict(r).items()}
         d["model_display"] = get_model_display_name(r.model)
         d["base_model"] = get_base_model_name(r.model)
         d["factor_label"] = f"{r.factor} ({r.level_A}/{r.level_B})"
@@ -134,6 +147,14 @@ tbody tr:hover { background: #f8f9ff; }
     </select>
   </div>
   <div class="control-group">
+    <label>Sig Backfire</label>
+    <select id="filter-sig-backfire">
+      <option value="any">Any</option>
+      <option value="has">Has Sig Backfire</option>
+      <option value="none">No Sig Backfire</option>
+    </select>
+  </div>
+  <div class="control-group">
     <label>Aggregate Over</label>
     <select id="aggregate">
       <option value="none">None (show all rows)</option>
@@ -195,6 +216,7 @@ const COLUMNS = [
   {key: "larger_group_rate_B", label: "P\u1D47(LG)", type: "freq", defaultOn: false},
   {key: "backfire_A", label: "Backfire A", type: "bool", defaultOn: false},
   {key: "backfire_B", label: "Backfire B", type: "bool", defaultOn: false},
+  {key: "sig_backfire_pct", label: "Sig BF%", type: "pct_rate", defaultOn: true},
   {key: "n_comparisons", label: "N Pairs", type: "int", defaultOn: false},
 ];
 
@@ -236,6 +258,11 @@ function getFiltered() {
   if (reasoning.length) rows = rows.filter(r => reasoning.includes(r.reasoning_condition));
   if (baselineSig === "sig") rows = rows.filter(r => r.sig_baseline_B);
   else if (baselineSig === "not-sig") rows = rows.filter(r => !r.sig_baseline_B);
+
+  const sigBackfire = document.getElementById("filter-sig-backfire").value;
+  if (sigBackfire === "has") rows = rows.filter(r => r._sig_backfire_count > 0);
+  else if (sigBackfire === "none") rows = rows.filter(r => r._sig_backfire_count === 0);
+
   return rows;
 }
 
@@ -289,6 +316,8 @@ function aggregateRows(rows, groupKeyFn) {
     agg._sig_asym_rate = g.rows.length > 0 ? sigAsymCount / g.rows.length : 0;
     const backfireCount = g.rows.reduce((s, r) => s + (r.backfire_A ? 1 : 0) + (r.backfire_B ? 1 : 0), 0);
     agg._backfire_rate = totalNudges > 0 ? backfireCount / totalNudges : 0;
+    const sigBackfireCount = g.rows.reduce((s, r) => s + r._sig_backfire_count, 0);
+    agg._sig_backfire_rate = totalNudges > 0 ? sigBackfireCount / totalNudges : 0;
 
     out.push(agg);
   }
@@ -397,12 +426,16 @@ function renderFilterTags() {
   if (bsig !== "any") {
     tags.push(`<span class="tag">Baseline: ${bsig} <span class="remove" data-filter="filter-baseline-sig" data-value="any">&times;</span></span>`);
   }
+  const sbf = document.getElementById("filter-sig-backfire").value;
+  if (sbf !== "any") {
+    tags.push(`<span class="tag">Sig Backfire: ${sbf} <span class="remove" data-filter="filter-sig-backfire" data-value="any">&times;</span></span>`);
+  }
   container.innerHTML = tags.join("");
   container.querySelectorAll(".remove").forEach(el => {
     el.addEventListener("click", () => {
       const fid = el.dataset.filter;
       const val = el.dataset.value;
-      if (fid === "filter-baseline-sig") {
+      if (fid === "filter-baseline-sig" || fid === "filter-sig-backfire") {
         document.getElementById(fid).value = "any";
       } else {
         const sel = document.getElementById(fid);
@@ -440,6 +473,7 @@ function renderTable(displayRows, isAgg) {
       {key: "_n", label: "N", type: "int"},
       {key: "_sig_rate", label: "Sig Rate", type: "pct_rate"},
       {key: "_sig_asym_rate", label: "Sig Asym", type: "pct_rate"},
+      {key: "_sig_backfire_rate", label: "Sig BF Rate", type: "pct_rate"},
       {key: "_backfire_rate", label: "Backfire Rate", type: "pct_rate"},
     ];
     var allCols = [...visCols, ...extraCols];
@@ -492,6 +526,12 @@ function render() {
 }
 
 function init() {
+  // Compute sig backfire fields for each row
+  for (const r of DATA) {
+    r._sig_backfire_count = (r.backfire_A && r.sig_A ? 1 : 0) + (r.backfire_B && r.sig_B ? 1 : 0);
+    r.sig_backfire_pct = r._sig_backfire_count / 2;
+  }
+
   populateFilter("filter-model", unique(DATA.map(r => r.model_display)));
   populateFilter("filter-factor", unique(DATA.map(r => r.factor)));
   populateFilter("filter-nudge", unique(DATA.map(r => r.nudge_type)));
