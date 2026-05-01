@@ -8,8 +8,12 @@ condition (none, before, native) so that instructed-reasoning and
 native-reasoning models can be compared side-by-side.
 
 Flip rates measure how often the majority choice (across k runs) changes:
-  - flip_toward: flip rate when the nudge reinforces the baseline majority
-  - flip_away:   flip rate when the nudge opposes the baseline majority
+  - flip_toward: flip rate when the nudge opposes the baseline majority
+                 (e.g. influence toward value when baseline chose against it,
+                 and the choice flips to the value)
+  - flip_away:   flip rate when the nudge reinforces the baseline majority
+                 (e.g. influence toward the already-chosen option, but the
+                 choice paradoxically flips away from it)
   - flip_all:    combined across both nudge directions
 
 Baseline reliability mode (--baseline-reliability) compares two independent
@@ -308,11 +312,11 @@ def analyze_model(
                         if nudge_maj is not None:
                             is_flip = base_majority != nudge_maj
                             if base_majority == "value":
-                                flip_toward_total += 1
-                                flip_toward_n += int(is_flip)
-                            else:
                                 flip_away_total += 1
                                 flip_away_n += int(is_flip)
+                            else:
+                                flip_toward_total += 1
+                                flip_toward_n += int(is_flip)
 
             if did in tnv_by_id:
                 tnv_counts = _result_counts_for_value(tnv_by_id[did], value)
@@ -330,11 +334,11 @@ def analyze_model(
                         if nudge_maj is not None:
                             is_flip = base_majority != nudge_maj
                             if base_majority == "non_value":
-                                flip_toward_total += 1
-                                flip_toward_n += int(is_flip)
-                            else:
                                 flip_away_total += 1
                                 flip_away_n += int(is_flip)
+                            else:
+                                flip_toward_total += 1
+                                flip_toward_n += int(is_flip)
 
         s_A, s_B, asym, norm_asym = compute_steerability_asym_from_counts(
             c_0_A,
