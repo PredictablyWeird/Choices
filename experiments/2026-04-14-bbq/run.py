@@ -213,6 +213,7 @@ async def run_bbq_experiment(
     max_retries: int = 10,
     verbose: bool = True,
     save_nudge_dir: Optional[str] = None,
+    role_play_persona: Optional[str] = None,
 ) -> ExperimentResults:
     """Run a single BBQ nudging experiment (one condition)."""
 
@@ -452,6 +453,8 @@ async def run_bbq_experiment(
             "nudge_position": nudge_position,
             "nudge_brackets": nudge_brackets,
         }
+        if role_play_persona is not None:
+            graph_config["nudge_config"]["role_play_persona"] = role_play_persona
 
     graph_results = PreferenceGraphResults(
         options=[ExperimentOption.from_dict(opt) for opt in options],
@@ -543,8 +546,16 @@ async def _run_conditions(
     max_retries: int,
     few_shot_pool: Optional[List[Dict[str, Any]]] = None,
     few_shot_k: int = DEFAULT_FEW_SHOT_K,
+    invert_role_play: bool = False,
 ) -> Dict[str, ExperimentResults]:
-    """Run base + nudge conditions for one (experiment_category, nudge) pair."""
+    """Run base + nudge conditions for one (experiment_category, nudge) pair.
+
+    When *invert_role_play* is True and the nudge is ``role_play``, the
+    recorded ``target_group`` is swapped to the *other* group.  This accounts
+    for negative-polarity BBQ questions where role-playing as group X causes
+    the model to *avoid* selecting X (protecting its in-group), effectively
+    steering toward the other group.  The nudge text itself is unchanged.
+    """
     effective_nudge_name = nudge_type
     is_few_shot = nudge_type == "few_shot"
 
@@ -597,7 +608,21 @@ async def _run_conditions(
             nudge_text = generate_bbq_nudge_text(nudge_type, category, tg, other_group)
             position, brackets = get_bbq_nudge_defaults(nudge_type)
 
+        # For role_play on neg-polarity questions the model protects its
+        # in-group by *avoiding* the targeted answer, so the effective
+        # behavioural direction is toward the other group.
+        if invert_role_play and nudge_type == "role_play" and other_group:
+            recorded_target = other_group
+            role_play_persona = tg
+        else:
+            recorded_target = tg
+            role_play_persona = None
+
         print(f"\nRunning nudge towards: {tg}")
+        if recorded_target != tg:
+            print(
+                f"  (recorded target swapped to {recorded_target} for neg-polarity role_play)"
+            )
         print("-" * 80)
 
         res = await run_bbq_experiment(
@@ -605,7 +630,7 @@ async def _run_conditions(
             pairwise_examples=pairwise,
             group_tags=group_tags,
             nudge_type=nudge_type,
-            target_group=tg,
+            target_group=recorded_target,
             nudge_text=nudge_text,
             nudge_position=position,
             nudge_brackets=brackets,
@@ -615,8 +640,9 @@ async def _run_conditions(
             reasoning=reasoning,
             max_retries=max_retries,
             save_nudge_dir=effective_nudge_name,
+            role_play_persona=role_play_persona,
         )
-        results[tg] = res
+        results[recorded_target] = res
 
     return results
 
@@ -736,6 +762,7 @@ async def run_bbq_nudging_experiments(
             max_retries=max_retries,
             few_shot_pool=few_shot_pool,
             few_shot_k=few_shot_k,
+            invert_role_play=(polarity_key == "neg"),
         )
 
         for cond_key, res in sub_results.items():
