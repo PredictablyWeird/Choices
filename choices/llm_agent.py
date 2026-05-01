@@ -568,10 +568,28 @@ class ReasoningAgent(OpenAIAgent):
                 completion_kwargs["reasoning"] = self.reasoning_effort
             if self.text_verbosity:
                 completion_kwargs["text"] = self.text_verbosity
+
+            # Split system message (→ instructions) from the rest (→ input).
+            # Single user turn collapses to a string; multi-turn passes the
+            # remaining messages as an array so assistant + later user turns
+            # are visible to the model. The single-turn / multi-turn split
+            # preserves the original behavior for the main-experiment runs.
+            instructions: Optional[str] = None
+            convo = list(message)
+            if convo and convo[0].get("role") == "system":
+                instructions = convo[0]["content"]
+                convo = convo[1:]
+            if len(convo) == 1 and convo[0].get("role") == "user":
+                input_payload: Any = convo[0]["content"]
+            else:
+                input_payload = [
+                    {"role": m["role"], "content": m["content"]} for m in convo
+                ]
+            if instructions is not None:
+                completion_kwargs["instructions"] = instructions
             return await self.async_client.responses.create(
                 model=self.model,
-                instructions=message[0]["content"],
-                input=message[1]["content"],
+                input=input_payload,
                 **completion_kwargs,
             )
 
