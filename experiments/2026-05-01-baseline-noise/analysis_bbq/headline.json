@@ -1,0 +1,37 @@
+{
+  "benchmark": "bbq",
+  "n_cells": 20,
+  "mean_abs_drift_pp": 1.677758834631721,
+  "median_abs_drift_pp": 1.3897779414787148,
+  "max_abs_drift_pp": 5.238709677419356,
+  "mean_signed_drift_pp": 0.16376499000581302,
+  "mean_edge_flip_rate": 0.040951812225888604,
+  "median_edge_flip_rate": 0.018187830687830687,
+  "by_model": {
+    "deepseek-v3-2-non-reasoning": {
+      "n_factors": 4,
+      "mean_abs_drift_pp": 2.3252962475312735,
+      "mean_edge_flip_rate": 0.0725590419572838
+    },
+    "gpt-5-2-non-reasoning": {
+      "n_factors": 4,
+      "mean_abs_drift_pp": 1.36371484519648,
+      "mean_edge_flip_rate": 0.0723708762501866
+    },
+    "grok-41-fast-non-reasoning": {
+      "n_factors": 4,
+      "mean_abs_drift_pp": 2.3530120481927734,
+      "mean_edge_flip_rate": 0.00423728813559322
+    },
+    "llama-33-70b": {
+      "n_factors": 4,
+      "mean_abs_drift_pp": 0.6695966652224966,
+      "mean_edge_flip_rate": 0.016677822400713967
+    },
+    "qwen3-235b-a22b-2507": {
+      "n_factors": 4,
+      "mean_abs_drift_pp": 1.6771743670155796,
+      "mean_edge_flip_rate": 0.038914032385665466
+    }
+  }
+}

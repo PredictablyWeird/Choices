@@ -1,0 +1,37 @@
+{
+  "benchmark": "trolley",
+  "n_cells": 25,
+  "mean_abs_drift_pp": 1.111020958477728,
+  "median_abs_drift_pp": 0.8750000000000036,
+  "max_abs_drift_pp": 3.198685857321648,
+  "mean_signed_drift_pp": 0.2863648298398591,
+  "mean_edge_flip_rate": 0.018114197947091636,
+  "median_edge_flip_rate": 0.0,
+  "by_model": {
+    "deepseek-v3-2-non-reasoning": {
+      "n_factors": 5,
+      "mean_abs_drift_pp": 1.3647371714643297,
+      "mean_edge_flip_rate": 0.04277052128048274
+    },
+    "gpt-5-2-non-reasoning": {
+      "n_factors": 5,
+      "mean_abs_drift_pp": 0.9965781982462186,
+      "mean_edge_flip_rate": 0.013692055071365417
+    },
+    "grok-41-fast-non-reasoning": {
+      "n_factors": 5,
+      "mean_abs_drift_pp": 1.2249999999999983,
+      "mean_edge_flip_rate": 0.002325581395348837
+    },
+    "llama-33-70b": {
+      "n_factors": 5,
+      "mean_abs_drift_pp": 0.6127933635426352,
+      "mean_edge_flip_rate": 0.0
+    },
+    "qwen3-235b-a22b-2507": {
+      "n_factors": 5,
+      "mean_abs_drift_pp": 1.355996059135458,
+      "mean_edge_flip_rate": 0.031782831988261186
+    }
+  }
+}
