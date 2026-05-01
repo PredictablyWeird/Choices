@@ -31,6 +31,7 @@ FIG_DIR = EXP_DIR / "figures"
 INPUTS = {
     "trolley": DATA_DIR / "trolley_summary.csv",
     "bbq": DATA_DIR / "bbq_summary.csv",
+    "dailydilemmas": DATA_DIR / "dailydilemmas_summary.csv",
 }
 
 
@@ -156,7 +157,7 @@ def correlations(df: pd.DataFrame, label: str) -> dict:
 def make_scatter(df: pd.DataFrame, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    palette = {"trolley": "#1f77b4", "bbq": "#d62728"}
+    palette = {"trolley": "#1f77b4", "bbq": "#d62728", "dailydilemmas": "#2ca02c"}
     for benchmark, sub in df.groupby("benchmark"):
         ax.scatter(
             sub["abs_baseline_bias"],

@@ -11,10 +11,11 @@ data — no new API calls.
   nationality, tech_view, wealth)
 - BBQ: `~/code/values/moral-steerability-paper/google_drive/results_bbq_v2/`
   (factors: age_neg, age_pos, ses_neg, ses_pos)
-
-DailyDilemmas was out of scope for this run — the brief noted it needs
-`convert_to_simple.py` first and the resulting layout differs from the
-two simple_* benchmarks. The pooled fit captures trolley + BBQ.
+- DailyDilemmas: `~/code/values/moral-steerability-paper/google_drive/results_dailydilemmas/`
+  converted via `experiments/2026-03-25-dailydilemmas-with-nudges/convert_to_simple.py`
+  into `data/results_dailydilemmas_simple/` (10 value factors:
+  compassion, courage, dishonesty, honesty, integrity, loyalty,
+  patience, responsibility, sacrifice, self).
 
 ## How to run
 
@@ -28,6 +29,14 @@ uv run python -m choices.analysis.create_summary \
 uv run python -m choices.analysis.create_summary \
     --results-dirs ~/code/values/moral-steerability-paper/google_drive/results_bbq_v2 \
     --output experiments/2026-05-01-asymmetry-baseline-regression/data/bbq_summary.csv
+
+# DailyDilemmas: convert first, then summarize.
+uv run python experiments/2026-03-25-dailydilemmas-with-nudges/convert_to_simple.py \
+    --input ~/code/values/moral-steerability-paper/google_drive/results_dailydilemmas \
+    --output experiments/2026-05-01-asymmetry-baseline-regression/data/results_dailydilemmas_simple
+uv run python -m choices.analysis.create_summary \
+    --results-dirs experiments/2026-05-01-asymmetry-baseline-regression/data/results_dailydilemmas_simple \
+    --output experiments/2026-05-01-asymmetry-baseline-regression/data/dailydilemmas_summary.csv
 
 # Fit regressions and produce the scatter
 uv run python experiments/2026-05-01-asymmetry-baseline-regression/run_regression.py
@@ -48,15 +57,16 @@ The pooled fit adds `C(benchmark)` as a fixed effect.
 
 ## Headline numbers
 
-| Fit     | n   | β (95% CI)             | R² (marginal) | R² (conditional) | OLS R² |
-|---------|-----|------------------------|---------------|------------------|--------|
-| BBQ     | 252 | +1.68 [+0.45, +2.90]   | 0.065         | 0.380            | 0.068  |
-| Trolley | 546 | +3.15 [+2.09, +4.21]   | 0.104         | 0.391            | 0.167  |
-| Pooled  | 798 | +3.16 [+2.24, +4.08]   | 0.159         | 0.424            | 0.153  |
+| Fit            | n     | β (95% CI)             | R² (marginal) | R² (conditional) | OLS R² |
+|----------------|------:|------------------------|--------------:|-----------------:|-------:|
+| BBQ            |   252 | +1.68 [+0.45, +2.90]   | 0.065         | 0.380            | 0.068  |
+| DailyDilemmas  |   700 | +2.35 [+1.73, +2.96]   | 0.115         | 0.411            | 0.111  |
+| Trolley        |   546 | +3.15 [+2.09, +4.21]   | 0.104         | 0.391            | 0.167  |
+| **Pooled**     | 1,498 | +2.79 [+2.24, +3.34]   | **0.165**     | 0.427            | 0.091  |
 
 **Marginal R² (variance explained by `|baseline_bias|` alone)** is well
 below 0.30 on every fit. This **strongly supports C1**: baseline bias
-predicts only ~6–16% of the directional structure that the influence-pair
+predicts only ~7–17% of the directional structure that the influence-pair
 audit recovers. The remaining variance comes from the random effects
 (model, factor, influence type) — which is exactly what the audit is
 supposed to surface.
@@ -69,11 +79,12 @@ the residual scatter.
 
 Per-benchmark Pearson and Spearman on (`|baseline_bias|`, `|asym|`):
 
-| Benchmark | n   | Pearson(|·|) | Spearman(|·|) | Pearson(signed) |
-|-----------|-----|--------------|---------------|-----------------|
-| BBQ       | 252 | +0.261       | +0.090        | -0.368          |
-| Trolley   | 546 | +0.409       | +0.475        | +0.258          |
-| Pooled    | 798 | +0.391       | +0.363        | +0.183          |
+| Benchmark      | n     | Pearson(|·|) | Spearman(|·|) | Pearson(signed) |
+|----------------|------:|--------------|---------------|-----------------|
+| BBQ            |   252 | +0.261       | +0.090        | **-0.368**      |
+| DailyDilemmas  |   700 | +0.334       | +0.082        | **-0.363**      |
+| Trolley        |   546 | +0.409       | +0.475        | +0.258          |
+| Pooled         | 1,498 | +0.302       | +0.165        | -0.046          |
 
 **BBQ signed Pearson** of `(f_0(B) - 0.5, steerability_asym)` is
 **r = -0.368, p = 1.6e-9** — the draft (line 1488 of `main.tex`)
@@ -85,29 +96,36 @@ is unchanged.
 
 The **sign flips between benchmarks** is itself interesting:
 - BBQ: high baseline bias → asymmetry away from the biased default
-  (consistent with stereotype-correction influences working harder).
-- Trolley: high baseline bias → asymmetry toward the biased default
-  (slight, +0.26), the opposite direction.
+  (-0.37, consistent with stereotype-correction influences working harder).
+- DailyDilemmas: same negative direction (-0.36) — high baseline
+  preference for one value → easier to push opposite.
+- Trolley: high baseline bias → asymmetry *toward* the biased default
+  (+0.26), the opposite direction.
 
-This is hidden when you only look at `|asym|`.
+This sign reversal is hidden when you only look at `|asym|`. The pooled
+signed Pearson is essentially zero (-0.05) because the two directions
+cancel.
 
 ## Suggested wording for §4.2 C1 (line ~250)
 
 > "A mixed-effects regression of |asymmetry| on |baseline bias| (with
 > random intercepts on model, factor, and influence type) yields a
-> marginal R² of 0.16 in the pooled fit (β = 3.16, 95% CI [2.24, 4.08])
-> and below 0.11 within each benchmark. Baseline bias accounts for
-> ~6–16% of the directional structure recovered by the influence-pair
-> audit; the remainder is information that the choice-only protocol
-> cannot recover."
+> pooled marginal R² of **0.17** (β = 2.79, 95% CI [2.24, 3.34]) across
+> 1,498 conditions on trolley + BBQ + DailyDilemmas, and below **0.12**
+> within each benchmark. Baseline bias accounts for **7–17%** of the
+> directional structure recovered by the influence-pair audit; the
+> remainder is information that the choice-only protocol cannot
+> recover."
 
 ## Outputs
 
 - `data/per_condition.csv` — long-form table, one row per (benchmark,
   model, reasoning, factor, nudge_type) condition.
 - `data/regression_results.json` — coefficients, CIs, R², correlations.
-- `data/{trolley,bbq}_summary.csv` — raw create_summary output (kept for
-  traceability).
+- `data/{trolley,bbq,dailydilemmas}_summary.csv` — raw create_summary
+  output (kept for traceability).
+- `data/results_dailydilemmas_simple/` — DailyDilemmas converted into
+  the simple_* layout that `create_summary` expects.
 - `figures/asym_vs_baseline_bias.png` — scatter with per-benchmark OLS
   lines.
 
