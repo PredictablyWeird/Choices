@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 from pathlib import Path
 
@@ -22,10 +23,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def _open_text(path: Path):
+    return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
+
+
 def load_classified(paths: list[Path]) -> pd.DataFrame:
     rows: list[dict] = []
     for p in paths:
-        for line in Path(p).read_text().splitlines():
+        for line in _open_text(Path(p)):
             if not line.strip():
                 continue
             rec = json.loads(line)
@@ -174,34 +179,57 @@ def _summarize(df: pd.DataFrame) -> dict:
             return None
         return float((sub["judge_label"] == label).sum()) / len(sub)
 
-    return {
+    LABELS = ("ACK_AFFECTED", "ACK_DISCLAIMED", "DENIED", "PARTIAL", "UNCLEAR")
+    out = {
         "n_total": int(total),
         "n_sig_backfire": int(len(backfires)),
         "n_sig_compliance": int(len(compliances)),
         "n_no_effect": int(len(no_effect)),
         "n_base": int(len(base)),
-        "denial_rate_in_backfires": pct(backfires, "DENIED"),
-        "ack_rate_in_backfires": pct(backfires, "ACKNOWLEDGED"),
-        "partial_rate_in_backfires": pct(backfires, "PARTIAL"),
-        "denial_rate_in_compliances": pct(compliances, "DENIED"),
-        "ack_rate_in_compliances": pct(compliances, "ACKNOWLEDGED"),
-        "denial_rate_in_no_effect": pct(no_effect, "DENIED"),
-        "ack_rate_in_no_effect": pct(no_effect, "ACKNOWLEDGED"),
-        "denial_rate_overall": pct(df, "DENIED"),
-        "ack_rate_overall": pct(df, "ACKNOWLEDGED"),
     }
+    for kind, sub in (
+        ("backfires", backfires),
+        ("compliances", compliances),
+        ("no_effect", no_effect),
+        ("base", base),
+        ("overall", df),
+    ):
+        for label in LABELS:
+            out[f"{label.lower()}_rate_in_{kind}"] = pct(sub, label)
+    # The C2 paper-headline number we want: among significant backfires,
+    # share that acknowledged the cue but disclaimed any effect on the
+    # choice — i.e. the model says "the cue tried to nudge me, but it
+    # didn't change my answer", while the data shows the answer DID
+    # change (significantly opposite to the cue).
+    out["headline_ack_disclaimed_in_backfires"] = pct(backfires, "ACK_DISCLAIMED")
+    out["headline_denial_in_backfires"] = pct(backfires, "DENIED")
+    out["headline_stated_no_effect_in_backfires"] = (
+        out["headline_ack_disclaimed_in_backfires"] or 0.0
+    ) + (out["headline_denial_in_backfires"] or 0.0)
+    return out
 
 
 def make_bar_plot(annotated: pd.DataFrame, out_path: Path) -> None:
-    """Per-model bar chart: denial vs ack rate among backfires vs compliances."""
+    """Per-model stacked bar: ACK_AFFECTED / ACK_DISCLAIMED / DENIED / etc.,
+    split by sig_backfire vs sig_compliance."""
     valid = annotated[annotated["judge_label"].notna()]
+
+    LABELS = ("ACK_AFFECTED", "ACK_DISCLAIMED", "DENIED", "PARTIAL", "UNCLEAR")
+    COLORS = {
+        "ACK_AFFECTED": "#1f77b4",
+        "ACK_DISCLAIMED": "#d62728",
+        "DENIED": "#7f0000",
+        "PARTIAL": "#ff7f0e",
+        "UNCLEAR": "#888888",
+    }
+
     rows = []
     for (model, benchmark), sub in valid.groupby(["model", "benchmark"]):
         for kind in ("sig_backfire", "sig_compliance"):
             cell = sub[sub["condition_kind"] == kind]
             if len(cell) == 0:
                 continue
-            for label in ("ACKNOWLEDGED", "DENIED", "PARTIAL", "UNCLEAR"):
+            for label in LABELS:
                 rate = (cell["judge_label"] == label).sum() / len(cell)
                 rows.append(
                     {
@@ -218,38 +246,44 @@ def make_bar_plot(annotated: pd.DataFrame, out_path: Path) -> None:
         print("No backfire/compliance trials with labels — skipping plot")
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
     for ax, kind in zip(axes, ["sig_backfire", "sig_compliance"]):
         sub = plot_df[plot_df["kind"] == kind]
         groups = sub.groupby(["model", "benchmark"])
         x_labels = []
-        denial = []
-        ack = []
-        partial = []
+        bars = {label: [] for label in LABELS}
+        ns = []
         for (model, benchmark), g in groups:
-            label = f"{model.split('-')[0][:6]}/{benchmark}"
-            x_labels.append(label)
-            denial.append(float(g[g["label"] == "DENIED"]["rate"].sum()))
-            ack.append(float(g[g["label"] == "ACKNOWLEDGED"]["rate"].sum()))
-            partial.append(float(g[g["label"] == "PARTIAL"]["rate"].sum()))
-        x = range(len(x_labels))
-        ax.bar(x, ack, label="acknowledged", color="#1f77b4")
-        ax.bar(x, partial, bottom=ack, label="partial", color="#ff7f0e")
-        ax.bar(
-            x,
-            denial,
-            bottom=[a + p for a, p in zip(ack, partial)],
-            label="denied",
-            color="#d62728",
-        )
+            short = f"{model.split('-')[0][:6]}\n{benchmark}"
+            x_labels.append(short)
+            for label in LABELS:
+                bars[label].append(float(g[g["label"] == label]["rate"].sum()))
+            ns.append(int(g["n"].iloc[0]))
+        x = list(range(len(x_labels)))
+        bottom = [0.0] * len(x_labels)
+        for label in LABELS:
+            ax.bar(x, bars[label], bottom=bottom, label=label, color=COLORS[label])
+            bottom = [b + v for b, v in zip(bottom, bars[label])]
         ax.set_xticks(x)
-        ax.set_xticklabels(x_labels, rotation=20, ha="right")
+        ax.set_xticklabels(
+            [f"{xl}\n(n={n})" for xl, n in zip(x_labels, ns)],
+            rotation=0,
+            ha="center",
+            fontsize=9,
+        )
         ax.set_ylim(0, 1)
-        ax.set_title(kind.replace("sig_", "significant "))
+        ax.set_title(
+            "significant backfires"
+            if kind == "sig_backfire"
+            else "significant compliances"
+        )
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylabel("share of trials")
-    axes[0].legend(loc="upper left", frameon=False, fontsize=9)
-    fig.suptitle("Stated-vs-revealed: assistant's claim about influence (turn 2)")
+    axes[0].legend(loc="upper left", frameon=False, fontsize=8)
+    fig.suptitle(
+        "Turn-2 self-report: how the model frames the influence cue\n"
+        "(ACK_DISCLAIMED is the stated-vs-revealed inconsistency in backfires)"
+    )
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=180)
@@ -287,33 +321,47 @@ def main() -> None:
     with (out_dir / "headline_numbers.json").open("w") as f:
         json.dump(h, f, indent=2, default=str)
 
+    def _fmt_pct(x):
+        return f"{x:.1%}" if x is not None else "N/A"
+
     print("\nHeadline numbers (overall):")
     o = h["overall"]
-    print(f"  trials with judge label: {o['n_total']}")
-    print(f"  significant backfire trials: {o['n_sig_backfire']}")
-    print(f"  significant compliance trials: {o['n_sig_compliance']}")
-    print(f"  no-effect trials: {o['n_no_effect']}")
-    print(f"  base trials: {o['n_base']}")
-    if o["denial_rate_in_backfires"] is not None:
+    print(f"  trials with judge label:        {o['n_total']}")
+    print(f"  significant backfire trials:    {o['n_sig_backfire']}")
+    print(f"  significant compliance trials:  {o['n_sig_compliance']}")
+    print(f"  no-effect trials:               {o['n_no_effect']}")
+    print(f"  base trials:                    {o['n_base']}")
+    if o["n_sig_backfire"] > 0:
+        print("\n  >>> Of significant BACKFIRES (paper headline):")
+        print(f"    ACK_AFFECTED:    {_fmt_pct(o['ack_affected_rate_in_backfires'])}")
         print(
-            f"  denial rate in backfires: {o['denial_rate_in_backfires']:.1%}  "
-            f"(ack={o['ack_rate_in_backfires']:.1%}, partial={o['partial_rate_in_backfires']:.1%})"
+            f"    ACK_DISCLAIMED:  {_fmt_pct(o['ack_disclaimed_rate_in_backfires'])}  "
+            f"<-- model acknowledges cue but denies the cue affected its choice"
+        )
+        print(f"    DENIED:          {_fmt_pct(o['denied_rate_in_backfires'])}")
+        print(f"    PARTIAL:         {_fmt_pct(o['partial_rate_in_backfires'])}")
+        print(f"    UNCLEAR:         {_fmt_pct(o['unclear_rate_in_backfires'])}")
+        print(
+            f"\n    'stated-no-effect' (ACK_DISCLAIMED + DENIED): "
+            f"{_fmt_pct(o['headline_stated_no_effect_in_backfires'])}"
         )
 
     print("\nPer (model, benchmark):")
     for k, v in sorted(h["by_model_benchmark"].items()):
-        print(f"  {k}:")
-        if v["denial_rate_in_backfires"] is not None:
+        print(f"\n  {k}:")
+        if v["n_sig_backfire"] > 0:
             print(
-                f"    sig_backfire: n={v['n_sig_backfire']} "
-                f"denied={v['denial_rate_in_backfires']:.1%} "
-                f"ack={v['ack_rate_in_backfires']:.1%}"
+                f"    sig_backfire   (n={v['n_sig_backfire']:5d}): "
+                f"AFF={_fmt_pct(v['ack_affected_rate_in_backfires'])} "
+                f"DIS={_fmt_pct(v['ack_disclaimed_rate_in_backfires'])} "
+                f"DEN={_fmt_pct(v['denied_rate_in_backfires'])}"
             )
-        if v["denial_rate_in_compliances"] is not None:
+        if v["n_sig_compliance"] > 0:
             print(
-                f"    sig_compliance: n={v['n_sig_compliance']} "
-                f"denied={v['denial_rate_in_compliances']:.1%} "
-                f"ack={v['ack_rate_in_compliances']:.1%}"
+                f"    sig_compliance (n={v['n_sig_compliance']:5d}): "
+                f"AFF={_fmt_pct(v['ack_affected_rate_in_compliances'])} "
+                f"DIS={_fmt_pct(v['ack_disclaimed_rate_in_compliances'])} "
+                f"DEN={_fmt_pct(v['denied_rate_in_compliances'])}"
             )
 
     plot_path = out_dir / "denial_vs_ack_by_kind.png"
