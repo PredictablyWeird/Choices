@@ -79,9 +79,15 @@ def annotate_status(df: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFrame:
                 }
             )
             continue
+        # The summary table uses 'off' for non-reasoning runs while saved
+        # graphs store reasoning_mode='none'; treat them as equivalent.
+        rc_trial = str(t["reasoning_condition"]).lower()
+        rc_aliases = {rc_trial}
+        if rc_trial in ("none", "off", "", "nan"):
+            rc_aliases |= {"none", "off"}
         match = summary[
             (summary["model"] == t["model"])
-            & (summary["reasoning_condition"] == t["reasoning_condition"])
+            & (summary["reasoning_condition"].astype(str).str.lower().isin(rc_aliases))
             & (summary["factor"] == t["factor"])
             & (summary["nudge_type"] == t["nudge_type"])
         ]
