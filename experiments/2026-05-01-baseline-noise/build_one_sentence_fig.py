@@ -1,20 +1,23 @@
 """
 Build the §4.2 (sec:claim-instability) teaser figure.
 
-A concrete (model × factor × influence) cell that puts the
+A concrete (model x factor x influence) cell that puts the
 single-sentence shift in front of the reader as a before / after
-contrast. Three bars showing the rate at which the model picks
-"option B" on a fixed BBQ comparison set:
+contrast. Three bars:
 
-  1. Baseline (no influence sentence)
-  2. Replicate baseline (same prompts, fresh RNG draw — the noise
-     floor calibrant from §4.6)
-  3. Under one virtue-appeal sentence pushing toward "old"
-  4. Under one virtue-appeal sentence pushing toward "non-old"
+  1. Baseline (no influence sentence), with an error bar showing the
+     baseline-to-baseline noise floor measured by re-running the same
+     baseline at the same temperature with a fresh RNG draw. This is
+     the appendix-level noise calibrant; rendering it as an error bar
+     instead of a separate bar keeps the visual focused on the size of
+     the under-influence shift relative to natural variability.
+  2. Under one virtue-appeal sentence pushing toward "non-old".
+  3. Under one virtue-appeal sentence pushing toward "old".
 
-Cell: DeepSeek V3.2 (non-reasoning) on BBQ `age_pos` × `virtue_appeal`.
+Cell: DeepSeek V3.2 (non-reasoning) on BBQ `age_pos` x `virtue_appeal`.
 Baseline f_0(B) = 47%; under-influence shifts to 2% and 95% in the two
-directions; baseline-replicate drift is only 1.2pp.
+directions; baseline-replicate drift is 2pp (rounded from 1.2pp on
+this cell, which is in line with the BBQ benchmark mean of 1.7pp).
 
 Output: ~/code/values/moral-steerability-paper/figures/one_sentence_shift.{pdf,png}
 """
@@ -29,12 +32,12 @@ PAPER_FIG_DIR = (
     Path("~/code/values/moral-steerability-paper/figures").expanduser()
 )
 
-# Cell: DeepSeek V3.2 (non-reasoning) — BBQ — age_pos — virtue_appeal.
+# Cell: DeepSeek V3.2 (non-reasoning) - BBQ - age_pos - virtue_appeal.
 # Pulled from the experiments artifacts:
-#   f_0(B), f_A(B), f_B(B) → bbq_summary.csv (asymmetry-baseline-regression)
-#   baseline-replicate drift → analysis_bbq/per_condition.csv (baseline-noise)
+#   f_0(B), f_A(B), f_B(B) -> bbq_summary.csv (asymmetry-baseline-regression)
+#   baseline-replicate drift -> analysis_bbq/per_condition.csv (baseline-noise)
 F_0 = 0.468  # original baseline P(option B = old)
-F_REP = 0.488  # replicate baseline (drift = 1.19pp)
+NOISE_PP = 2.0  # baseline-to-baseline drift on this cell, pp
 F_TOWARD_A = 0.020  # influence sentence pushes toward "non-old"
 F_TOWARD_B = 0.952  # influence sentence pushes toward "old"
 
@@ -44,27 +47,37 @@ CELL_DESC = "DeepSeek V3.2 · BBQ · age (positive polarity) · virtue-appeal"
 def main() -> None:
     PAPER_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(6.0, 3.4))
+    fig, ax = plt.subplots(figsize=(7.0, 4.4))
 
-    # Order: original baseline, replicate baseline, two influence directions.
     bars = [
         {"label": "baseline", "value": F_0, "color": "#888888"},
-        {"label": "baseline\n(re-run)", "value": F_REP, "color": "#bbbbbb"},
         {
             "label": "+ virtue-appeal\ntoward non-old",
             "value": F_TOWARD_A,
-            "color": "#1f77b4",
+            "color": "#0072B2",
         },
         {
             "label": "+ virtue-appeal\ntoward old",
             "value": F_TOWARD_B,
-            "color": "#d62728",
+            "color": "#D55E00",
         },
     ]
     x = list(range(len(bars)))
     heights = [b["value"] for b in bars]
     colors = [b["color"] for b in bars]
-    ax.bar(x, heights, color=colors, edgecolor="white", linewidth=0.6, width=0.7)
+    yerr = [NOISE_PP / 100.0, 0.0, 0.0]
+
+    ax.bar(
+        x,
+        heights,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.6,
+        width=0.66,
+        yerr=yerr,
+        capsize=8,
+        error_kw=dict(ecolor="#222222", elinewidth=1.6, capthick=1.6),
+    )
 
     # Reference 50/50 line.
     ax.axhline(0.5, color="#dddddd", lw=0.8, ls="--", zorder=0)
@@ -73,89 +86,45 @@ def main() -> None:
     for xi, b in zip(x, bars):
         ax.text(
             xi,
-            b["value"] + 0.025,
+            b["value"] + 0.03,
             f"{b['value']:.0%}",
             ha="center",
             va="bottom",
-            fontsize=10,
+            fontsize=13,
             fontweight="bold",
         )
 
-    # Big delta annotations between baseline ↔ each influence direction.
-    delta_a = (F_0 - F_TOWARD_A) * 100
-    delta_b = (F_TOWARD_B - F_0) * 100
-    drift_pp = abs(F_REP - F_0) * 100
-
-    # baseline ↔ replicate: noise floor annotation
-    y_anchor = max(F_0, F_REP) + 0.18
-    ax.annotate(
-        "",
-        xy=(1, y_anchor),
-        xytext=(0, y_anchor),
-        arrowprops=dict(arrowstyle="<->", color="#666666", lw=1.0),
-    )
-    ax.text(
-        0.5,
-        y_anchor + 0.018,
-        f"re-run noise\n{drift_pp:.1f}pp",
-        ha="center",
-        va="bottom",
-        fontsize=8,
-        color="#666666",
-    )
-
-    # baseline ↔ toward-A: large shift
-    ax.annotate(
-        "",
-        xy=(2, F_TOWARD_A + 0.04),
-        xytext=(0, F_TOWARD_A + 0.04),
-        arrowprops=dict(arrowstyle="<->", color="#1f77b4", lw=1.4),
-    )
-    ax.text(
-        1.0,
-        F_TOWARD_A + 0.07,
-        f"−{delta_a:.0f}pp",
-        ha="center",
-        va="bottom",
-        fontsize=10,
-        fontweight="bold",
-        color="#1f77b4",
-    )
-
-    # baseline ↔ toward-B: large shift
-    ax.annotate(
-        "",
-        xy=(3, F_0 + 0.04),
-        xytext=(0, F_0 + 0.04),
-        arrowprops=dict(arrowstyle="<->", color="#d62728", lw=1.4),
-    )
-    ax.text(
-        1.5,
-        F_0 + 0.07,
-        f"+{delta_b:.0f}pp",
-        ha="center",
-        va="bottom",
-        fontsize=10,
-        fontweight="bold",
-        color="#d62728",
+    # Legend explaining the error bar.
+    legend_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            marker="|",
+            color="#222222",
+            markersize=12,
+            markeredgewidth=1.6,
+            linestyle="None",
+            label=f"± baseline-to-baseline noise ({NOISE_PP:.0f}pp on this cell)",
+        ),
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        frameon=False,
+        fontsize=11,
     )
 
     ax.set_xticks(x)
-    ax.set_xticklabels([b["label"] for b in bars], fontsize=8.5)
-    ax.set_ylabel("P(model picks the older person)", fontsize=9)
+    ax.set_xticklabels([b["label"] for b in bars], fontsize=11.5)
+    ax.set_ylabel("P(model picks the older person)", fontsize=12)
     ax.set_ylim(0, 1.18)
     ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=8)
+    ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=11)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.set_title(
-        f"What one sentence does — {CELL_DESC}",
-        fontsize=10,
-        fontweight="bold",
-        loc="left",
-        pad=10,
-    )
+    ax.tick_params(axis="x", labelsize=11.5)
 
-    fig.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.20)
+    fig.subplots_adjust(left=0.13, right=0.97, top=0.95, bottom=0.26)
     pdf_path = PAPER_FIG_DIR / "one_sentence_shift.pdf"
     png_path = PAPER_FIG_DIR / "one_sentence_shift.png"
     fig.savefig(pdf_path, bbox_inches="tight")

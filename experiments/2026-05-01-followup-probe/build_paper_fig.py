@@ -25,11 +25,12 @@ HEADLINE_JSON = EXP_DIR / "analysis_out_v2" / "headline_numbers.json"
 TRIALS_CSV = EXP_DIR / "analysis_out_v2" / "trials_annotated.csv.gz"
 PAPER_FIG_DIR = Path("~/code/values/moral-steerability-paper/figures").expanduser()
 
-# Palette: red = ACK_DISCLAIMED ("claims no effect, but choice shifted"),
+# Wong colorblind-safe palette, matching the rest of the paper's figures.
+# Vermillion = ACK_DISCLAIMED ("claims no effect, but choice shifted"),
 # blue = ACK_AFFECTED, dark grey = DENIED, light grey = other.
 COLORS = {
-    "ACK_DISCLAIMED": "#d62728",
-    "ACK_AFFECTED": "#1f77b4",
+    "ACK_DISCLAIMED": "#D55E00",
+    "ACK_AFFECTED": "#0072B2",
     "DENIED": "#444444",
     "OTHER": "#bbbbbb",
 }
@@ -72,7 +73,7 @@ def main() -> None:
 
     PAPER_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig = plt.figure(figsize=(7.5, 3.8))
+    fig = plt.figure(figsize=(9.5, 4.6))
     gs = fig.add_gridspec(1, 2, width_ratios=[1.9, 1.0], wspace=0.32)
     ax_a = fig.add_subplot(gs[0, 0])
     ax_b = fig.add_subplot(gs[0, 1])
@@ -136,7 +137,7 @@ def main() -> None:
         f"{short_model[c['model']]} / {BENCH_DISPLAY[c['benchmark']]}" for c in cells
     ]
     ax_a.set_xticks(x)
-    ax_a.set_xticklabels(xlabels, fontsize=8, rotation=30, ha="right")
+    ax_a.set_xticklabels(xlabels, fontsize=10.5, rotation=30, ha="right")
     for xi, c in zip(x, cells):
         ax_a.text(
             xi,
@@ -144,21 +145,22 @@ def main() -> None:
             f"n={c['n']:,}",
             ha="center",
             va="bottom",
-            fontsize=7,
+            fontsize=10,
             color="#666666",
         )
 
     # Block annotations under the panel.
     bf_xs = [xi for xi, c in zip(x, cells) if c["kind"] == "sig_backfire"]
     cm_xs = [xi for xi, c in zip(x, cells) if c["kind"] == "sig_compliance"]
+    # Group labels go ABOVE the bars (below them collides with the legend).
     if bf_xs:
         ax_a.text(
             (min(bf_xs) + max(bf_xs)) / 2,
-            -0.34,
+            1.10,
             "significant backfires",
             ha="center",
-            va="top",
-            fontsize=8.5,
+            va="bottom",
+            fontsize=12,
             fontweight="bold",
             color="#222222",
             transform=ax_a.get_xaxis_transform(),
@@ -166,11 +168,11 @@ def main() -> None:
     if cm_xs:
         ax_a.text(
             (min(cm_xs) + max(cm_xs)) / 2,
-            -0.34,
+            1.10,
             "significant compliances",
             ha="center",
-            va="top",
-            fontsize=8.5,
+            va="bottom",
+            fontsize=12,
             fontweight="bold",
             color="#222222",
             transform=ax_a.get_xaxis_transform(),
@@ -178,25 +180,9 @@ def main() -> None:
 
     ax_a.set_xlim(min(x) - 0.6, max(x) + 0.6)
     ax_a.set_ylim(0, 1)
-    ax_a.set_ylabel("share of trials", fontsize=9)
+    ax_a.set_ylabel("share of trials", fontsize=11)
     ax_a.spines[["top", "right"]].set_visible(False)
-    ax_a.tick_params(axis="y", labelsize=8)
-    ax_a.set_title(
-        "(a) Turn-2 self-report breakdown",
-        fontsize=10,
-        fontweight="bold",
-        loc="left",
-        pad=14,
-    )
-    ax_a.legend(
-        ncol=4,
-        frameon=False,
-        fontsize=7.5,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.42),
-        handlelength=1.2,
-        columnspacing=1.4,
-    )
+    ax_a.tick_params(axis="y", labelsize=10)
 
     # -------- Panel (b) — headline number isolated --------
     with HEADLINE_JSON.open() as f:
@@ -212,7 +198,7 @@ def main() -> None:
     rates = [bf_disclaimed, cm_disclaimed]
     ns = [n_bf, n_cm]
     labels = ["sig. backfires", "sig. compliances"]
-    line_colors = ["#d62728", "#888888"]
+    line_colors = ["#D55E00", "#888888"]
     for y, rate, c in zip(ys, rates, line_colors):
         ax_b.hlines(y, 0, rate, color=c, lw=3)
     ax_b.scatter(
@@ -232,7 +218,7 @@ def main() -> None:
             f"{lbl}\n(n={n:,})",
             ha="right",
             va="center",
-            fontsize=8.5,
+            fontsize=11,
             color="#222222" if y == 1 else "#555555",
         )
         # Place the percentage above the dot so it doesn't overlap.
@@ -242,27 +228,46 @@ def main() -> None:
             f"{rate:.0%}",
             ha="center",
             va="bottom",
-            fontsize=13 if y == 1 else 10,
+            fontsize=16 if y == 1 else 12,
             fontweight="bold" if y == 1 else "normal",
-            color="#d62728" if y == 1 else "#444444",
+            color="#D55E00" if y == 1 else "#444444",
         )
 
-    ax_b.set_xlim(-0.55, 1.08)
-    ax_b.set_ylim(-0.6, 1.6)
+    ax_b.text(
+        0.5,
+        1.65,
+        "Share disclaiming any\ncue effect on the choice",
+        ha="center",
+        va="bottom",
+        fontsize=12,
+        color="#222222",
+        fontweight="bold",
+    )
+    ax_b.set_xlim(-0.6, 1.12)
+    ax_b.set_ylim(-0.7, 2.05)
     ax_b.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax_b.set_xticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=8)
+    ax_b.set_xticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=10)
     ax_b.set_yticks([])
     ax_b.spines[["top", "right", "left"]].set_visible(False)
-    ax_b.set_title(
-        "(b) Share disclaiming any cue effect",
-        fontsize=10,
-        fontweight="bold",
-        loc="left",
-        pad=14,
-    )
     ax_b.axvline(0, color="#cccccc", lw=0.7)
 
-    fig.subplots_adjust(left=0.08, right=0.98, top=0.88, bottom=0.22)
+    # Bottom legend, full-figure level so it sits below both panels.
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color=COLORS[label]) for label in ORDER
+    ]
+    fig.legend(
+        handles,
+        [LABEL_DISPLAY[label] for label in ORDER],
+        ncol=4,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.02),
+        frameon=False,
+        fontsize=11,
+        handlelength=1.3,
+        columnspacing=1.8,
+    )
+
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.84, bottom=0.32)
     pdf_path = PAPER_FIG_DIR / "stated_vs_revealed.pdf"
     png_path = PAPER_FIG_DIR / "stated_vs_revealed.png"
     fig.savefig(pdf_path, bbox_inches="tight")
