@@ -89,6 +89,26 @@ The pipeline reads from three places, in order of precedence:
 - DailyDilemmas: excludes `dishonesty` (saturated baseline; paper
   excludes this in App. E).
 
+## Reasoning-trace coverage
+
+The paper's §6 (reasoning traces) is currently trolley-only, but the
+underlying Gemini-Flash classifications and edge-level traces for BBQ
+and DailyDilemmas already exist in `google_drive/`. The pipeline now
+surfaces them under `section_5_reasoning_traces` in the JSON:
+
+- per-slice (`baseline` / `nudged` for BBQ; `baseline_smaller` /
+  `nudged_smaller` for DailyDilemmas) primary-rationale counts +
+  percentages, mentioned-rate, and acted-on-rate across all 23
+  rationale codes;
+- BBQ backfire-by-nudge / by-factor / by-primary-rationale crosstabs
+  (from `backfire_examples.json`);
+- DeepSeek `fig9_primary_rationales_*` and `fig19_mentioned_rationales_*`
+  PDFs copied into `figures/` for direct paper inclusion.
+
+The trolley analogues are produced upstream by
+`choices/analysis/reasoning_traces/plot_rationales.py` and aren't
+duplicated here.
+
 ## What this doesn't yet do
 
 - Phrasing-robustness table (`tab:phrasing-young`) and realistic-scenario
@@ -98,5 +118,5 @@ The pipeline reads from three places, in order of precedence:
   has the code, but it isn't wired in here yet.
 - Most figures beyond the cross-benchmark headline. The
   `choices/analysis/plots/` library produces the per-model violins,
-  steerability plots, etc.; first pass focuses on the load-bearing
-  numbers.
+  steerability plots, etc.; the first pass focuses on the load-bearing
+  numbers and the BBQ/DD rationale figures that were already rendered.

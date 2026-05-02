@@ -99,6 +99,43 @@ DATA_ROOTS = {
     "dailydilemmas": CHOICES / "google_drive/results_dailydilemmas",
 }
 
+# Reasoning-trace artefacts. Each key is one BBQ/DailyDilemmas slice that was
+# pre-classified by Gemini Flash (rationale_detection_metadata.model in the
+# JSONs). The corresponding DeepSeek figures (fig9 = primary; fig19 =
+# mentioned) live next to the JSONs as PDFs. Trolley reasoning traces are
+# already wired into Section 5 of the paper from elsewhere; this dict adds
+# the BBQ + DD gap that wasn't previously surfaced.
+REASONING_TRACE_SOURCES = {
+    "bbq": {
+        "dir": CHOICES / "google_drive/results_bbq/bbq_reasoning_traces",
+        "slices": {
+            "baseline": "baseline_rationales.json",
+            "nudged": "nudged_rationales.json",
+        },
+        "examples": {
+            "backfires": "backfire_examples.json",
+            "by_rationale": "rationale_examples.json",
+        },
+        "figures": {
+            "primary_rationales_deepseek": "fig9_primary_rationales_bbq_deepseek.pdf",
+            "mentioned_rationales_deepseek": "fig19_mentioned_rationales_bbq_deepseek.pdf",
+        },
+    },
+    "dailydilemmas": {
+        "dir": CHOICES
+        / "google_drive/results_dailydilemmas/daily_dilemmas_reasoning_analysis/dd_fig9",
+        "slices": {
+            "baseline_smaller": "baseline_smaller_rationales.json",
+            "nudged_smaller": "nudged_smaller_rationales.json",
+        },
+        "examples": {},  # DD analogue not produced in the same shape
+        "figures": {
+            "primary_rationales_deepseek": "fig9_primary_rationales_daily_dilemmas_deepseek.pdf",
+            "mentioned_rationales_deepseek": "fig19_mentioned_rationales_daily_dilemmas_deepseek.pdf",
+        },
+    },
+}
+
 # ---------- paper scope ------------------------------------------------------
 
 PAPER_FACTORS_TROLLEY = {"age_group", "gender", "handedness", "nationality", "wealth"}
@@ -447,6 +484,150 @@ def _headline_table(summaries: dict[str, pd.DataFrame]) -> dict:
                 "boot95_hi": hi,
             }
         out[bench] = rec
+    return out
+
+
+def _aggregate_rationales(rationale_path: Path) -> dict:
+    """
+    Aggregate Gemini-Flash rationale classifications across all traces in
+    one rationale-detection JSON. Returns counts and percentages for each
+    rationale code along three views:
+      primary  : trace's `rationales.primary_rationale` field
+      mentioned: status in {mentioned_but_not_acted_on, mentioned_and_acted_on}
+      acted_on : status == mentioned_and_acted_on
+
+    The JSON shape is `cases -> condition_a_traces` (and `condition_b_traces`
+    for nudged conditions); each trace has a `rationales` dict matching the
+    taxonomy in choices.analysis.reasoning_traces.rationale_detection.
+    """
+    with open(rationale_path) as f:
+        data = json.load(f)
+    cases = data.get("cases", [])
+    if isinstance(cases, dict):
+        cases = list(cases.values())
+
+    primary_counts: dict[str, int] = defaultdict(int)
+    mentioned_counts: dict[str, int] = defaultdict(int)
+    acted_on_counts: dict[str, int] = defaultdict(int)
+    n_traces = 0
+
+    for case in cases:
+        for trace_key in ("condition_a_traces", "condition_b_traces"):
+            for trace in case.get(trace_key, []) or []:
+                rats = trace.get("rationales") or {}
+                if not rats:
+                    continue
+                n_traces += 1
+                primary = rats.get("primary_rationale", "none")
+                primary_counts[primary] += 1
+                for code, info in rats.items():
+                    if code == "primary_rationale":
+                        continue
+                    if not isinstance(info, dict):
+                        continue
+                    status = info.get("status", "not_mentioned")
+                    if status in (
+                        "mentioned_but_not_acted_on",
+                        "mentioned_and_acted_on",
+                    ):
+                        mentioned_counts[code] += 1
+                    if status == "mentioned_and_acted_on":
+                        acted_on_counts[code] += 1
+
+    def _pct(counts: dict[str, int]) -> dict[str, float]:
+        return {k: v / n_traces for k, v in counts.items()} if n_traces else {}
+
+    return {
+        "n_traces": n_traces,
+        "n_cases": len(cases),
+        "primary_counts": dict(primary_counts),
+        "primary_pct": _pct(primary_counts),
+        "mentioned_counts": dict(mentioned_counts),
+        "mentioned_pct": _pct(mentioned_counts),
+        "acted_on_counts": dict(acted_on_counts),
+        "acted_on_pct": _pct(acted_on_counts),
+        "rationale_classifier_metadata": data.get("rationale_detection_metadata"),
+        "source_metadata": data.get("original_metadata"),
+    }
+
+
+def _load_examples_meta(path: Path) -> dict:
+    """Load example/backfire JSONs and return a small metadata summary."""
+    if not path.exists():
+        return {"_status": f"missing: {path}"}
+    with open(path) as f:
+        d = json.load(f)
+    rec: dict = {"_path": str(path.relative_to(REPO))}
+    for k in (
+        "model",
+        "definition",
+        "totals",
+        "by_nudge_type",
+        "by_factor",
+        "by_primary_rationale",
+        "n_traces_searched",
+    ):
+        if k in d:
+            rec[k] = d[k]
+    if "featured_examples" in d:
+        feat = d["featured_examples"]
+        rec["n_featured_examples"] = (
+            sum(len(v) for v in feat.values()) if isinstance(feat, dict) else len(feat)
+        )
+    if "rationales" in d and isinstance(d["rationales"], dict):
+        rec["n_rationale_examples"] = {
+            k: len(v) if isinstance(v, list) else 0 for k, v in d["rationales"].items()
+        }
+    if "all_backfires" in d:
+        rec["n_all_backfires"] = len(d["all_backfires"])
+    return rec
+
+
+def _collect_reasoning_traces(name: str) -> dict:
+    """Build the per-benchmark reasoning-trace section of paper_numbers.json."""
+    spec = REASONING_TRACE_SOURCES.get(name)
+    if spec is None:
+        return {}
+    base = spec["dir"]
+    if not base.exists():
+        return {"_status": f"missing dir: {base}"}
+
+    out: dict = {
+        "_dir": str(base.relative_to(REPO)),
+        "rationale_distributions": {},
+        "examples": {},
+        "figures_provided": {},
+        "source_files": {},
+    }
+
+    for slice_name, fname in spec["slices"].items():
+        path = base / fname
+        if not path.exists():
+            out["rationale_distributions"][slice_name] = {"_status": f"missing: {path}"}
+            continue
+        out["rationale_distributions"][slice_name] = _aggregate_rationales(path)
+        out["source_files"][slice_name] = str(path.relative_to(REPO))
+
+    for ex_key, fname in spec["examples"].items():
+        path = base / fname
+        out["examples"][ex_key] = _load_examples_meta(path)
+
+    for fig_key, fname in spec["figures"].items():
+        src = base / fname
+        if not src.exists():
+            out["figures_provided"][fig_key] = {"_status": f"missing: {src}"}
+            continue
+        # Copy into our local figures/ dir so the paper has one canonical
+        # place to look. Keep the original filename so the paper rewrite
+        # can include the PDF directly.
+        dst = FIG_OUT / fname
+        if dst.resolve() != src.resolve():
+            dst.write_bytes(src.read_bytes())
+        out["figures_provided"][fig_key] = {
+            "source": str(src.relative_to(REPO)),
+            "local_copy": str(dst.relative_to(REPO)),
+        }
+
     return out
 
 
@@ -802,6 +983,20 @@ def main():
         },
     }
 
+    # Section 5 (reasoning trace analysis): rationale distributions + qualitative
+    # examples + pre-rendered DeepSeek figures. Trolley's traces are wired into
+    # the paper from elsewhere; this section adds the BBQ + DailyDilemmas data
+    # that was sitting in google_drive/ but never previously surfaced.
+    out["section_5_reasoning_traces"] = {
+        bench: _collect_reasoning_traces(bench) for bench in ("bbq", "dailydilemmas")
+    }
+    out["section_5_reasoning_traces"]["_note"] = (
+        "Rationale-detection model = google/gemini-3-flash-preview; "
+        "200 traces per slice. Pre-rendered DeepSeek figures copied into "
+        "experiments/2026-05-02-paper-artifacts/figures/ for direct paper "
+        "inclusion."
+    )
+
     # Appendix tables
     out["appendix_tables"] = {
         "tab_nudge_type_effects_trolley": _table_by_group(
@@ -875,6 +1070,20 @@ def main():
             f"  {bench:14s}: alpha=.05 {r['rate_alpha05']*100:5.1f}% | "
             f"BH-FDR {r['rate_bh_fdr05']*100:5.1f}%  (n={r['n_neutral']})"
         )
+
+    print("\n=== reasoning traces — top-3 primary rationales per slice ===")
+    for bench in ("bbq", "dailydilemmas"):
+        rec = out["section_5_reasoning_traces"].get(bench, {})
+        for slice_name, dist in rec.get("rationale_distributions", {}).items():
+            if not isinstance(dist, dict) or "primary_pct" not in dist:
+                continue
+            top = sorted(
+                dist["primary_pct"].items(), key=lambda kv: kv[1], reverse=True
+            )[:3]
+            top_str = ", ".join(f"{k} {v*100:.0f}%" for k, v in top)
+            print(
+                f"  {bench:14s} {slice_name:18s} " f"(n={dist['n_traces']}): {top_str}"
+            )
 
 
 if __name__ == "__main__":
