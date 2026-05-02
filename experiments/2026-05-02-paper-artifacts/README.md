@@ -1,8 +1,10 @@
-# Paper artifacts — single-source-of-truth pipeline
+# NeurIPS 2026 paper artifacts — single-source-of-truth pipeline
 
-Produces every numeric claim cited by `main_phil.tex` (the NeurIPS 2026
-draft in `moral-steerability-paper/neurips_2026_rewrite/`) as one JSON,
-plus first-pass figures.
+Produces every numeric claim cited by the **NeurIPS 2026 submission**
+*Direction-Flipped Influence Audits Reveal Hidden Structure in LLM
+Moral-Choice Benchmarks* (`main_phil.tex` in
+`moral-steerability-paper/neurips_2026_rewrite/`) as one JSON, plus
+first-pass figures.
 
 ## Why
 
@@ -48,12 +50,15 @@ figures/                      first-pass figures
 
 ## How to run
 
+The script declares its dependencies inline (PEP 723), so just:
+
 ```bash
 cd Choices
-uv run --with pandas --with numpy --with scipy --with statsmodels \
-       --with matplotlib python \
-       experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
+uv run experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
 ```
+
+(or `./experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py`
+since the script is executable and has a `uv run --script` shebang.)
 
 Re-extraction of p-values from preference_graph JSONs is slow on a
 cold cache (~1–2 min); the script caches the output to

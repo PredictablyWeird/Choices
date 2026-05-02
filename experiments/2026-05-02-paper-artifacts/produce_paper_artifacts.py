@@ -1,9 +1,27 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pandas",
+#     "numpy",
+#     "scipy",
+#     "statsmodels",
+#     "matplotlib",
+# ]
+# ///
 """
+=============================================================================
 Single-source-of-truth pipeline for the NeurIPS 2026 paper artifacts.
+=============================================================================
 
-Computes every numeric claim cited by `main_phil.tex` plus a first pass at
+Target paper:  Direction-Flipped Influence Audits Reveal Hidden Structure
+               in LLM Moral-Choice Benchmarks  (NeurIPS 2026 submission)
+LaTeX source:  ~/code/values/moral-steerability-paper/neurips_2026_rewrite/
+               main_phil.tex
+
+Computes every numeric claim cited by main_phil.tex plus a first pass at
 the cross-benchmark headline figure, and writes them to one JSON the
-paper rewrite can read from.
+NeurIPS-2026 paper rewrite reads from.
 
 Why this exists:
   1. Paper had several internal number drifts (DailyDilemmas backfire 5.9%
@@ -40,11 +58,8 @@ Outputs:
                                   (needed for FDR; trolley + BBQ only)
   figures/cross_benchmark.png — first-pass headline figure
 
-Run:
-  cd Choices
-  uv run --with pandas --with numpy --with scipy --with statsmodels \
-         --with matplotlib python \
-         experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
+Run (dependencies declared in the inline script header above):
+  uv run experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
 """
 
 from __future__ import annotations
