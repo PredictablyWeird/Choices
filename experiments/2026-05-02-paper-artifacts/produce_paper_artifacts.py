@@ -94,10 +94,9 @@ PROBE_DIR = CHOICES / "experiments/2026-05-01-followup-probe"
 SUMMARY_DIR = ASYM_DIR / "data"
 
 DATA_ROOTS = {
-    "trolley": REPO / "moral-steerability-paper/google_drive/results_clean_arxiv",
-    "bbq": REPO / "moral-steerability-paper/google_drive/results_bbq_v2",
-    "dailydilemmas": REPO
-    / "moral-steerability-paper/google_drive/results_dailydilemmas",
+    "trolley": CHOICES / "google_drive/results_clean_arxiv",
+    "bbq": CHOICES / "google_drive/results_bbq_v2",
+    "dailydilemmas": CHOICES / "google_drive/results_dailydilemmas",
 }
 
 # ---------- paper scope ------------------------------------------------------
