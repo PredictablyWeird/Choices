@@ -1,0 +1,41 @@
+# BBQ Nudging Experiments – Batch Configuration
+#
+# Run with:
+#   uv run python experiments/bbq/run.py --config experiments/bbq/batch_config.yaml
+
+categories:
+  - age
+  #- disability
+  - ses
+
+models:
+  - grok-41-fast-non-reasoning
+  #- grok-41-fast-reasoning
+  - llama-33-70b
+  - deepseek-v3-2-non-reasoning
+  - gpt-5-2-non-reasoning
+  - qwen3-235b-a22b-2507
+  #- deepseek-v3-2-reasoning
+  #- gpt-5-2-reasoning
+  #- qwen3-235b-a22b-2507-reasoning
+
+nudges:
+  #- weak_evidence
+  #- emotional
+  #- virtue_appeal
+  #- few_shot
+  - survey_preference
+  # - expert_recommendation
+  #- user_preference
+  # - always
+  #- role_play
+
+settings:
+  context_condition: ambig     # ambig (default), disambig, or both
+  max_samples_per_question: 5  # lexical variants per question_index template (optional)
+  reasoning: none              # none, before, after
+  seed: 42
+  max_retries: 10
+  few_shot_k: 3                # examples per few-shot demonstration (for few_shot nudge)
+  save_dir: experiments/bbq/results
+  data_dir: experiments/bbq/data

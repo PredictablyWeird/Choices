@@ -9,11 +9,11 @@ This repo contains:
   running paired direction-flipped contextual-influence experiments against
   LLM APIs.
 - **Per-benchmark adapters** (`choices/experiments/nudging/`,
-  `experiments/2026-04-14-bbq/`, `experiments/2026-03-25-dailydilemmas-with-nudges/`)
+  `experiments/bbq/`, `experiments/dailydilemmas/`)
   for the three benchmarks reported in the paper: a moral triage task, BBQ,
   and DailyDilemmas.
 - **A single canonical-numbers pipeline**
-  (`experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py`)
+  (`pipeline/produce_paper_artifacts.py`)
   that recomputes every numeric claim cited by the paper — headline shifts,
   asymmetry rates with cluster-bootstrap CIs, BH-FDR-corrected sensitivity
   tables, mixed-effects regression, follow-up-probe headline numbers — and
@@ -47,22 +47,22 @@ individual scripts can also be run with `uv run <script.py>` without a full
 ## Reproducing paper numbers
 
 The headline pipeline lives at
-`experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py`. It is
+`pipeline/produce_paper_artifacts.py`. It is
 the single source of truth for every numeric claim cited in the paper —
 running it once produces:
 
-- `experiments/2026-05-02-paper-artifacts/data/paper_numbers.json` —
+- `pipeline/data/paper_numbers.json` —
   every paper-citable number, organized by paper section. The LaTeX
   source of the paper reads from this JSON.
-- `experiments/2026-05-02-paper-artifacts/data/pvalues_by_condition.csv` —
+- `pipeline/data/pvalues_by_condition.csv` —
   exact Wald p-values per condition (used for FDR).
-- `experiments/2026-05-02-paper-artifacts/figures/cross_benchmark.{png,pdf}` —
+- `pipeline/figures/cross_benchmark.{png,pdf}` —
   the three-panel headline figure (Fig. 3 in the paper).
 
 ### One-shot reproduction
 
 ```bash
-uv run experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
+uv run pipeline/produce_paper_artifacts.py
 ```
 
 First run takes ~1–2 minutes (extracting Wald p-values from raw preference
@@ -85,7 +85,7 @@ Table mapping the most-cited numbers to their JSON keys:
 | Equivalence-margin sensitivity (Tab. 24) | `section_4_2_asymmetry.rates_by_benchmark.*.by_neutrality` |
 | 17.7/10.5/0.2% backfire rates (§4.3) | `section_4_3_backfire.definitions.*.rate_sig_bf_among_sig_directed` |
 | 13.4/13.1/26.1% backfire-by-baseline (§B.2) | `section_4_3_backfire.definitions.trolley.rate_*` cells |
-| Mixed-effects regression β, R² (§4.2) | `experiments/2026-05-01-asymmetry-baseline-regression/data/regression_results.json` (also surfaced in `paper_numbers.json` under `section_4_2_asymmetry.regression.regressions`) |
+| Mixed-effects regression β, R² (§4.2) | `experiments/asymmetry-regression/data/regression_results.json` (also surfaced in `paper_numbers.json` under `section_4_2_asymmetry.regression.regressions`) |
 | Per-benchmark signed correlations (−0.37 / −0.36 / +0.26) | `section_4_2_asymmetry.regression.correlations` |
 | 78% disclaim rate (§5) | `section_4_3_backfire.followup_probe_headline.overall.headline_ack_disclaimed_in_backfires` |
 | Per-benchmark baseline noise floor (1.1/1.7/2.5pp) | `section_4_1_instability.noise_floor_pp` |
@@ -101,9 +101,9 @@ The figures in the paper are produced by these scripts:
 | Paper figure | Generation script |
 |---|---|
 | Fig. 1 (intro illustration, "asymmetric compliance") | hand-prepared diagram (`moral-steerability-paper/figures/moral-steerability-icml-4.pdf`) |
-| Fig. 2 (one-sentence shift wrapfigure, §3.3) | `experiments/2026-05-01-baseline-noise/build_one_sentence_fig.py` |
+| Fig. 2 (one-sentence shift wrapfigure, §3.3) | `experiments/baseline-noise/build_one_sentence_fig.py` |
 | Fig. 3 (cross-benchmark headline) | `_make_cross_benchmark_figure` inside `produce_paper_artifacts.py` |
-| Stated-vs-revealed (§5) | `experiments/2026-05-01-followup-probe/` (analysis dir) |
+| Stated-vs-revealed (§5) | `experiments/followup-probe/` (analysis dir) |
 | Per-influence-type steerability magnitudes | `choices/analysis/plots/` |
 | Per-model violins | `choices/analysis/plots/` |
 | Reasoning-trace rationale plots (per-benchmark DeepSeek figures) | `choices/analysis/reasoning_traces/plot_rationales.py`; pre-rendered DeepSeek PDFs are also surfaced into the canonical-pipeline `figures/` dir |
@@ -117,14 +117,14 @@ the canonical pipeline).
 The pipeline reads from three places:
 
 1. **Per-benchmark summary CSVs** (tracked, ~500 KB total):
-   `experiments/2026-05-01-asymmetry-baseline-regression/data/{trolley,bbq,dailydilemmas}_summary.csv`.
+   `experiments/asymmetry-regression/data/{trolley,bbq,dailydilemmas}_summary.csv`.
    These are produced by `choices.analysis.create_summary` from raw
    preference-graph JSONs and are the canonical per-condition source.
 2. **Raw preference-graph JSONs** (~3 GB, **not in git**): expected at
    `Choices/google_drive/results_{clean_arxiv,bbq_v2,dailydilemmas}/`.
    Used to recompute Wald p-values from raw counts.
 3. **Pre-computed sibling outputs** (tracked):
-   `experiments/2026-05-01-{baseline-noise,followup-probe}/` — pulled in
+   `experiments/{baseline-noise,followup-probe}/` — pulled in
    by the canonical pipeline without recomputation.
 
 For (2), the raw data is hosted separately from the code repo (file-size
@@ -183,13 +183,13 @@ nudge × model × direction) combinations.
 
 ### BBQ adapter
 
-See `experiments/2026-04-14-bbq/`. The adapter drops the `unknown`
+See `experiments/bbq/`. The adapter drops the `unknown`
 answer to make BBQ pairwise, restricts to the binary `Age` and `SES`
 categories, and applies group-level direction-flipped influences.
 
 ### DailyDilemmas adapter
 
-See `experiments/2026-03-25-dailydilemmas-with-nudges/`. The adapter
+See `experiments/dailydilemmas/`. The adapter
 applies value-level (rather than group-level) direction-flipped
 influences: each option's primary value becomes the target.
 
@@ -230,19 +230,24 @@ choices/                         framework code (used by all experiments)
     get_backfiring_rates.py        backfire-by-baseline-bias
     analyze_invalid_responses.py   invalid-response rates
 
-experiments/                     paper-specific experiment dirs
-  2026-04-14-bbq/                  BBQ raw experiment
-  2026-03-25-dailydilemmas-with-nudges/   DailyDilemmas raw experiment
-  2026-05-01-baseline-noise/       baseline-to-baseline replicate (1.1/1.7pp)
+pipeline/                        *** master pipeline — start here ***
+  produce_paper_artifacts.py     entry point (uv run pipeline/produce_paper_artifacts.py)
+  data/paper_numbers.json        every paper-citable number, by section
+  data/pvalues_by_condition.csv  Wald p-values per condition (used for FDR)
+  figures/cross_benchmark.{png,pdf}   Fig. 3 in the paper
+  PAPER_NUMBERS.md               human-readable diff against the previous draft
+
+experiments/                     per-benchmark + supporting experiment runners
+  bbq/                             BBQ raw experiment
+  dailydilemmas/                   DailyDilemmas raw experiment
+  baseline-noise/                  baseline-to-baseline replicate (1.1/1.7pp)
                                    + Fig. 2 generation script
-  2026-05-01-followup-probe/       follow-up disclaim/affect probe (78% headline)
-  2026-05-01-asymmetry-baseline-regression/   mixed-effects regression
-  2026-05-02-paper-artifacts/      *** master pipeline — start here ***
+  followup-probe/                  follow-up disclaim/affect probe (78% headline)
+  asymmetry-regression/            mixed-effects regression
 
 google_drive/                    raw preference-graph JSONs (not in git;
                                   see TODO link above for download)
 
-scripts/                         miscellaneous one-off scripts
 tests/                           unit tests
 ```
 
