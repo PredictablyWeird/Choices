@@ -28,9 +28,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-PAPER_FIG_DIR = (
-    Path("~/code/values/moral-steerability-paper/figures").expanduser()
-)
+PAPER_FIG_DIR = Path("~/code/values/moral-steerability-paper/figures").expanduser()
 
 # Cell: DeepSeek V3.2 (non-reasoning) - BBQ - age_pos - virtue_appeal.
 # Pulled from the experiments artifacts:
@@ -90,7 +88,7 @@ def main() -> None:
             f"{b['value']:.0%}",
             ha="center",
             va="bottom",
-            fontsize=13,
+            fontsize=17,
             fontweight="bold",
         )
 
@@ -101,8 +99,8 @@ def main() -> None:
             [0],
             marker="|",
             color="#222222",
-            markersize=12,
-            markeredgewidth=1.6,
+            markersize=14,
+            markeredgewidth=1.8,
             linestyle="None",
             label=f"± baseline-to-baseline noise ({NOISE_PP:.0f}pp on this cell)",
         ),
@@ -110,19 +108,19 @@ def main() -> None:
     ax.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.18),
+        bbox_to_anchor=(0.5, -0.20),
         frameon=False,
-        fontsize=11,
+        fontsize=14,
     )
 
     ax.set_xticks(x)
-    ax.set_xticklabels([b["label"] for b in bars], fontsize=11.5)
-    ax.set_ylabel("P(model picks the older person)", fontsize=12)
+    ax.set_xticklabels([b["label"] for b in bars], fontsize=14)
+    ax.set_ylabel("P(model picks the older person)", fontsize=15)
     ax.set_ylim(0, 1.18)
     ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=11)
+    ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"], fontsize=13)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(axis="x", labelsize=11.5)
+    ax.tick_params(axis="x", labelsize=14)
 
     fig.subplots_adjust(left=0.13, right=0.97, top=0.95, bottom=0.26)
     pdf_path = PAPER_FIG_DIR / "one_sentence_shift.pdf"
