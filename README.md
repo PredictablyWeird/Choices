@@ -1,290 +1,262 @@
-# Preference Choices
+# Direction-Flipped Influence Audits — code and reproduction pipeline
 
-Framework for running preference elicitation experiments.
+Code accompanying the NeurIPS 2026 submission *Direction-Flipped Influence
+Audits Reveal Hidden Structure in LLM Moral-Choice Benchmarks*.
 
-Note: For reproducing results from our paper "Moral Preferences of LLMs Under Directed Contextual Influence", see the branch [https://github.com/PredictablyWeird/Choices/tree/arxiv-version](arxiv-version).
+This repo contains:
+
+- **The influence-pair audit harness** (`choices/`) — a general framework for
+  running paired direction-flipped contextual-influence experiments against
+  LLM APIs.
+- **Per-benchmark adapters** (`choices/experiments/nudging/`,
+  `experiments/2026-04-14-bbq/`, `experiments/2026-03-25-dailydilemmas-with-nudges/`)
+  for the three benchmarks reported in the paper: a moral triage task, BBQ,
+  and DailyDilemmas.
+- **A single canonical-numbers pipeline**
+  (`experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py`)
+  that recomputes every numeric claim cited by the paper — headline shifts,
+  asymmetry rates with cluster-bootstrap CIs, BH-FDR-corrected sensitivity
+  tables, mixed-effects regression, follow-up-probe headline numbers — and
+  emits one JSON the paper LaTeX reads from.
+
+If you're reviewing the paper or trying to reproduce a specific number,
+**start with [Reproducing paper numbers](#reproducing-paper-numbers)**.
+If you're trying to extend the audit to a new benchmark, see
+[Running new experiments](#running-new-experiments).
+
+---
 
 ## Setup
 
-- Clone the repo
-- Run `uv sync --dev`
-- Install pre-commit hooks with `uv run pre-commit install`
-- `cp .env.example .env` and add your API keys to the '.env' file
-
----
-
-## Creating Experiments
-
-### Simple Experiments
-
-For experiments where you just want to compare text outcomes, define a `Variable` with `name='text'`:
-
-```python
-import asyncio
-from choices import Experiment, ExperimentConfig, PromptConfig, Variable
-
-async def main():
-    experiment = Experiment(
-        name="my_experiment",
-        variables=[
-            Variable(
-                name='text',
-                values=['Outcome 1', 'Outcome 2', 'Outcome 3']
-            )
-        ],
-        prompt_config=PromptConfig(),  # Uses defaults
-        experiment_config=ExperimentConfig(
-            model="gpt-4o-mini",
-            utility_config_key="thurstonian_active_learning_k5"
-        )
-    )
-    results = await experiment.run(verbose=True)
-    return results
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-**How it works:**
-- Creates all pairwise comparisons between outcomes
-- Default prompt: "Which option would you prefer?" with "Option A: {text}" and "Option B: {text}"
-- Results saved to `results/my_experiment/gpt-4o-mini/timestamp/`
-
-### Complex Experiments
-
-For multi-dimensional experiments (e.g., varying gender AND number of people), define multiple variables:
-
-```python
-experiment = Experiment(
-    name="exchange_rates",
-    variables=[
-        Variable(name='gender', values=['male', 'female', 'non-binary']),
-        Variable(name='N', values=[1, 2, 5, 10, 50, 100])
-    ],
-    prompt_config=PromptConfig(),
-    experiment_config=ExperimentConfig(model="gpt-4o-mini")
-)
-```
-
-This creates options from the cartesian product: `{gender: 'male', N: 1}`, `{gender: 'male', N: 2}`, etc.
-
-To customize how options are displayed, override `generate_option_text`:
-
-```python
-def custom_text(option: dict) -> str:
-    return f"{option['N']} {option['gender']} people are saved."
-
-prompt_config = PromptConfig()
-prompt_config.generate_option_text = custom_text
-```
-
-## PromptConfig
-
-`PromptConfig` controls how comparison prompts are generated. Default structure:
-
-```
-{setup}
-
-{option_list}
-
-{instructions}
-```
-
-Where:
-- `setup`: Context/question (default: "Which option would you prefer?")
-- `option_list`: Template for options (default: "Option A:\n{option_A}\n\nOption B:\n{option_B}")
-- `instructions`: Response format (default: 'Please respond with only "A" or "B".')
-
-The `{option_A}` and `{option_B}` placeholders are filled by calling `generate_option_text(option)` on each option dict.
-
-**Example customizations:**
-
-```python
-# Change the question
-prompt_config = PromptConfig(
-    setup="Which medical outcome is preferable?",
-    system_prompt="You are a medical ethics assistant."
-)
-
-# Customize option formatting
-def format_option(option: dict) -> str:
-    return f"{option['N']} people ({option['gender']}) are saved from death."
-
-prompt_config = PromptConfig()
-prompt_config.generate_option_text = format_option
-
-# Full control over entire prompt
-def custom_prompt(option_A: dict, option_B: dict) -> str:
-    return f"""Compare these scenarios:
-
-Scenario A: {option_A['description']}
-Scenario B: {option_B['description']}
-
-Which scenario do you prefer? Answer A or B."""
-
-prompt_config = PromptConfig()
-prompt_config.generate_prompt = custom_prompt
-```
-
-## Analysis Configuration
-
-For downstream analysis (exchange rates, predictive modeling), specify field types:
-
-```python
-from choices import AnalysisConfig, AnalysisType
-
-experiment = Experiment(
-    name="my_experiment",
-    variables=[...],
-    prompt_config=PromptConfig(),
-    experiment_config=ExperimentConfig(model="gpt-4o-mini"),
-    analysis_config=AnalysisConfig(
-        fields={
-            'N': AnalysisType.LOG_NUMERICAL,      # Diminishing returns
-            'gender': AnalysisType.CATEGORICAL,   # Discrete categories
-            'severity': AnalysisType.NUMERICAL     # Linear scale
-        }
-    )
-)
-```
-
-## Advanced Options
-
-**Edge filtering** — Exclude specific comparisons:
-```python
-experiment = Experiment(
-    ...,
-    edge_filter=lambda opt_a, opt_b: opt_a['patient_id'] != opt_b['patient_id']
-)
-```
-
-**Option labels** — Custom display labels:
-```python
-experiment = Experiment(
-    ...,
-    option_label_generator=lambda opt: f"Patient {opt['id']}"
-)
-```
-
-**Examples:**
-- `choices/experiments/simple_example.py` — Basic usage
-- `choices/experiments/exchange_rates.py` — Multi-variable experiments
-- `choices/experiments/medical_triage.py` — Custom prompts and subclassing
-
----
-
-## Analysis Scripts
-
-These scripts can be used for general analysis of experiment results:
-
-### Predictive Analysis
-
-Identify which factors drive decisions using logistic regression:
+Requirements: Python ≥ 3.11, [uv](https://docs.astral.sh/uv/) for
+dependency management.
 
 ```bash
-uv run python choices/analysis/predictive_analysis.py \
-    results/my_experiment/gpt-4o-mini/20251124_120000
+git clone <this-repo>
+cd Choices
+uv sync --dev
+cp .env.example .env   # add your API keys (OpenAI, Anthropic, etc.)
 ```
 
-Extracts all pairwise comparisons and fits a model to determine which variables significantly affect choices. Use `--output comparisons.jsonl` to save extracted data.
-
-### Exchange Rate Analysis
-
-Scripts in `choices/analysis/exchange_rates/`:
-- `analyze.py` - Exchange rate computation and value steerability analysis
-- `plots.py` - Exchange rate visualization utilities
-
-### Other Analysis Scripts
-
-**Individual Result Analysis:**
-- `analyze_simple_nudging_results.py` - Detailed analysis of a single simple_nudging experiment (balance, validity, preference stats, steerability asymmetry with bootstrap CIs)
-- `analyze_simple_rates.py` - AMCE analysis for a single simple_rates experiment
-
-**Reasoning Trace Analysis (`reasoning_traces/`):**
-- `reasoning_traces/classify.py` - LLM-based classification of reasoning traces
-- `reasoning_traces/analyze.py` - Analyze classification results
-
-**Data Quality & Diagnostics:**
-- `analyze_invalid_responses.py` - Analyze invalid response rates across experiments
-
-**Other Analysis Tools:**
-- `get_backfiring_rates.py` - Compute backfiring rates stratified by baseline preference
-
-**Helper Modules (used by other scripts):**
-- `utils.py` - Shared utilities (result loading, balance checking, statistical tests, model colors, etc.)
-- `metrics.py` - Steerability asymmetry and nudge effect size calculations
+The reproduction pipeline declares dependencies inline (PEP 723), so
+individual scripts can also be run with `uv run <script.py>` without a full
+`uv sync`.
 
 ---
 
-## Nudging Experiments
+## Reproducing paper numbers
 
-Nudging experiments test how different prompts or instructions affect model preferences. They run the same experiment multiple times with different "nudges" (instructions that bias toward specific groups) to measure how sensitive preferences are to framing.
+The headline pipeline lives at
+`experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py`. It is
+the single source of truth for every numeric claim cited in the paper —
+running it once produces:
 
-> **Note:** For reproducing paper results, use the batch config approach described in "Reproducing Paper Results" above.
+- `experiments/2026-05-02-paper-artifacts/data/paper_numbers.json` —
+  every paper-citable number, organized by paper section. The LaTeX
+  source of the paper reads from this JSON.
+- `experiments/2026-05-02-paper-artifacts/data/pvalues_by_condition.csv` —
+  exact Wald p-values per condition (used for FDR).
+- `experiments/2026-05-02-paper-artifacts/figures/cross_benchmark.{png,pdf}` —
+  the three-panel headline figure (Fig. 3 in the paper).
 
-### Running Simple Nudging Experiments
+### One-shot reproduction
 
 ```bash
-# List available factors and nudge types
+uv run experiments/2026-05-02-paper-artifacts/produce_paper_artifacts.py
+```
+
+First run takes ~1–2 minutes (extracting Wald p-values from raw preference
+graphs); subsequent runs use the cached `pvalues_by_condition.csv` and
+finish in seconds. The script emits a printout summarizing the headline
+numbers; cross-check against the paper.
+
+### Where each number in the paper comes from
+
+Every numeric claim in the paper has an entry in `paper_numbers.json`.
+Table mapping the most-cited numbers to their JSON keys:
+
+| Paper claim | JSON path |
+|---|---|
+| 15.0/17.7/12.3pp shifts (§4.1) | `headline_table.{trolley,bbq,dailydilemmas}.all_7_influences.mean_abs_effect` |
+| 13.0/19.3/15.4pp single-sentence shifts | `headline_table.*.single_sentence_user_msg_only.mean_abs_effect` |
+| 95% cluster-bootstrap CIs | `headline_table.*.<subset>.boot95_{lo,hi}` (subsets: `all_7_influences`, `excl_few_shot`, `single_sentence_any`, `single_sentence_user_msg_only`) |
+| 44/39/9% baseline-neutral asymmetry rates (§4.2) | `section_4_2_asymmetry.rates_by_benchmark.*.by_neutrality.binom_05.rate_alpha05` |
+| BH-FDR-corrected variants of the above | same path, `rate_bh_fdr05` |
+| Equivalence-margin sensitivity (Tab. 24) | `section_4_2_asymmetry.rates_by_benchmark.*.by_neutrality` |
+| 17.7/10.5/0.2% backfire rates (§4.3) | `section_4_3_backfire.definitions.*.rate_sig_bf_among_sig_directed` |
+| 13.4/13.1/26.1% backfire-by-baseline (§B.2) | `section_4_3_backfire.definitions.trolley.rate_*` cells |
+| Mixed-effects regression β, R² (§4.2) | `experiments/2026-05-01-asymmetry-baseline-regression/data/regression_results.json` (also surfaced in `paper_numbers.json` under `section_4_2_asymmetry.regression.regressions`) |
+| Per-benchmark signed correlations (−0.37 / −0.36 / +0.26) | `section_4_2_asymmetry.regression.correlations` |
+| 78% disclaim rate (§5) | `section_4_3_backfire.followup_probe_headline.overall.headline_ack_disclaimed_in_backfires` |
+| Per-benchmark baseline noise floor (1.1/1.7/2.5pp) | `section_4_1_instability.noise_floor_pp` |
+| Reasoning-trace primary-rationale shifts (§K.4) | `section_5_reasoning_traces.{bbq,dailydilemmas}.rationale_distributions` |
+
+`PAPER_NUMBERS.md` in the same directory lists each claim with the
+canonical value in human-readable form for easy diffing.
+
+### Reproducing figures
+
+The figures in the paper are produced by these scripts:
+
+| Paper figure | Generation script |
+|---|---|
+| Fig. 1 (intro illustration, "asymmetric compliance") | hand-prepared diagram (`moral-steerability-paper/figures/moral-steerability-icml-4.pdf`) |
+| Fig. 2 (one-sentence shift wrapfigure, §3.3) | `experiments/2026-05-01-baseline-noise/build_one_sentence_fig.py` |
+| Fig. 3 (cross-benchmark headline) | `_make_cross_benchmark_figure` inside `produce_paper_artifacts.py` |
+| Stated-vs-revealed (§5) | `experiments/2026-05-01-followup-probe/` (analysis dir) |
+| Per-influence-type steerability magnitudes | `choices/analysis/plots/` |
+| Per-model violins | `choices/analysis/plots/` |
+| Reasoning-trace rationale plots (per-benchmark DeepSeek figures) | `choices/analysis/reasoning_traces/plot_rationales.py`; pre-rendered DeepSeek PDFs are also surfaced into the canonical-pipeline `figures/` dir |
+
+Each script writes its outputs to a stable path under
+`moral-steerability-paper/figures/` (or its local `figures/` subdir for
+the canonical pipeline).
+
+### Inputs / data layout
+
+The pipeline reads from three places:
+
+1. **Per-benchmark summary CSVs** (tracked, ~500 KB total):
+   `experiments/2026-05-01-asymmetry-baseline-regression/data/{trolley,bbq,dailydilemmas}_summary.csv`.
+   These are produced by `choices.analysis.create_summary` from raw
+   preference-graph JSONs and are the canonical per-condition source.
+2. **Raw preference-graph JSONs** (~3 GB, **not in git**): expected at
+   `Choices/google_drive/results_{clean_arxiv,bbq_v2,dailydilemmas}/`.
+   Used to recompute Wald p-values from raw counts.
+3. **Pre-computed sibling outputs** (tracked):
+   `experiments/2026-05-01-{baseline-noise,followup-probe}/` — pulled in
+   by the canonical pipeline without recomputation.
+
+For (2), the raw data is hosted separately from the code repo (file-size
+constraints). **TODO before camera-ready: insert link to the data download
+location and update this section with expected directory layout.** If
+the raw JSONs are missing, `produce_paper_artifacts.py` will use the
+cached `pvalues_by_condition.csv` and skip Wald-p-value re-extraction —
+all paper numbers except a few sensitivity checks remain reproducible
+from the tracked summary CSVs alone.
+
+### Scope filters applied by the pipeline
+
+The paper restricts to a specific subset of the data in `google_drive/`.
+The pipeline applies these filters automatically:
+
+- **Models**: 9 configurations (`deepseek-v3-2-{,non-}reasoning`,
+  `gpt-5-2-{,non-}reasoning`, `grok-41-fast-{,non-}reasoning`,
+  `llama-33-70b` ± CoT prompting, `qwen3-235b-a22b-2507-{,reasoning}`).
+  `gpt-4o-mini` and `llama-4-maverick` exist in the source CSVs but are
+  filtered out — the paper only cites these 9.
+- **Triage factors**: 5 binary factors (gender, age, wealth, handedness,
+  nationality). `diet` and `tech_view` exist in the source CSVs but are
+  filtered out.
+- **DailyDilemmas**: excludes `dishonesty` (saturated baseline; the
+  paper notes this exclusion in App. E).
+
+All filters are at the top of `produce_paper_artifacts.py` (search for
+`PAPER_MODELS`, `PAPER_FACTORS_TROLLEY`, `dishonesty`).
+
+---
+
+## Running new experiments
+
+The framework supports paired direction-flipped audits on arbitrary
+binary forced-choice benchmarks. The three paper benchmarks are
+implemented as adapters; adding a fourth follows the same pattern.
+
+### Triage harness (custom binary scenarios)
+
+```bash
+# List available factors and influence types
 uv run python -m choices.experiments.nudging.simple --list-factors
 uv run python -m choices.experiments.nudging.simple --list-nudges
 
-# Run experiment
+# Run one cell (e.g., gender × emotional × DeepSeek)
 uv run python -m choices.experiments.nudging.simple \
     --factor gender \
-    --nudge always_save \
-    --model gpt-4o-mini
+    --nudge emotional \
+    --model deepseek-v3-2-non-reasoning
 ```
 
-You can also modify the number of requests done in each condition via command line arguments.
+Results are saved to
+`results/simple_<factor>/<model>/<nudge>/<timestamp>_<target>/`. To
+reproduce the paper's full triage matrix, sweep over all (factor ×
+nudge × model × direction) combinations.
 
-Results are saved to: `results/simple_{factor}/{model}/{nudge_type}/{timestamp}_{target_group}/`
+### BBQ adapter
 
-**Available nudge types** (grouped by influence mechanism):
+See `experiments/2026-04-14-bbq/`. The adapter drops the `unknown`
+answer to make BBQ pairwise, restricts to the binary `Age` and `SES`
+categories, and applies group-level direction-flipped influences.
 
-*Evidence-based* — provide information as justification:
-- `survey_preference`, `weak_evidence`, `strong_evidence`, `expert_recommendation`
+### DailyDilemmas adapter
 
-*Pressure-based* — apply social or emotional pressure without epistemic justification:
-- `emotional`, `identity`, `user_preference`, `social_norm`
+See `experiments/2026-03-25-dailydilemmas-with-nudges/`. The adapter
+applies value-level (rather than group-level) direction-flipped
+influences: each option's primary value becomes the target.
 
-*Direct instruction* — explicit directives:
-- `always_save`, `moral_imperative`
+### Available influence types
 
-*Other*:
-- `few_shot_N`: In-context learning with N examples (e.g., `few_shot_3`)
-- `custom`: Use your own text (requires `--nudge_text`)
+Implemented in `choices/experiments/nudging/templates.py`:
 
-Additionally, `*_baseline` and `*_negation` variants exist for control experiments (see `templates.py`).
+- **Social-pressure**: `emotional`, `user_preference`, `identity` (role-play),
+  `social_norm`
+- **Evidential**: `survey_preference`, `weak_evidence`,
+  `expert_recommendation`, `strong_evidence`
+- **Few-shot**: `few_shot_N` (default `few_shot_3` in the paper)
+- **Normative / virtue framing**: `moral_imperative` (the
+  "helpful-and-thoughtful AI assistant" template)
+- **Direct instruction**: `always_save`
+- Per-influence `*_baseline` and `*_negation` variants for surface-form
+  controls
 
-**Additional options:**
-- `--reasoning`: Reasoning mode - `none`, `before`, or `after` (default: `none`)
-
-### Analyzing Simple Nudging Results
-
-```bash
-uv run python choices/analysis/analyze_simple_nudging_results.py \
-    --factor gender \
-    --model gpt-4o-mini \
-    --nudge always_save
-```
-
-The analysis shows:
-- Factor preferences (e.g., male vs female chosen %)
-- Larger N preference (how often saving more people is preferred)
-- Nudge effects (change from baseline)
-- Nudge effectiveness summary
+The paper reports seven of these (`emotional`, `survey_preference`,
+`user_preference`, `weak_evidence`, `moral_imperative`, `identity`,
+`few_shot_3`).
 
 ---
 
-## Notes on Terminology
+## Repository layout
 
-The codebase previously used the term "nudge" to refer to contextual influence. Some result files may still use this older terminology.
+```
+choices/                         framework code (used by all experiments)
+  experiment.py                  core Experiment class
+  experiments/                   benchmark adapters + example scripts
+    nudging/                       triage harness + influence templates
+  analysis/                      analysis library
+    create_summary.py              raw-results → per-condition summary CSV
+    metrics.py                     steerability, asymmetry, backfire
+    reasoning_traces/              compliance + rationale classification
+    surface_form/                  surface-form / negation / nonsensical
+    plots/                         per-influence-type / per-model figures
+    get_backfiring_rates.py        backfire-by-baseline-bias
+    analyze_invalid_responses.py   invalid-response rates
 
-Additionally, some older result files may use "steerability bias" or "steer_bias" instead of "steerability asymmetry". The analysis scripts handle these aliases automatically.
+experiments/                     paper-specific experiment dirs
+  2026-04-14-bbq/                  BBQ raw experiment
+  2026-03-25-dailydilemmas-with-nudges/   DailyDilemmas raw experiment
+  2026-05-01-baseline-noise/       baseline-to-baseline replicate (1.1/1.7pp)
+                                   + Fig. 2 generation script
+  2026-05-01-followup-probe/       follow-up disclaim/affect probe (78% headline)
+  2026-05-01-asymmetry-baseline-regression/   mixed-effects regression
+  2026-05-02-paper-artifacts/      *** master pipeline — start here ***
+
+google_drive/                    raw preference-graph JSONs (not in git;
+                                  see TODO link above for download)
+
+scripts/                         miscellaneous one-off scripts
+tests/                           unit tests
+```
 
 ---
 
-## Origin
+## Citing
 
-This repo is based on the [emergent-values](https://github.com/centerforaisafety/emergent-values) repository.
+(citation block to be added on de-anonymization)
+
+---
+
+## License
+
+MIT (see `LICENSE`).
+
+This codebase is built on
+[emergent-values](https://github.com/centerforaisafety/emergent-values).
