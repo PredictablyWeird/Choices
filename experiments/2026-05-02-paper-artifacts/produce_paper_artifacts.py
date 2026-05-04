@@ -832,15 +832,30 @@ def _load_followup_probe() -> dict:
 
 
 def _make_cross_benchmark_figure(out: dict, path: Path):
-    """Three-panel headline figure: avg shift / asymmetry beyond baseline / backfire rate."""
+    """Three-panel headline figure: avg shift / asymmetry beyond baseline / backfire rate.
+
+    Panel 1 uses cluster-bootstrap CIs over the factor/value axis (B=5000).
+    Panels 2 and 3 are sample proportions; CIs are 95% Wilson intervals over
+    the relevant denominator (baseline-neutral conditions for asymmetry,
+    significant directed effects for backfire).
+    """
     import matplotlib.pyplot as plt
+    from statsmodels.stats.proportion import proportion_confint
 
     benches = ["trolley", "bbq", "dailydilemmas"]
-    pretty = {"trolley": "Trolley", "bbq": "BBQ", "dailydilemmas": "DailyDilemmas"}
+    pretty = {"trolley": "Triage", "bbq": "BBQ", "dailydilemmas": "DailyDilemmas"}
+    colors = ["#4C72B0", "#55A868", "#C44E52"]
 
     shifts = {b: out["headline_table"][b]["all_7_influences"] for b in benches}
     asym = out["section_4_2_asymmetry"]
     bf = out["section_4_3_backfire"]
+
+    def _wilson(rate: float, n: int) -> tuple[float, float]:
+        if n <= 0:
+            return (rate, rate)
+        k = round(rate * n)
+        lo, hi = proportion_confint(k, n, alpha=0.05, method="wilson")
+        return float(lo), float(hi)
 
     fig, axes = plt.subplots(1, 3, figsize=(11, 3.5))
 
@@ -853,49 +868,61 @@ def _make_cross_benchmark_figure(out: dict, path: Path):
     his = [
         (shifts[b]["boot95_hi"] - shifts[b]["mean_abs_effect"]) * 100 for b in benches
     ]
-    ax.bar(
-        range(3),
-        means,
-        yerr=[los, his],
-        capsize=4,
-        color=["#4C72B0", "#55A868", "#C44E52"],
-    )
+    ax.bar(range(3), means, yerr=[los, his], capsize=4, color=colors)
     ax.set_xticks(range(3))
     ax.set_xticklabels([pretty[b] for b in benches])
     ax.set_ylabel("Avg. choice-rate shift (pp)")
     ax.set_title("Score instability")
     for i, m in enumerate(means):
-        ax.text(i, m + max(his) * 0.4, f"{m:.1f}", ha="center", fontsize=9)
+        ax.text(i, m + his[i] + max(his) * 0.15, f"{m:.1f}", ha="center", fontsize=9)
 
-    # Panel 2: asymmetry-beyond-baseline rate (binom α=.05)
+    # Panel 2: asymmetry-beyond-baseline rate (binom α=.05) with Wilson CIs
     ax = axes[1]
-    rates = []
+    rates: list[float] = []
+    los2: list[float] = []
+    his2: list[float] = []
     for b in benches:
         a = asym["rates_by_benchmark"][b]["by_neutrality"]["binom_05"]
-        rates.append(a["rate_alpha05"] * 100)
-    ax.bar(range(3), rates, color=["#4C72B0", "#55A868", "#C44E52"])
+        rate = a["rate_alpha05"]
+        n = int(a["n_neutral"])
+        lo, hi = _wilson(rate, n)
+        rates.append(rate * 100)
+        los2.append((rate - lo) * 100)
+        his2.append((hi - rate) * 100)
+    ax.bar(range(3), rates, yerr=[los2, his2], capsize=4, color=colors)
     ax.set_xticks(range(3))
     ax.set_xticklabels([pretty[b] for b in benches])
-    ax.set_ylabel("Sig. asymmetry among baseline-undetected (%)")
+    ax.set_ylabel("Sig. asymmetry among baseline-neutral (%)")
     ax.set_title("Asymmetry beyond baseline")
     for i, r in enumerate(rates):
-        ax.text(i, r + 1, f"{r:.1f}", ha="center", fontsize=9)
+        ax.text(i, r + his2[i] + max(his2) * 0.15, f"{r:.1f}", ha="center", fontsize=9)
 
-    # Panel 3: backfire among sig directed effects
+    # Panel 3: backfire among sig directed effects with Wilson CIs
     ax = axes[2]
-    rates = [
-        bf["definitions"][b]["rate_sig_bf_among_sig_directed"] * 100 for b in benches
-    ]
-    ax.bar(range(3), rates, color=["#4C72B0", "#55A868", "#C44E52"])
+    rates = []
+    los3: list[float] = []
+    his3: list[float] = []
+    for b in benches:
+        d = bf["definitions"][b]
+        rate = d["rate_sig_bf_among_sig_directed"]
+        n = int(d["n_sig_directed"])
+        lo, hi = _wilson(rate, n)
+        rates.append(rate * 100)
+        los3.append((rate - lo) * 100)
+        his3.append((hi - rate) * 100)
+    ax.bar(range(3), rates, yerr=[los3, his3], capsize=4, color=colors)
     ax.set_xticks(range(3))
     ax.set_xticklabels([pretty[b] for b in benches])
     ax.set_ylabel("Backfire rate among sig. effects (%)")
     ax.set_title("Backfiring with stated disclaiming")
     for i, r in enumerate(rates):
-        ax.text(i, r + 0.4, f"{r:.1f}", ha="center", fontsize=9)
+        ax.text(i, r + his3[i] + max(his3) * 0.15, f"{r:.1f}", ha="center", fontsize=9)
 
     fig.tight_layout()
+    # Save both PNG (for previewing) and PDF (for paper inclusion).
     fig.savefig(path, dpi=150, bbox_inches="tight")
+    pdf_path = path.with_suffix(".pdf")
+    fig.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)
 
 
