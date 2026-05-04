@@ -46,29 +46,27 @@ individual scripts can also be run with `uv run <script.py>` without a full
 
 ## Reproducing paper numbers
 
-The headline pipeline lives at
-`pipeline/produce_paper_artifacts.py`. It is
-the single source of truth for every numeric claim cited in the paper —
-running it once produces:
+Every numeric claim cited in the paper is recorded in
+`pipeline/data/paper_numbers.json`, which is committed to the repo and
+read directly by the LaTeX source. The accompanying script
+`pipeline/produce_paper_artifacts.py` is the canonical generator: it
+loads the per-condition summary CSVs, applies the paper's scope
+filters, computes cluster-bootstrap CIs and BH-FDR-corrected
+sensitivity tables, and writes the JSON plus a first-pass headline
+figure.
 
-- `pipeline/data/paper_numbers.json` —
-  every paper-citable number, organized by paper section. The LaTeX
-  source of the paper reads from this JSON.
-- `pipeline/data/pvalues_by_condition.csv` —
-  exact Wald p-values per condition (used for FDR).
-- `pipeline/figures/cross_benchmark.{png,pdf}` —
-  the three-panel headline figure (Fig. 3 in the paper).
-
-### One-shot reproduction
+If you only want to look up a specific number, read `paper_numbers.json`
+directly — no setup required. If you want to verify the JSON matches
+what the script produces, re-run:
 
 ```bash
 uv run pipeline/produce_paper_artifacts.py
 ```
 
-First run takes ~1–2 minutes (extracting Wald p-values from raw preference
-graphs); subsequent runs use the cached `pvalues_by_condition.csv` and
-finish in seconds. The script emits a printout summarizing the headline
-numbers; cross-check against the paper.
+First run takes ~1–2 minutes (extracting Wald p-values from raw
+preference graphs); subsequent runs use the cached
+`pvalues_by_condition.csv` and finish in seconds. The script prints a
+summary of headline numbers; cross-check against the paper.
 
 ### Where each number in the paper comes from
 
@@ -120,20 +118,15 @@ The pipeline reads from three places:
    `experiments/asymmetry-regression/data/{trolley,bbq,dailydilemmas}_summary.csv`.
    These are produced by `choices.analysis.create_summary` from raw
    preference-graph JSONs and are the canonical per-condition source.
-2. **Raw preference-graph JSONs** (~3 GB, **not in git**): expected at
-   `Choices/google_drive/results_{clean_arxiv,bbq_v2,dailydilemmas}/`.
-   Used to recompute Wald p-values from raw counts.
+2. **Raw preference-graph JSONs** (~3 GB, not in git): the source
+   logs `choices.analysis.create_summary` reads to produce (1). The
+   raw response logs are not distributed during peer review; the
+   tracked summary CSVs and the cached
+   `pipeline/data/pvalues_by_condition.csv` are sufficient to
+   reproduce every number cited in the paper.
 3. **Pre-computed sibling outputs** (tracked):
    `experiments/{baseline-noise,followup-probe}/` — pulled in
    by the canonical pipeline without recomputation.
-
-For (2), the raw data is hosted separately from the code repo (file-size
-constraints). **TODO before camera-ready: insert link to the data download
-location and update this section with expected directory layout.** If
-the raw JSONs are missing, `produce_paper_artifacts.py` will use the
-cached `pvalues_by_condition.csv` and skip Wald-p-value re-extraction —
-all paper numbers except a few sensitivity checks remain reproducible
-from the tracked summary CSVs alone.
 
 ### Scope filters applied by the pipeline
 
@@ -246,7 +239,9 @@ experiments/                     per-benchmark + supporting experiment runners
   asymmetry-regression/            mixed-effects regression
 
 google_drive/                    raw preference-graph JSONs (not in git;
-                                  see TODO link above for download)
+                                  not distributed during peer review —
+                                  the tracked summary CSVs are sufficient
+                                  to reproduce every paper number)
 
 tests/                           unit tests
 ```

@@ -42,11 +42,44 @@ PAPER_NUMBERS.md              human-readable diff vs the previous
 
 data/                         outputs
   paper_numbers.json            <- the JSON the paper rewrite reads
+  paper_numbers.tex             <- \input-able LaTeX with macros &
+                                   appendix-table row bodies
   pvalues_by_condition.csv      <- exact Wald p-values per condition
 
 figures/                      first-pass figures
   cross_benchmark.png           <- 3-panel headline figure
 ```
+
+### Using `paper_numbers.tex` in the LaTeX source
+
+The pipeline emits `pipeline/data/paper_numbers.tex` alongside the
+JSON. It defines `\newcommand`s for inline-cited numbers (headline
+shifts, asymmetry rates, backfire rates, regression coefficients,
+follow-up-probe rate, baseline-noise floors) plus row-body macros for
+the major appendix tables (F.4–F.7, J, K, D).
+
+To use, copy `paper_numbers.tex` into the LaTeX source tree (e.g.
+the Overleaf project) and `\input{paper_numbers}` once in the
+preamble. Then:
+
+- Inline: `... shifts of \HeadlineShiftTriagePP\,pp on triage ...`
+  produces `... shifts of 15.0 pp on triage ...`.
+- Tables: keep the existing `\begin{table}` / `\caption` /
+  `\begin{tabular}` scaffolding and replace the hand-typed body with
+  one of the `\PaperTab*Rows` macros, e.g.
+
+  ```latex
+  \begin{tabular}{lrrrrrrr}
+    \toprule
+    Nudge & n & |Effect| & |Steer| & |Asym| & |N-Asym| & Sig & BF \\
+    \midrule
+    \PaperTabFNudgeEffectsTrolleyRows
+    \bottomrule
+  \end{tabular}
+  ```
+
+The full list of generated commands and table macros is in the
+header comment of `paper_numbers.tex` itself.
 
 ## How to run
 
@@ -111,12 +144,45 @@ duplicated here.
 
 ## What this doesn't yet do
 
-- Phrasing-robustness table (`tab:phrasing-young`) and realistic-scenario
-  table (`tab:realistic-scenarios`) — raw data not in `google_drive/`.
-  Tagged as `_status: deferred` in the JSON.
 - Surface-form / negation / nonsensical tables — `choices/analysis/surface_form/`
   has the code, but it isn't wired in here yet.
 - Most figures beyond the cross-benchmark headline. The
   `choices/analysis/plots/` library produces the per-model violins,
   steerability plots, etc.; the first pass focuses on the load-bearing
   numbers and the BBQ/DD rationale figures that were already rendered.
+
+## Hard-coded numbers
+
+A small number of paper tables are populated from values in this
+script rather than re-derived from per-condition summary CSVs at
+run time:
+
+- **`tab_phrasing_young`** — Table `tab:phrasing-young` in App. L of
+  the NeurIPS draft. Tagged `_status: "hardcoded"` in the JSON. The
+  values come from a phrasing-sensitivity sweep over the
+  user-preference cue on the age factor: 11 wording variants × 4
+  models (GPT-5.2, Grok 4.1 Fast, DeepSeek V3.2, Llama 3.3 70B) ×
+  both steering directions. Model baselines (no influence) are stored
+  alongside the variant grid under `baselines_pct`.
+
+  To recompute end-to-end, extend
+  `choices.experiments.nudging.templates` with the 11 user-preference
+  wording variants (Original / All caps / Typos / Lowercase / Extra
+  spaces / Synonym / Contraction / Passive voice / Reorder / Filler
+  words / Exclamation; three are written out in the appendix as
+  worked examples), then run the standard nudging batch on
+  `age_group × {gpt-5-2, grok-41-fast, deepseek-v3-2, llama-33-70b}`
+  in both directions. The output flows through the same
+  `choices.analysis.create_summary` path as every other condition,
+  and a `_load_*` helper can replace `_hardcoded_phrasing_young()`.
+
+- **`tab_realistic_scenarios.{visa_processing, emergency_triage}`** —
+  rows of Table `tab:realistic-scenarios` in App. D. The `wildfire`
+  row is computed in `_load_realistic_scenarios()` from raw
+  preference-graph counts at
+  `Choices/google_drive/simple_wildfire_implied_wealth/...`. The
+  `visa` and `emergency_triage` rows are populated from the rates in
+  the published table; their raw response logs are not currently in
+  `google_drive/`. Steerability values for the hard-coded rows are
+  derived from those rates using the same Haldane-corrected
+  pooled-odds formula as the wildfire row.
