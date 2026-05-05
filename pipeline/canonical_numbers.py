@@ -19,9 +19,10 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
-REPO = Path("/Users/alexmckenzie/code/values")
-DATA = REPO / "Choices/experiments/asymmetry-regression/data"
-OUT = REPO / "Choices/pipeline/data"
+PIPELINE = Path(__file__).resolve().parent
+CHOICES = PIPELINE.parent
+DATA = CHOICES / "experiments/asymmetry-regression/data"
+OUT = PIPELINE / "data"
 
 PAPER_FACTORS_TROLLEY = {"age_group", "gender", "handedness", "nationality", "wealth"}
 PAPER_MODELS = {

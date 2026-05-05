@@ -22,14 +22,14 @@ from pathlib import Path
 import pandas as pd
 from scipy import stats
 
-REPO = Path("/Users/alexmckenzie/code/values")
+PIPELINE = Path(__file__).resolve().parent
+CHOICES = PIPELINE.parent
 ROOTS = {
-    "trolley": REPO / "moral-steerability-paper/google_drive/results_clean_arxiv",
-    "bbq": REPO / "moral-steerability-paper/google_drive/results_bbq_v2",
-    "dailydilemmas": REPO
-    / "moral-steerability-paper/google_drive/results_dailydilemmas",
+    "trolley": CHOICES / "google_drive/results_clean_arxiv",
+    "bbq": CHOICES / "google_drive/results_bbq_v2",
+    "dailydilemmas": CHOICES / "google_drive/results_dailydilemmas",
 }
-OUT = REPO / "Choices/pipeline/data"
+OUT = PIPELINE / "data"
 
 # Subdirectory naming conventions
 TROLLEY_FACTOR_DIR_PREFIX = "simple_"
