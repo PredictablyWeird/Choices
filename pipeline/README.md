@@ -2,8 +2,8 @@
 
 Produces every numeric claim cited by the **NeurIPS 2026 submission**
 *Direction-Flipped Influence Audits Reveal Hidden Structure in LLM
-Moral-Choice Benchmarks* (`main_phil.tex` in
-`moral-steerability-paper/neurips_2026_rewrite/`) as one JSON, plus
+Moral-Choice Benchmarks* (`main.tex` in
+`moral-steerability-paper/neurips_2026/`) as one JSON, plus
 first-pass figures.
 
 ## Why
@@ -41,7 +41,7 @@ PAPER_NUMBERS.md              human-readable diff vs the previous
                               paper headlines
 
 data/                         outputs
-  paper_numbers.json            <- the JSON the paper rewrite reads
+  paper_numbers.json            <- the JSON the paper reads
   paper_numbers.tex             <- \input-able LaTeX with macros &
                                    appendix-table row bodies
   pvalues_by_condition.csv      <- exact Wald p-values per condition
