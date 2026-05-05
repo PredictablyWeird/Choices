@@ -259,4 +259,4 @@ tests/                           unit tests
 MIT (see `LICENSE`).
 
 This codebase is built on
-[emergent-values](https://github.com/centerforaisafety/emergent-values).
+[emergent-values](https://github.com/centerforaisafety/emergent-values) (also licensed under MIT license).
