@@ -16,10 +16,9 @@ Single-source-of-truth pipeline for the NeurIPS 2026 paper artifacts.
 
 Target paper:  Direction-Flipped Influence Audits Reveal Hidden Structure
                in LLM Moral-Choice Benchmarks  (NeurIPS 2026 submission)
-LaTeX source:  ~/code/values/moral-steerability-paper/neurips_2026_rewrite/
-               main_phil.tex
+LaTeX source:  moral-steerability-paper/neurips_2026/main.tex
 
-Computes every numeric claim cited by main_phil.tex plus a first pass at
+Computes every numeric claim cited by main.tex plus a first pass at
 the cross-benchmark headline figure, and writes them to one JSON the
 NeurIPS-2026 paper rewrite reads from.
 
