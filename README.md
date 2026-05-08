@@ -1,7 +1,7 @@
 # Direction-Flipped Influence Audits — code and reproduction pipeline
 
-Code accompanying the NeurIPS 2026 submission *Direction-Flipped Influence
-Audits Reveal Hidden Structure in LLM Moral-Choice Benchmarks*.
+Code accompanying the arXiv paper *Direction-Flipped Influence
+Audits Reveal Hidden Structure in Moral Choices of LLMs*.
 
 This repo contains:
 
@@ -250,7 +250,7 @@ tests/                           unit tests
 
 ## Citing
 
-(citation block to be added on de-anonymization)
+TO BE ADDED AFTER PAPER IS ONLINE ON ARXIV.
 
 ---
 

@@ -1,7 +1,7 @@
 [project]
 name = "choices"
-version = "0.0.1"
-description = "Preference Choices"
+version = "0.1.0"
+description = "Direction-flipped Influence Audits"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }
