@@ -64,6 +64,9 @@ class LLMResponse:
     reasoning_type: Literal["NO_REASONING", "REASONING_BEFORE", "REASONING_AFTER"] = (
         "NO_REASONING"
     )
+    # Top-K logprobs for the first generated token. List of {"token": str, "logprob": float}.
+    # Populated only when the agent was configured with capture_logprobs=True.
+    first_token_logprobs: Optional[list] = None
 
 
 # =================== Utils ===================
@@ -633,6 +636,8 @@ class LiteLLMAgent:
         extra_body: Optional[Dict] = None,
         reasoning_effort: Optional[str] = None,
         text_verbosity: Optional[str] = None,
+        capture_logprobs: bool = False,
+        top_logprobs: int = 5,
     ):
         self.model = model
         self.temperature = temperature
@@ -642,6 +647,8 @@ class LiteLLMAgent:
         self.extra_body = extra_body
         self.reasoning_effort = reasoning_effort
         self.text_verbosity = text_verbosity
+        self.capture_logprobs = capture_logprobs
+        self.top_logprobs = top_logprobs
 
         self.max_retries = max_retries
         self.base_timeout = base_timeout
@@ -671,10 +678,26 @@ class LiteLLMAgent:
                 completion_kwargs["text"] = self.text_verbosity
             if self.extra_body:
                 completion_kwargs["extra_body"] = self.extra_body
+            if self.capture_logprobs:
+                completion_kwargs["logprobs"] = True
+                completion_kwargs["top_logprobs"] = self.top_logprobs
             return await litellm_acompletion(**completion_kwargs)
 
         def parse_response(response: Any) -> LLMResponse:
-            return LLMResponse(content=response.choices[0].message.content.strip())
+            raw_content = response.choices[0].message.content
+            content = raw_content.strip() if raw_content else None
+            first_tok_lp = None
+            if self.capture_logprobs:
+                try:
+                    lp_content = response.choices[0].logprobs.content
+                    if lp_content:
+                        first_tok_lp = [
+                            {"token": alt.token, "logprob": float(alt.logprob)}
+                            for alt in lp_content[0].top_logprobs
+                        ]
+                except (AttributeError, IndexError, TypeError):
+                    first_tok_lp = None
+            return LLMResponse(content=content, first_token_logprobs=first_tok_lp)
 
         return await run_batch_completions(
             messages=messages,

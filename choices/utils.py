@@ -192,9 +192,18 @@ def create_agent(
         models_config = yaml.safe_load(f)
 
     # Get model config
-    model_config = models_config.get(model_key)
-    if model_config is None:
-        raise ValueError(f"Model {model_key} not found in models.yaml")
+    if model_key.startswith("ours/"):
+        ft_name = model_key[len("ours/") :]
+        ft_map_path = os.path.join(os.path.dirname(__file__), "..", "model_jsons.keys")
+        with open(ft_map_path, "r") as f:
+            ft_map = json.load(f)
+        if ft_name not in ft_map:
+            raise ValueError(f"Fine-tune '{ft_name}' not found in model_jsons.keys")
+        model_config = {"model_type": "openai", "model_name": ft_map[ft_name]}
+    else:
+        model_config = models_config.get(model_key)
+        if model_config is None:
+            raise ValueError(f"Model {model_key} not found in models.yaml")
 
     model_type = model_config["model_type"]
     model_name = model_config["model_name"]
@@ -275,6 +284,9 @@ def create_agent(
             extra_body=extra_body,
             reasoning_effort=reasoning_effort,
             text_verbosity=text_verbosity,
+            # Capture logprobs for OpenAI models (including our fine-tunes) so we
+            # can do finer-grained analysis later without re-running.
+            capture_logprobs=(model_type == "openai"),
         )
 
     elif model_type.startswith("base_"):
@@ -569,11 +581,17 @@ def process_responses_to_preference_data(
                 "flipped_reasoning": [],
                 "original_reasoning_summaries": [],
                 "flipped_reasoning_summaries": [],
+                "original_logprobs": [],
+                "flipped_logprobs": [],
             }
 
         # Extract content from LLMResponse objects
         content_list = [
             r.content if hasattr(r, "content") else str(r) if r else ""
+            for r in response_list
+        ]
+        logprob_list = [
+            getattr(r, "first_token_logprobs", None) if r else None
             for r in response_list
         ]
 
@@ -583,6 +601,7 @@ def process_responses_to_preference_data(
             pair_data[pair_key]["original_reasoning_summaries"].extend(
                 reasoning_summary_list
             )
+            pair_data[pair_key]["original_logprobs"].extend(logprob_list)
             if reasoning_list:
                 pair_data[pair_key]["original_reasoning"].extend(reasoning_list)
         else:
@@ -591,6 +610,7 @@ def process_responses_to_preference_data(
             pair_data[pair_key]["flipped_reasoning_summaries"].extend(
                 reasoning_summary_list
             )
+            pair_data[pair_key]["flipped_logprobs"].extend(logprob_list)
             if reasoning_list:
                 pair_data[pair_key]["flipped_reasoning"].extend(reasoning_list)
 
@@ -657,6 +677,12 @@ def process_responses_to_preference_data(
                 aux_data["flipped_reasoning_summaries"] = data[
                     "flipped_reasoning_summaries"
                 ]
+
+            # Persist first-token top-K logprobs for later fine-grained analysis.
+            if any(lp is not None for lp in data.get("original_logprobs", [])):
+                aux_data["original_logprobs"] = data["original_logprobs"]
+            if any(lp is not None for lp in data.get("flipped_logprobs", [])):
+                aux_data["flipped_logprobs"] = data["flipped_logprobs"]
 
             preference_data.append(
                 {

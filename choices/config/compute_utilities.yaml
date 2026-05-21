@@ -53,6 +53,24 @@ thurstonian_active_learning_k5:
     holdout_fraction: 0.05
     holdout_seed: 42
 
+thurstonian_active_learning_k5_holdout15:
+  utility_model_class: "ThurstonianActiveLearningUtilityModel"
+  utility_model_arguments:
+    unparseable_mode: "distribution"
+    num_epochs: 1000
+    learning_rate: 0.01
+    edge_multiplier: 2
+    degree: 2
+    num_edges_per_iteration: 500
+    P: 10.0
+    Q: 20.0
+    K: 5
+    use_pseudolabels: true
+    pseudolabel_confidence_threshold: 0.95
+  preference_graph_arguments:
+    holdout_fraction: 0.15
+    holdout_seed: 42
+
 thurstonian_active_learning_k5_reasoning:
   utility_model_class: "ThurstonianActiveLearningUtilityModel"
   utility_model_arguments:

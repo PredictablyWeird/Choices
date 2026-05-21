@@ -656,6 +656,8 @@ async def compute_utilities(
         # Determine save suffix
         if save_suffix is None:
             save_suffix = model_key
+        # Sanitize: filename suffix can't contain path separators
+        save_suffix = save_suffix.replace("/", "_").replace("\\", "_")
 
         # Use structured save method (handles all conversions internally)
         results.save(save_dir, save_suffix)

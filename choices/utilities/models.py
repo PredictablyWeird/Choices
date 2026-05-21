@@ -147,6 +147,8 @@ class UtilityModel(ABC):
                     "flipped_reasoning": [],
                     "original_reasoning_summaries": [],
                     "flipped_reasoning_summaries": [],
+                    "original_logprobs": [],
+                    "flipped_logprobs": [],
                 }
 
             # Extract content from LLMResponse objects for storage
@@ -154,6 +156,12 @@ class UtilityModel(ABC):
 
             content_list = [
                 r.content if isinstance(r, LLMResponse) else r for r in response_list
+            ]
+            logprob_list = [
+                getattr(r, "first_token_logprobs", None)
+                if isinstance(r, LLMResponse)
+                else None
+                for r in response_list
             ]
 
             # We store the raw and parsed responses in separate buckets
@@ -163,6 +171,7 @@ class UtilityModel(ABC):
                 pair_data[pair_key]["original_reasoning_summaries"].extend(
                     reasoning_summary_list
                 )
+                pair_data[pair_key]["original_logprobs"].extend(logprob_list)
                 if reasoning_list:
                     pair_data[pair_key]["original_reasoning"].extend(reasoning_list)
             else:  # 'flipped'
@@ -171,6 +180,7 @@ class UtilityModel(ABC):
                 pair_data[pair_key]["flipped_reasoning_summaries"].extend(
                     reasoning_summary_list
                 )
+                pair_data[pair_key]["flipped_logprobs"].extend(logprob_list)
                 if reasoning_list:
                     pair_data[pair_key]["flipped_reasoning"].extend(reasoning_list)
 
@@ -273,6 +283,12 @@ class UtilityModel(ABC):
                     aux_data["flipped_reasoning_summaries"] = data[
                         "flipped_reasoning_summaries"
                     ]
+
+                # Persist first-token top-K logprobs for later fine-grained analysis.
+                if any(lp is not None for lp in data.get("original_logprobs", [])):
+                    aux_data["original_logprobs"] = data["original_logprobs"]
+                if any(lp is not None for lp in data.get("flipped_logprobs", [])):
+                    aux_data["flipped_logprobs"] = data["flipped_logprobs"]
 
                 entry = {
                     "option_A": data["option_A"],
