@@ -250,13 +250,25 @@ tests/                           unit tests
 
 ## Citing
 
-TO BE ADDED AFTER PAPER IS ONLINE ON ARXIV.
+If you use this work, please cite:
+
+```bibtex
+@misc{blandfort2026influenceaudits,
+      title={Direction-Flipped Influence Audits Reveal Hidden Structure in Moral Choices of LLMs},
+      author={Phil Blandfort and Tushar Karayil and Alex McKenzie and Urja Pawar and Robert Graham and Dmitrii Krasheninnikov},
+      year={2026},
+      eprint={2602.22831},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2602.22831},
+}
+```
 
 ---
 
 ## License
 
-MIT (see `LICENSE`).
+MIT (see [LICENSE](LICENSE)).
 
 This codebase is built on
 [emergent-values](https://github.com/centerforaisafety/emergent-values) (also licensed under MIT license).
