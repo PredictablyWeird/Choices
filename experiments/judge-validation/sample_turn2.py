@@ -90,6 +90,7 @@ SHEET_COLUMNS = [
     "turn1_user_prompt",
     "model_choice",
     "turn2_response",
+    "human_name",
     "human_label",
     "human_notes",
 ]
@@ -240,6 +241,7 @@ def main() -> None:
     # Assign stable, order-independent ids AFTER shuffling.
     for i, r in enumerate(sample):
         r["id"] = f"t2-{i:04d}"
+        r["human_name"] = ""
         r["human_label"] = ""
         r["human_notes"] = ""
 

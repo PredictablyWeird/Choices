@@ -47,7 +47,9 @@ SHEET_COLUMNS = [
     "option_b",
     "model_choice",
     "reasoning",
+    "human_name",
     "human_label",
+    "human_ambiguous",
     "human_notes",
 ]
 
@@ -151,7 +153,9 @@ def main() -> None:
 
     for i, r in enumerate(sample):
         r["id"] = f"cmp-{i:04d}"
+        r["human_name"] = ""
         r["human_label"] = ""
+        r["human_ambiguous"] = ""
         r["human_notes"] = ""
 
     out_dir = Path(args.out_dir)
