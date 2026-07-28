@@ -163,6 +163,15 @@ def main() -> None:
     )
     ap.add_argument("--min-per-stratum", type=int, default=5)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--exclude-kinds",
+        default="base,unknown",
+        help="Comma-separated condition_kinds to drop before sampling. Default "
+        "'base,unknown' removes no-influence baseline trials (no cue to "
+        "acknowledge/disclaim -- ill-posed to annotate and not used in the "
+        "paper's headline, which is over nudged sig_backfire/sig_compliance "
+        "cells). Pass '' to keep everything.",
+    )
     ap.add_argument("--out-dir", default=str(_SCRIPT_DIR / "sheets"))
     args = ap.parse_args()
 
@@ -204,6 +213,15 @@ def main() -> None:
             }
         )
     print(f"{len(candidates)} labelling candidates ({missing_join} unjoinable dropped)")
+
+    exclude = {k.strip() for k in args.exclude_kinds.split(",") if k.strip()}
+    if exclude:
+        before = len(candidates)
+        candidates = [c for c in candidates if c["condition_kind"] not in exclude]
+        print(
+            f"Excluded condition_kinds {sorted(exclude)}: "
+            f"{before - len(candidates)} dropped, {len(candidates)} remain"
+        )
 
     rng = random.Random(args.seed)
 

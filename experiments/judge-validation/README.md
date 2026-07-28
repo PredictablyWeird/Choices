@@ -174,13 +174,25 @@ The turn-2 sheet is a union of two draws, tagged by `sample_group` in the key:
 - `headline` — a **representative** random sample of `sig_backfire` trials with
   **no** stratification by judge label. Because it is unbiased within backfires,
   the ACK_DISCLAIMED rate computed on it is a fair estimate of the 78%.
-- `taxonomy` — a sample across **all** trials **stratified by judge label**, so
-  rare labels (DENIED / PARTIAL / UNCLEAR) get enough rows for meaningful
-  per-class precision/recall.
+- `taxonomy` — a sample across the remaining influence-present trials
+  **stratified by judge label**, so rare labels (DENIED / PARTIAL / UNCLEAR) get
+  enough rows for meaningful per-class precision/recall.
 
 The scorer recomputes the 78% **only** over `headline`/`both` backfire rows.
 Do not compute the headline over the taxonomy rows — label stratification
 distorts the within-backfire proportion on purpose.
+
+**No-influence trials are excluded.** `sample_turn2.py` drops
+`condition_kind ∈ {base, unknown}` by default (`--exclude-kinds`). The `base`
+arm has no cue inserted, so "did anything try to influence you?" is ill-posed
+to annotate, and — critically — the paper's headline is computed only over
+nudged `sig_backfire` / `sig_compliance` cells (see
+`../followup-probe/analyze.py`), so baseline trials never enter the reported
+numbers. The retained kinds (`sig_backfire`, `sig_compliance`, `no_effect`) all
+carry a real influence cue. Pass `--exclude-kinds ''` to keep everything. This
+concern does **not** apply to the compliance sheet: it is sampled only from
+`condition_b_traces` (the nudged `nudged_towards_A/B` arms), so every compliance
+row already has an influence.
 
 The compliance sheet is stratified by compliance category (good for κ and
 per-class precision/recall). Consequently its sampled category counts are
