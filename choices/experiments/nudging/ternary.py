@@ -13,13 +13,15 @@ pairwise edges. It reuses the shared pieces that are already K-agnostic
 trial, which is what the K=3 estimands actually need.
 
 Design (per condition):
-    n_triples size-triples
-      x 3 cyclic group->size assignments   (each group gets each size once)
+    size-multisets drawn from sizes 1-5   (default: all 35 of them)
+      x all distinct size->group assignments  (6 when sizes are distinct,
+                                               fewer when tied; 125 ordered
+                                               assignments over the full grid)
       x 6 display permutations             (full counterbalancing of A/B/C)
       x reps
-    = n_triples * 18 * reps trials
 
-    Defaults (20 triples, 2 reps) give 720 trials per condition.
+    Defaults (all 35 multisets, 2 reps) give 1500 trials per condition --
+    a full factorial over ordered size assignments from 1-5.
 
 Usage:
     uv run python -m choices.experiments.nudging.ternary --list-factors
@@ -44,7 +46,7 @@ from choices.experiments.nudging.ternary_factors import (
     CHOICE_LETTERS,
     DEFAULT_INFLUENCE_TYPES,
     DEFAULT_SYSTEM_PROMPT,
-    N_VALUES_PAPER,
+    N_VALUES_DEFAULT,
     SETUPS,
     TERNARY_FACTORS,
     TernaryFactor,
@@ -52,7 +54,6 @@ from choices.experiments.nudging.ternary_factors import (
     influence_defaults,
     list_factors,
     option_text,
-    singular_group_label,
 )
 from choices.experiments.simple_rates import _get_config_path
 from choices.utils import create_agent, generate_responses, load_config
@@ -96,7 +97,7 @@ def build_trials_explicit(
                 trials.append(
                     {
                         "triple_id": triple_id,
-                        "rotation": 0,
+                        "size_perm_id": 0,
                         "perm_id": perm_id,
                         "rep": rep,
                         "assignment": dict(assignment),
@@ -113,16 +114,16 @@ def build_trials_explicit(
 
 
 def sample_size_triples(
-    n_triples: int,
+    n_triples: Optional[int],
     n_values: List[int],
     seed: int,
     equal_sizes: bool = False,
 ) -> List[Tuple[int, int, int]]:
     """
-    Sample size-triples for the design.
+    Sample size-multisets for the design.
 
     Args:
-        n_triples: How many distinct size-triples to draw.
+        n_triples: How many distinct size-multisets to draw; None means all.
         n_values: Pool of group sizes.
         seed: RNG seed (design is fully deterministic given the seed).
         equal_sizes: If True, use only all-equal triples (n, n, n). This drops
@@ -132,16 +133,14 @@ def sample_size_triples(
     Returns:
         List of sorted (s0, s1, s2) tuples.
     """
-    rng = random.Random(seed)
-
     if equal_sizes:
         pool = [(n, n, n) for n in n_values]
     else:
         pool = sorted(itertools.combinations_with_replacement(sorted(n_values), 3))
 
-    if n_triples >= len(pool):
+    if n_triples is None or n_triples >= len(pool):
         return pool
-    return sorted(rng.sample(pool, n_triples))
+    return sorted(random.Random(seed).sample(pool, n_triples))
 
 
 def build_trials(
@@ -150,18 +149,24 @@ def build_trials(
     reps: int,
 ) -> List[Dict[str, Any]]:
     """
-    Expand size-triples into fully counterbalanced trials.
+    Expand size-multisets into fully counterbalanced trials.
 
-    Each trial records which group holds which size (``assignment``) and which
-    group is displayed at which letter (``display``).
+    Each multiset is assigned to groups in every distinct order (6 ways for
+    all-distinct sizes, fewer when tied), so over the full multiset pool this
+    is a full factorial over ordered size assignments. Each trial records
+    which group holds which size (``assignment``) and which group is displayed
+    at which letter (``display``).
     """
     groups = list(factor.values)
     trials: List[Dict[str, Any]] = []
 
     for triple_id, sizes in enumerate(size_triples):
-        # 3 cyclic rotations: each group takes each size exactly once.
-        for rot in range(3):
-            assignment = {groups[i]: sizes[(i + rot) % 3] for i in range(3)}
+        # All distinct assignments of the sizes onto groups (set() drops
+        # duplicate orderings arising from tied sizes).
+        for size_perm_id, sized in enumerate(
+            sorted(set(itertools.permutations(sizes)))
+        ):
+            assignment = dict(zip(groups, sized))
 
             # All 6 display orders of the three groups onto letters A/B/C.
             for perm_id, order in enumerate(itertools.permutations(groups)):
@@ -169,7 +174,7 @@ def build_trials(
                     trials.append(
                         {
                             "triple_id": triple_id,
-                            "rotation": rot,
+                            "size_perm_id": size_perm_id,
                             "perm_id": perm_id,
                             "rep": rep,
                             "assignment": assignment,
@@ -232,9 +237,7 @@ def build_few_shot_ending(
 
     for _ in range(num_examples):
         target_n = rng.choice([n for n in n_values if n <= max(n_values) - 2])
-        other_ns = [
-            rng.choice([n for n in n_values if n > target_n]) for _ in others
-        ]
+        other_ns = [rng.choice([n for n in n_values if n > target_n]) for _ in others]
 
         assignment = {target: target_n}
         for g, n in zip(others, other_ns):
@@ -316,9 +319,7 @@ def build_prompt(
 # K-ary response parsing
 # ============================================================================
 
-_ANSWER_PATTERN = re.compile(
-    rf"Answer:\s*({'|'.join(CHOICE_LETTERS)})", re.IGNORECASE
-)
+_ANSWER_PATTERN = re.compile(rf"Answer:\s*({'|'.join(CHOICE_LETTERS)})", re.IGNORECASE)
 _LETTER_PATTERNS = {
     letter: re.compile(rf"(?:^|[^\w])({re.escape(letter)})(?:[^\w]|$)")
     for letter in CHOICE_LETTERS
@@ -400,7 +401,7 @@ async def run_condition(
     if not is_base:
         if influence_type.startswith("few_shot"):
             ending = build_few_shot_ending(
-                factor, direction, N_VALUES_PAPER, few_shot_examples, seed
+                factor, direction, N_VALUES_DEFAULT, few_shot_examples, seed
             )
         else:
             influence_text = build_influence_text(factor, influence_type, direction)
@@ -503,7 +504,7 @@ async def run_condition(
                 "influence",
                 "direction",
                 "triple_id",
-                "rotation",
+                "size_perm_id",
                 "perm_id",
                 "rep",
                 "sizes",
@@ -536,7 +537,7 @@ async def run_condition(
                     influence_type,
                     condition_name,
                     trial["triple_id"],
-                    trial["rotation"],
+                    trial["size_perm_id"],
                     trial["perm_id"],
                     trial["rep"],
                     ";".join(f"{g}={trial['assignment'][g]}" for g in factor.values),
@@ -586,7 +587,7 @@ async def run_audit(
     factor_name: str,
     model: str,
     influence_types: List[str],
-    n_triples: int,
+    n_triples: Optional[int],
     reps: int,
     reasoning: str,
     setup_key: str,
@@ -602,9 +603,7 @@ async def run_audit(
 ) -> None:
     """Run the full rotation: base + one cue per group, for each influence type."""
     if factor_name not in TERNARY_FACTORS:
-        raise ValueError(
-            f"Unknown factor: {factor_name}\nAvailable:\n{list_factors()}"
-        )
+        raise ValueError(f"Unknown factor: {factor_name}\nAvailable:\n{list_factors()}")
 
     factor = TERNARY_FACTORS[factor_name]
     reasoning_mode = ReasoningMode.from_value(reasoning)
@@ -625,7 +624,10 @@ async def run_audit(
         print_calibration_report(fit)
 
         calib_n_values = list(range(1, calib_max_n + 1))
-        assignments = neutral_triples(fit, calib_n_values, n_triples)
+        # Calibration selects the most-neutral assignments first, so "all"
+        # is not meaningful here; fall back to 20 when no count was given.
+        calib_n_triples = n_triples if n_triples is not None else 20
+        assignments = neutral_triples(fit, calib_n_values, calib_n_triples)
         print(
             f"\n  selected {len(assignments)} calibrated size assignments "
             f"(worst max-deviation: {max(max(abs(fit.predict(a)[g] - 1/3) for g in factor.values) for a in assignments):.3f})"
@@ -634,7 +636,7 @@ async def run_audit(
         n_size_settings = len(assignments)
     else:
         size_triples = sample_size_triples(
-            n_triples, N_VALUES_PAPER, seed, equal_sizes
+            n_triples, N_VALUES_DEFAULT, seed, equal_sizes
         )
         trials = build_trials(factor, size_triples, reps)
         n_size_settings = len(size_triples)
@@ -647,7 +649,9 @@ async def run_audit(
     print(f"{'=' * 70}")
     print(f"  model:        {model}  (reasoning={reasoning_mode.value})")
     print(f"  influences:   {', '.join(influence_types)}")
-    print(f"  size settings:{n_size_settings}  ({'calibrated' if calibrate_from else 'generic'})  reps: {reps}")
+    print(
+        f"  size settings:{n_size_settings}  ({'calibrated' if calibrate_from else 'generic'})  reps: {reps}"
+    )
     print(f"  trials/cond:  {len(trials)}")
     print(f"  conditions:   {n_conditions}")
     print(f"  total calls:  {len(trials) * n_conditions}")
@@ -715,7 +719,13 @@ def main() -> None:
         default=DEFAULT_INFLUENCE_TYPES,
         help=f"Influence types (default: {' '.join(DEFAULT_INFLUENCE_TYPES)})",
     )
-    parser.add_argument("--n-triples", type=int, default=20)
+    parser.add_argument(
+        "--n-triples",
+        type=int,
+        default=None,
+        help="How many size-multisets to sample (default: all, i.e. a full "
+        "factorial over ordered size assignments)",
+    )
     parser.add_argument("--reps", type=int, default=2)
     parser.add_argument(
         "--reasoning", default="none", choices=["none", "before", "after"]

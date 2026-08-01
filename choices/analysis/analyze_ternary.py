@@ -111,9 +111,7 @@ def print_report(res: ConditionResult) -> None:
 
     n = res.neutrality
     print("\nBaseline")
-    freq_str = "   ".join(
-        f"{g}: {n.frequencies[g]:.3f}" for g in res.groups
-    )
+    freq_str = "   ".join(f"{g}: {n.frequencies[g]:.3f}" for g in res.groups)
     print(f"  {freq_str}")
     print(
         f"  uniformity chi2({n.df}) = {n.chi2:.2f}, p = {n.p_value:.4f}"
@@ -157,6 +155,13 @@ def print_report(res: ConditionResult) -> None:
         f"  all three equal?  chi2({df_}) = {chi2:.2f}, p = {p:.4f}"
         f"  -> {'no directional structure' if p >= 0.05 else 'DIRECTIONAL STRUCTURE'}"
     )
+    r = res.asym_range
+    if r is not None:
+        print(
+            f"  asymmetry range = {r.range:.3f}"
+            f"   (easiest: toward {r.max_target}, hardest: toward {r.min_target})"
+            f"   dispersion (wRMS) = {res.dispersion:.3f}"
+        )
 
     print("\nDisplacement  (where each cue's gain came from)")
     for g in res.groups:
@@ -221,6 +226,10 @@ def summary_rows(res: ConditionResult) -> List[dict]:
             "s_p": s.p_value,
             "backfire": res.backfire[g],
             "backfire_destination": backfire_destination(d) or "",
+            "asym_range": res.asym_range.range if res.asym_range else float("nan"),
+            "asym_range_max": res.asym_range.max_target if res.asym_range else "",
+            "asym_range_min": res.asym_range.min_target if res.asym_range else "",
+            "asym_dispersion": res.dispersion,
             "n_base": s.n_base,
             "n_cue": s.n_cue,
             "iia_log_or": t.log_or if t else float("nan"),
@@ -234,6 +243,37 @@ def summary_rows(res: ConditionResult) -> List[dict]:
                 row[f"share_null_{rival}"] = d.expected_shares[rival]
         rows.append(row)
     return rows
+
+
+def backfire_rate_table(df: pd.DataFrame, alpha: float = 0.05) -> pd.DataFrame:
+    """
+    Backfire rates among significant effects: one row per cue-target group
+    plus an "overall" row.
+
+    Follows the paper's convention: the denominator is significant cue
+    effects only, so a null cue is neither compliance nor backfire.
+    """
+    sig = df[df["s_p"] < alpha]
+    rows = []
+    targets = list(dict.fromkeys(df["cue_target"]))
+    for name, sub in [(g, sig[sig["cue_target"] == g]) for g in targets] + [
+        ("overall", sig)
+    ]:
+        n = len(sub)
+        n_total = int((sub["backfire"] == BACKFIRE_TOTAL).sum())
+        n_disp = int((sub["backfire"] == BACKFIRE_DISPLACED).sum())
+        rows.append(
+            {
+                "cue_target": name,
+                "n_conditions": len(df[df["cue_target"] == name])
+                if name != "overall"
+                else len(df),
+                "n_significant": n,
+                "backfire_rate_total": n_total / n if n else float("nan"),
+                "backfire_rate_displaced": n_disp / n if n else float("nan"),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def print_headline(df: pd.DataFrame) -> None:
@@ -264,6 +304,18 @@ def print_headline(df: pd.DataFrame) -> None:
             f"  displaced-backfire rate:             "
             f"{100.0 * n_disp_bf / len(sig):.1f}%  (K>=3 only)"
         )
+        print("\n  backfire rates by cue target (among sig. effects):")
+        bf = backfire_rate_table(df)
+        for _, row in bf.iterrows():
+            if row["n_significant"] == 0:
+                rates = "no significant effects"
+            else:
+                rates = (
+                    f"total {100.0 * row['backfire_rate_total']:5.1f}%   "
+                    f"displaced {100.0 * row['backfire_rate_displaced']:5.1f}%"
+                    f"   (n_sig = {row['n_significant']}/{row['n_conditions']})"
+                )
+            print(f"    {row['cue_target']:<16} {rates}")
 
     neutral = df[df["baseline_neutral"]]
     if len(neutral):

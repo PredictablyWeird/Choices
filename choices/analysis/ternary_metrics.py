@@ -140,9 +140,7 @@ def ovr_steerability(
 
     At K=2 this is identical to ``metrics.compute_single_steerability``.
     """
-    s = _logit_from_counts(cue_counts, target) - _logit_from_counts(
-        base_counts, target
-    )
+    s = _logit_from_counts(cue_counts, target) - _logit_from_counts(base_counts, target)
     se = math.sqrt(_var_ovr(cue_counts, target) + _var_ovr(base_counts, target))
     z = s / se if se > 0 else 0.0
     p = 2.0 * stats.norm.sf(abs(z))
@@ -161,9 +159,7 @@ def ovr_steerability(
         f_base=f_base,
         f_cue=f_cue,
         delta=f_cue - f_base,
-        delta_p_value=two_proportion_p(
-            f_base * n_base, n_base, f_cue * n_cue, n_cue
-        ),
+        delta_p_value=two_proportion_p(f_base * n_base, n_base, f_cue * n_cue, n_cue),
         n_base=n_base,
         n_cue=n_cue,
     )
@@ -304,9 +300,7 @@ def displacement_profile(
         observed_shares = {e: -rival_deltas[e] / delta_target for e in rivals}
 
     rest_base = sum(f0[e] for e in rivals)
-    expected_shares = (
-        {e: f0[e] / rest_base for e in rivals} if rest_base > 0 else {}
-    )
+    expected_shares = {e: f0[e] / rest_base for e in rivals} if rest_base > 0 else {}
 
     return Displacement(
         target=target,
@@ -402,7 +396,11 @@ def baseline_neutrality(base_counts: Dict[str, float]) -> BaselineNeutrality:
 
     if total <= 0:
         return BaselineNeutrality(
-            float("nan"), k - 1, float("nan"), {j: float("nan") for j in keys}, float("nan")
+            float("nan"),
+            k - 1,
+            float("nan"),
+            {j: float("nan") for j in keys},
+            float("nan"),
         )
 
     expected = [total / k] * k
@@ -480,6 +478,66 @@ def asymmetry_matrix(
     ]
 
 
+@dataclass
+class AsymmetryRange:
+    """
+    Default scalar asymmetry: the range of the steerability vector.
+
+    range = max_d s_ovr(d) - min_d s_ovr(d), the log-odds gap between the
+    easiest and hardest cue direction. At K=2 this is |Asym(a,b)|, and at any
+    K it equals the largest pairwise asymmetry, so it nests the binary
+    definition. The Wald p-value here tests the extreme pair and is
+    selection-biased (the extremes are picked post hoc); gate reporting on
+    ``steerability_homogeneity`` instead, which tests all K directions jointly.
+    """
+
+    max_target: str
+    min_target: str
+    range: float
+    se: float
+    p_value: float
+
+
+def asymmetry_range(
+    steerabilities: Dict[str, Steerability],
+) -> Optional[AsymmetryRange]:
+    """Range (max - min) of the one-vs-rest steerability vector."""
+    items = list(steerabilities.values())
+    if len(items) < 2:
+        return None
+    s_max = max(items, key=lambda s: s.s_ovr)
+    s_min = min(items, key=lambda s: s.s_ovr)
+    pair = asymmetry(s_min, s_max)  # asym = s(max) - s(min) >= 0
+    return AsymmetryRange(
+        max_target=s_max.target,
+        min_target=s_min.target,
+        range=pair.asym,
+        se=pair.se,
+        p_value=pair.p_value,
+    )
+
+
+def steerability_dispersion(steerabilities: Dict[str, Steerability]) -> float:
+    """
+    Secondary aggregate asymmetry: precision-weighted RMS deviation of the
+    steerability vector around its weighted mean, in log-odds units.
+
+    Unlike the range, this uses every direction, so it is the better summary
+    when K is large (the range looks only at the two extremes and its noise
+    bias grows with K). It is the effect-size counterpart of the
+    ``steerability_homogeneity`` chi-square: sqrt(chi2 / sum of weights).
+    """
+    items = [s for s in steerabilities.values() if s.se > 0]
+    if len(items) < 2:
+        return float("nan")
+    weights = [1.0 / (s.se**2) for s in items]
+    values = [s.s_ovr for s in items]
+    mean = sum(w * v for w, v in zip(weights, values)) / sum(weights)
+    return math.sqrt(
+        sum(w * (v - mean) ** 2 for w, v in zip(weights, values)) / sum(weights)
+    )
+
+
 def steerability_homogeneity(
     steerabilities: Dict[str, Steerability],
 ) -> Tuple[float, int, float]:
@@ -517,7 +575,9 @@ def bh_fdr(p_values: Sequence[float], q: float = 0.05) -> List[bool]:
     NaN p-values are treated as non-significant.
     """
     indexed = [
-        (p, i) for i, p in enumerate(p_values) if p == p  # drop NaN
+        (p, i)
+        for i, p in enumerate(p_values)
+        if p == p  # drop NaN
     ]
     m = len(indexed)
     rejected = [False] * len(p_values)
@@ -558,6 +618,8 @@ class ConditionResult:
     iia: Dict[str, Optional[IIATest]]
     contrasts: Dict[str, List[PairwiseContrast]]
     asymmetries: List[Asymmetry]
+    asym_range: Optional[AsymmetryRange]
+    dispersion: float
     homogeneity: Tuple[float, int, float]
     backfire: Dict[str, str]
 
@@ -615,6 +677,8 @@ def analyze_rotation(
         iia=iia,
         contrasts=contrasts,
         asymmetries=asymmetry_matrix(steerabilities),
+        asym_range=asymmetry_range(steerabilities),
+        dispersion=steerability_dispersion(steerabilities),
         homogeneity=steerability_homogeneity(steerabilities),
         backfire=backfire,
     )

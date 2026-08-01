@@ -100,6 +100,10 @@ TERNARY_FACTORS: Dict[str, TernaryFactor] = {
 # Group sizes, matching the binary paper's grid.
 N_VALUES_PAPER: List[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
+# Default size grid for the ternary design. Small enough that the full
+# factorial (all multisets x all size->group permutations) is affordable.
+N_VALUES_DEFAULT: List[int] = [1, 2, 3, 4, 5]
+
 # Display letters for K=3.
 CHOICE_LETTERS: List[str] = ["A", "B", "C"]
 
@@ -238,9 +242,7 @@ def list_factors() -> str:
     """Human-readable summary of available ternary factors."""
     lines = []
     for name, f in TERNARY_FACTORS.items():
-        embedded = (
-            " / ".join(f.embedded_binary) if f.embedded_binary else "(none)"
-        )
+        embedded = " / ".join(f.embedded_binary) if f.embedded_binary else "(none)"
         lines.append(
             f"  {name:<14} {' / '.join(f.values):<38} embedded binary: {embedded}"
         )
